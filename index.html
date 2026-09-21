@@ -2715,11 +2715,13 @@
 
         window.loadSstAdminData = async function(){
             const ctx=window.SST_APP_CONTEXT;
-            if(!ctx || !firebaseDb) return;
+            const api=window.SSTFirebaseApi;
+            const db=api?.getDb?.();
+            if(!ctx || !api || !db) return;
             setAdminPanels();
             if(ctx.role==='platformAdmin'){
                 try{
-                    const snaps=await getDocs(collection(firebaseDb,'companies'));
+                    const snaps=await api.getDocs(api.collection(db,'companies'));
                     const list=document.getElementById('sst-company-list');
                     const companies=snaps.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id),'fr'));
                     if(list) list.innerHTML=companies.length?companies.map(c=>{
@@ -2741,8 +2743,11 @@
 
         window.selectSstCompanyForAdmin = async function(companyId){
             if(window.SST_APP_CONTEXT?.role!=='platformAdmin') return;
+            const api=window.SSTFirebaseApi;
+            const db=api?.getDb?.();
+            if(!api || !db) return;
             try{
-                const snap=await getDoc(doc(firebaseDb,'companies',companyId));
+                const snap=await api.getDoc(api.doc(db,'companies',companyId));
                 if(!snap.exists()) return;
                 const c={id:snap.id,...snap.data()};
                 window.SST_ADMIN_SELECTED_COMPANY=c;
@@ -6894,7 +6899,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const ctx = window.SST_APP_CONTEXT;
             const list = document.getElementById('sst-pending-reports-list');
             const countEl = document.getElementById('sst-pending-reports-count');
-            if (!ctx || !firebaseDb || !list) return;
+            const api = window.SSTFirebaseApi;
+            const db = api?.getDb?.();
+            if (!ctx || !api || !db || !list) return;
 
             const targetCompanyId = String(
                 companyIdOverride
@@ -6908,7 +6915,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }
 
             try {
-                const snaps = await getDocs(collection(firebaseDb, 'companies', targetCompanyId, 'pending_reports'));
+                const snaps = await api.getDocs(api.collection(db, 'companies', targetCompanyId, 'pending_reports'));
                 const items = snaps.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -6935,16 +6942,17 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         async function validatePendingReport(reportId) {
             const ctx = window.SST_APP_CONTEXT;
-            if (!ctx?.companyId || !firebaseDb) return;
+            const api = window.SSTFirebaseApi;
+            const db = api?.getDb?.();
+            if (!ctx || !api || !db) return;
+            const targetCompanyId = String(ctx.role === 'platformAdmin' ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '') : (ctx.companyId || ''));
+            if (!targetCompanyId) { alert('Sélectionnez d’abord l’entreprise concernée.'); return; }
             try {
-                const ref = doc(firebaseDb, 'companies', ctx.companyId, 'pending_reports', reportId);
-                const snap = await getDoc(ref);
-                if (!snap.exists()) { alert('Cette demande a déjà été traitée.'); loadPendingReports(); return; }
+                const ref = api.doc(db, 'companies', targetCompanyId, 'pending_reports', reportId);
+                const snap = await api.getDoc(ref);
+                if (!snap.exists()) { alert('Cette demande a déjà été traitée.'); await loadPendingReports(targetCompanyId); return; }
                 const data = snap.data();
                 const today = new Date().toISOString().split('T')[0];
-                // Validation = transformer la remontée en vraie fiche FA/SU, sans générer d'action
-                // PAPRIPACT automatiquement : c'est l'admin qui décide, en complétant les axes ensuite,
-                // exactement comme pour n'importe quelle FA/SU créée manuellement.
                 const key = data.type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
                 const prefix = `${(new Date(today)).getFullYear()}-${data.type === 'SU' ? 'SU' : 'FA'}-`;
                 const list = JSON.parse(localStorage.getItem(key) || '[]');
@@ -6956,9 +6964,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 if (data.type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
                 if (data.type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
                 try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys(key); } catch (e) { console.warn(e); }
-                await deleteDoc(ref);
-                loadPendingReports();
-                alert(`Ajouté à ${data.type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}. Ouvrez-la pour compléter les axes d'amélioration si besoin : ça générera alors l'action PAPRIPACT.`);
+                await api.deleteDoc(ref);
+                await loadPendingReports(targetCompanyId);
+                alert(`Ajouté à ${data.type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}.`);
             } catch (err) {
                 alert("Validation impossible : " + (err?.message || 'erreur inconnue'));
             }
@@ -6966,11 +6974,15 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         async function rejectPendingReport(reportId) {
             const ctx = window.SST_APP_CONTEXT;
-            if (!ctx?.companyId || !firebaseDb) return;
+            const api = window.SSTFirebaseApi;
+            const db = api?.getDb?.();
+            if (!ctx || !api || !db) return;
+            const targetCompanyId = String(ctx.role === 'platformAdmin' ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '') : (ctx.companyId || ''));
+            if (!targetCompanyId) { alert('Sélectionnez d’abord l’entreprise concernée.'); return; }
             if (!confirm('Rejeter cette demande ? Elle sera définitivement supprimée.')) return;
             try {
-                await deleteDoc(doc(firebaseDb, 'companies', ctx.companyId, 'pending_reports', reportId));
-                loadPendingReports();
+                await api.deleteDoc(api.doc(db, 'companies', targetCompanyId, 'pending_reports', reportId));
+                await loadPendingReports(targetCompanyId);
             } catch (err) { alert("Suppression impossible : " + (err?.message || 'erreur inconnue')); }
         }
 
