@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.72</title>
+    <title>Application SST & RH - Gestion V2.73</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.72</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.73</div>
         </aside>
 
         <!-- Main Content -->
@@ -200,7 +200,7 @@
                                 <button onclick="openSalarieModal()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un Salarié</button>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border">
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Rechercher un salarié</label>
                                     <input type="text" id="rh-search-nom" oninput="loadRhSalaries()" placeholder="Nom, prénom ou poste..." class="p-2 border rounded w-full text-sm">
@@ -209,6 +209,14 @@
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par Unité / Service</label>
                                     <select id="rh-filter-service" onchange="loadRhSalaries()" class="p-2 border rounded w-full text-sm">
                                         <option value="">Toutes les unités</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par statut</label>
+                                    <select id="rh-filter-personnel" onchange="loadRhSalaries()" class="p-2 border rounded w-full text-sm">
+                                        <option value="">Tous (salariés et intérimaires)</option>
+                                        <option value="Salarié">Salariés</option>
+                                        <option value="Intérimaire">Intérimaires</option>
                                     </select>
                                 </div>
                             </div>
@@ -443,6 +451,7 @@
                                 <div class="bg-slate-50 border rounded-lg p-4">
                                     <div class="text-xs text-slate-500 font-semibold">AT enregistrés</div>
                                     <div id="at-kpi-total" class="text-2xl font-bold text-slate-800 mt-1">0</div>
+                                    <div id="at-kpi-interim" class="text-[11px] text-amber-700 font-semibold mt-0.5"></div>
                                 </div>
                                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
                                     <div class="text-xs text-red-600 font-semibold">AT avec arrêt</div>
@@ -752,11 +761,18 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="grid grid-cols-1 gap-4">
+                            <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Unité de travail <span class="text-red-500">*</span></label>
                                     <select id="sal-service" class="w-full p-2 border rounded text-sm">
                                         <option value="">Sélectionner une unité</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Statut <span class="text-red-500">*</span></label>
+                                    <select id="sal-statut" class="w-full p-2 border rounded text-sm">
+                                        <option value="Salarié">Salarié</option>
+                                        <option value="Intérimaire">Intérimaire</option>
                                     </select>
                                 </div>
                             </div>
@@ -794,6 +810,7 @@
                             </div>
                             <div class="text-[11px] space-y-0.5 mb-3 text-slate-700">
                                 <div><span class="font-bold">Unité :</span> <span id="label-modal-service"></span></div>
+                                <div><span class="font-bold">Statut :</span> <span id="label-modal-statut"></span></div>
                                 <div><span class="font-bold">Poste :</span> <span id="label-modal-poste"></span></div>
                             </div>
                             <table class="w-full text-left border-collapse text-[11px]">
@@ -1922,6 +1939,13 @@
                                         <input type="text" id="atr-poste" class="w-full p-2 border rounded text-sm bg-white" placeholder="Poste occupé">
                                     </div>
                                     <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Statut du personnel</label>
+                                        <select id="atr-statut-personnel" class="w-full p-2 border rounded text-sm bg-white">
+                                            <option value="Salarié">Salarié</option>
+                                            <option value="Intérimaire">Intérimaire</option>
+                                        </select>
+                                    </div>
+                                    <div>
                                         <label class="block text-xs font-semibold text-slate-600 mb-1">Lieu / zone</label>
                                         <input type="text" id="atr-lieu" class="w-full p-2 border rounded text-sm bg-white" placeholder="Ex. Atelier laquage – ligne 2">
                                     </div>
@@ -2013,11 +2037,16 @@
                                         <input type="date" id="atr-fin-arret" onchange="updateAtRegistreJoursPerdus()" class="w-full p-2 border rounded text-sm bg-white">
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre de jours perdus (calculé)</label>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Total de jours perdus (calculé)</label>
                                         <input type="number" id="atr-jours-perdus" class="w-full p-2 border rounded text-sm bg-slate-100" readonly>
                                     </div>
                                 </div>
-                                <p class="text-[11px] text-slate-500">Le nombre de jours est calculé automatiquement à partir des dates de début et de fin d'arrêt. Il est utilisé pour le calcul du TG.</p>
+                                <div id="atr-prolongations-list" class="space-y-2"></div>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <button type="button" onclick="addAtRegistreProlongation()" class="text-xs font-semibold text-red-700 bg-white border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg">➕ Ajouter une prolongation d'arrêt</button>
+                                    <span id="atr-jours-detail" class="text-[11px] text-slate-600 font-semibold"></span>
+                                </div>
+                                <p class="text-[11px] text-slate-500">Le nombre de jours est calculé automatiquement à partir des dates de début et de fin d'arrêt, prolongations comprises. Le total est utilisé pour le calcul du TG.</p>
                             </div>
 
                             <div class="bg-slate-50 border rounded-lg p-4 space-y-4">
@@ -2134,8 +2163,9 @@
                                     <div><label class="block text-xs font-semibold text-slate-600 mb-1">Unité de travail</label><select id="at-service" class="w-full p-2 border rounded text-sm"><option value="">Sélectionner une unité</option></select></div>
                                     <div><label class="block text-xs font-semibold text-slate-600 mb-1">Gravité / conséquence</label><select id="at-gravite" class="w-full p-2 border rounded text-sm"><option value="Sans arrêt">Sans arrêt de travail</option><option value="Avec arrêt">Avec arrêt de travail</option><option value="Grave / Invalidité">Grave / Invalidité</option></select></div>
                                 </div>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                                     <div><label class="block text-xs font-semibold text-slate-600 mb-1">Siège et nature des lésions</label><input type="text" id="at-lesions" placeholder="Ex. Main gauche — coupure profonde" class="w-full p-2 border rounded text-sm"></div>
+                                    <div><label class="block text-xs font-semibold text-slate-600 mb-1">Statut du personnel</label><select id="at-statut-personnel" class="w-full p-2 border rounded text-sm"><option value="Salarié">Salarié</option><option value="Intérimaire">Intérimaire</option></select></div>
                                     <div><label class="block text-xs font-semibold text-slate-600 mb-1">Référence AT liée</label><input type="text" id="at-source-at-ref" class="w-full p-2 border rounded text-sm bg-slate-100" readonly></div>
                                 </div>
                             </section>
@@ -3121,7 +3151,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.72';
+        const SST_APP_VERSION = '2.73';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -3207,6 +3237,29 @@
             const date = new Date(raw);
             if (Number.isNaN(date.getTime())) return null;
             return date.getFullYear();
+        }
+
+        // --- STATUT DU PERSONNEL : Salarié / Intérimaire ---
+        // Champ « statutPersonnel » des salariés. Tout enregistrement sans ce champ (données antérieures) est un salarié.
+        const SST_STATUTS_PERSONNEL = ['Salarié', 'Intérimaire'];
+        function sstNormalizeStatut(v) {
+            const s = String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            return s.startsWith('interim') ? 'Intérimaire' : 'Salarié';
+        }
+        function sstGetSalarieStatut(sal) { return sstNormalizeStatut(sal && sal.statutPersonnel); }
+        function sstBuildStatutMap() {
+            const m = new Map();
+            try { JSON.parse(localStorage.getItem('salaries_formations') || '[]').forEach(s => { if (s && s.nom) m.set(s.nom, sstGetSalarieStatut(s)); }); } catch (e) {}
+            return m;
+        }
+        // Statut d'une personne d'après un statut enregistré (ex. sur l'AT) ou, à défaut, d'après sa fiche salarié.
+        function sstResolveStatut(nom, explicit, map) {
+            if (explicit) return sstNormalizeStatut(explicit);
+            return (map || sstBuildStatutMap()).get(nom) || 'Salarié';
+        }
+        function sstStatutPill(statut) {
+            const interim = statut === 'Intérimaire';
+            return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border align-middle ${interim ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-600 border-slate-200'}">${interim ? 'Intérimaire' : 'Salarié'}</span>`;
         }
 
         function calculateAtLostDays(startDate, endDate) {
@@ -4770,11 +4823,11 @@
             sstTemplateXlsx({
                 filename: 'modele_salaries.xlsx', title: 'Salariés',
                 description: 'Importez les salariés en masse. Pour l’unité de travail, choisissez directement une unité existante dans la liste déroulante.',
-                headers: ['Nom','Poste','Unite de travail'],
-                exampleRow: ['Jean Dupont','Opérateur machine',unites[0] || 'Choisir dans la liste'],
-                fieldHelp: [['Nom','Nom et prénom du salarié. Obligatoire.'],['Poste','Poste occupé.'],['Unite de travail','Choisissez une unité déjà existante dans l’application. Ne la retapez pas manuellement.']],
-                widths: [30, 30, 32],
-                dropdowns: { 'Unite de travail': unites }
+                headers: ['Nom','Poste','Unite de travail','Statut'],
+                exampleRow: ['Jean Dupont','Opérateur machine',unites[0] || 'Choisir dans la liste','Salarié'],
+                fieldHelp: [['Nom','Nom et prénom du salarié. Obligatoire.'],['Poste','Poste occupé.'],['Unite de travail','Choisissez une unité déjà existante dans l’application. Ne la retapez pas manuellement.'],['Statut','Salarié ou Intérimaire. Si la cellule est vide, la personne est enregistrée comme salarié.']],
+                widths: [30, 30, 32, 18],
+                dropdowns: { 'Unite de travail': unites, 'Statut': ['Salarié','Intérimaire'] }
             });
         }
         async function importSalariesFile(event) {
@@ -4789,21 +4842,24 @@
                 const nom = r.nom || r.nomprenom || r.salarie || '';
                 const poste = r.poste || '';
                 const uniteRaw = r.unitedetravail || r.unite || r.service || '';
-                const display = [nom || '—', poste || '—', uniteRaw || '—'];
+                const statutRaw = String(r.statut || r.statutdupersonnel || r.typedepersonnel || '').trim();
+                const statutNorm = sstNormalizeHeader(statutRaw);
+                const display = [nom || '—', poste || '—', uniteRaw || '—', statutRaw ? sstNormalizeStatut(statutRaw) : 'Salarié'];
                 if (!nom) return { status: 'error', message: 'Nom manquant', display };
                 if (!uniteRaw) return { status: 'error', message: 'Unité de travail manquante', display };
+                if (statutRaw && !/^(salarie|interimaire|interim)/.test(statutNorm)) return { status: 'error', message: `Statut "${statutRaw}" inconnu — indiquez Salarié ou Intérimaire`, display };
                 const uniteMatch = unites.find(u => u.nom.toLowerCase() === uniteRaw.toLowerCase());
                 if (!uniteMatch) return { status: 'error', message: `Unité "${uniteRaw}" introuvable — créez-la d'abord`, display };
                 const key = nom.toLowerCase();
                 if (seenInFile.has(key)) return { status: 'error', message: 'Doublon dans le fichier', display };
                 seenInFile.add(key);
                 if (salaries.some(s => (s.nom || '').toLowerCase() === key)) return { status: 'warning', message: 'Déjà existant : ignoré (non modifié)', display, data: null };
-                return { status: 'ok', display, data: { nom, poste, service: uniteMatch.nom, visite: '', docConduite: false, formations: [] } };
+                return { status: 'ok', display, data: { nom, poste, service: uniteMatch.nom, statutPersonnel: statutRaw ? sstNormalizeStatut(statutRaw) : 'Salarié', visite: '', docConduite: false, formations: [] } };
             });
             sstOpenImportPreview({
                 title: 'Aperçu — Import des salariés',
                 subtitle: `${rows.length} ligne(s) lue(s) dans « ${file.name} ».`,
-                columns: ['Nom', 'Poste', 'Unité de travail'],
+                columns: ['Nom', 'Poste', 'Unité de travail', 'Statut'],
                 results,
                 onConfirm: async (validRows) => {
                     const toAdd = validRows.filter(Boolean);
@@ -5385,6 +5441,7 @@
             let salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             let search = (document.getElementById('rh-search-nom')?.value || '').toLowerCase();
             let filterService = document.getElementById('rh-filter-service')?.value || '';
+            let filterPersonnel = document.getElementById('rh-filter-personnel')?.value || '';
             
             const container = document.getElementById('table-rh-salaries');
             if(!container) return;
@@ -5393,7 +5450,8 @@
             let filtered = salaries.filter(sal => {
                 let matchName = (sal.nom || '').toLowerCase().includes(search) || (sal.poste || '').toLowerCase().includes(search);
                 let matchService = !filterService || sal.service === filterService;
-                return matchName && matchService;
+                let matchPersonnel = !filterPersonnel || sstGetSalarieStatut(sal) === filterPersonnel;
+                return matchName && matchService && matchPersonnel;
             });
 
             if (filtered.length === 0) {
@@ -5416,7 +5474,7 @@
                 html += `
                     <div class="border rounded-lg bg-white shadow-sm overflow-hidden mb-4">
                         <div onclick="toggleAccordion('${accordionId}')" class="bg-slate-100 p-4 font-bold text-slate-800 flex justify-between items-center cursor-pointer hover:bg-slate-200 transition">
-                            <div>🏢 ${uniteName} <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${unitSalaries.length} salarié(s)</span></div>
+                            <div>🏢 ${uniteName} <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${unitSalaries.length} salarié(s)</span>${unitSalaries.filter(x => sstGetSalarieStatut(x) === 'Intérimaire').length ? `<span class="ml-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-normal">dont ${unitSalaries.filter(x => sstGetSalarieStatut(x) === 'Intérimaire').length} intérimaire(s)</span>` : ''}</div>
                             <span class="text-xs text-slate-500 font-semibold">▼ Réduire / Développer</span>
                         </div>
                         <div id="${accordionId}" class="p-4 space-y-3">`;
@@ -5444,7 +5502,7 @@
                         <div class="border rounded-lg p-3 bg-white shadow-sm space-y-2">
                             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                                 <div>
-                                    <h4 class="font-bold text-slate-800 text-base">${sal.nom || 'Sans nom'} <span class="text-xs font-normal text-slate-500 ml-2">Poste : ${sal.poste || 'Non défini'}</span></h4>
+                                    <h4 class="font-bold text-slate-800 text-base">${sal.nom || 'Sans nom'} ${sstStatutPill(sstGetSalarieStatut(sal))} <span class="text-xs font-normal text-slate-500 ml-2">Poste : ${sal.poste || 'Non défini'}</span></h4>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <button onclick="toggleAccordion('${salDetailsId}')" class="bg-slate-100 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold hover:bg-slate-200">🔍 Formations (${formsCount})</button>
@@ -5522,7 +5580,7 @@
             if(!title || !content) return;
 
             title.textContent=sal.nom || 'Salarié sans nom';
-            subtitle.textContent=`${sal.poste || 'Poste non renseigné'} · ${sal.service || 'Unité non renseignée'}`;
+            subtitle.textContent=`${sstGetSalarieStatut(sal)} · ${sal.poste || 'Poste non renseigné'} · ${sal.service || 'Unité non renseignée'}`;
 
             const catalogue=JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
             const profils=JSON.parse(localStorage.getItem('profils_postes') || '[]');
@@ -5671,11 +5729,13 @@
                 document.getElementById('sal-nom').value = sal.nom || '';
                 document.getElementById('sal-poste').value = sal.poste || '';
                 document.getElementById('sal-service').value = sal.service || '';
+                document.getElementById('sal-statut').value = sstGetSalarieStatut(sal);
                 (sal.formations || []).forEach(f => addFormationRow(f.intitule, f.datePassage));
             } else {
                 document.getElementById('sal-nom').value = '';
                 document.getElementById('sal-poste').value = '';
                 document.getElementById('sal-service').value = '';
+                document.getElementById('sal-statut').value = 'Salarié';
             }
             document.getElementById('salarie-modal').classList.remove('hidden');
         }
@@ -5738,6 +5798,7 @@
             let nom = document.getElementById('sal-nom').value.trim();
             let poste = document.getElementById('sal-poste').value;
             let service = document.getElementById('sal-service').value;
+            const statutPersonnel = sstNormalizeStatut(document.getElementById('sal-statut')?.value);
 
             if(!nom) { alert("Veuillez saisir le nom du salarié."); return; }
             if(!service) { alert("Veuillez sélectionner une unité de travail."); return; }
@@ -5759,12 +5820,12 @@
                 let existing = salaries[editSalarieIndex];
                 salaries[editSalarieIndex] = {
                     ...existing,
-                    nom, poste, service,
+                    nom, poste, service, statutPersonnel,
                     formations: forms
                 };
             } else {
                 salaries.push({
-                    nom, poste, service,
+                    nom, poste, service, statutPersonnel,
                     visite: "",
                     docConduite: false,
                     formations: forms
@@ -5942,6 +6003,7 @@
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <h4 class="font-bold text-slate-800 text-base">${sal.nom || 'Sans nom'}</h4>
+                                            ${sstStatutPill(sstGetSalarieStatut(sal))}
                                             <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">${requiredCount} obligatoire(s)</span>
                                             ${alertCount > 0 ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-semibold">${alertCount} à vérifier</span>` : `<span class="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-semibold">Tout est à jour</span>`}
                                         </div>
@@ -6392,6 +6454,7 @@
             let authNames = authFormations.map(c => c.nom);
             let salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             let profilsPostes = JSON.parse(localStorage.getItem('profils_postes') || '[]');
+            const sstStatutMapAuth = sstBuildStatutMap();
             const container = document.getElementById('hse-autorisations-container');
             if(!container) return;
             container.innerHTML = '';
@@ -6458,7 +6521,7 @@
                         const pid=`${unitId}-person-${pi}`;
                         html+=`<details class="border border-slate-200 rounded-lg overflow-hidden" open>
                             <summary class="cursor-pointer select-none px-3 py-2 bg-white hover:bg-slate-50 flex items-center justify-between gap-3">
-                                <span class="font-semibold text-sm text-slate-800">👤 ${escapeHtml(person.name)}</span>
+                                <span class="font-semibold text-sm text-slate-800">👤 ${escapeHtml(person.name)} ${sstStatutPill(sstStatutMapAuth.get(person.name) || 'Salarié')}</span>
                                 <span class="text-[10px] text-slate-500">${person.items.length} autorisation(s)</span>
                             </summary><div class="p-3 bg-slate-50 space-y-2">`;
                         person.items.forEach(item=>{
@@ -6714,7 +6777,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 tbody.innerHTML += `
                     <tr class="hover:bg-slate-50">
-                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(sal.nom || 'Sans nom')}</td>
+                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(sal.nom || 'Sans nom')} ${sstStatutPill(sstGetSalarieStatut(sal))}</td>
                         <td class="p-3 border-b text-xs text-slate-600">${escapeHtml(sal.service || 'N/C')} - ${escapeHtml(sal.poste || 'N/C')}</td>
                         <td class="p-3 border-b"><span class="px-2 py-1 rounded border text-xs ${badgeClass}">${escapeHtml(badgeText)}</span></td>
                         <td class="p-3 border-b text-center">${sal.docConduite ? '✅ Reçu' : '❌ Non reçu'}</td>
@@ -6849,6 +6912,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('label-modal-title').innerText = sal.nom || 'Sans nom';
             document.getElementById('label-modal-service').innerText = sal.service || 'N/C';
             document.getElementById('label-modal-poste').innerText = sal.poste || 'N/C';
+            const lblStatut = document.getElementById('label-modal-statut'); if(lblStatut) lblStatut.innerText = sstGetSalarieStatut(sal);
             const tbody = document.getElementById('label-modal-table-body'); tbody.innerHTML = '';
             const forms = sal.formations || [];
             if(forms.length === 0) {
@@ -8991,6 +9055,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(sal) {
                 document.getElementById('atr-unite').value = sal.service || '';
                 document.getElementById('atr-poste').value = sal.poste || '';
+                const st = document.getElementById('atr-statut-personnel'); if(st) st.value = sstGetSalarieStatut(sal);
             }
         }
 
@@ -9018,13 +9083,80 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             updateAtRegistreJoursPerdus();
         }
 
+        // --- Prolongations d'arrêt ---
+        function atrDateFr(iso) { return iso ? String(iso).split('-').reverse().join('/') : ''; }
+        function atrNextDay(iso) {
+            if(!iso) return '';
+            const d = new Date(iso + 'T00:00:00'); if(isNaN(d.getTime())) return '';
+            d.setDate(d.getDate() + 1);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        function readAtRegistreProlongations() {
+            return Array.from(document.querySelectorAll('#atr-prolongations-list .atr-prolong-row')).map(r => ({
+                debut: r.querySelector('.atr-p-debut')?.value || '', fin: r.querySelector('.atr-p-fin')?.value || ''
+            }));
+        }
+        function renderAtRegistreProlongations(list, focusIndex = -1) {
+            const box = document.getElementById('atr-prolongations-list'); if(!box) return;
+            box.innerHTML = (list || []).map((p, i) => `
+                <div class="atr-prolong-row flex flex-wrap items-end gap-2 bg-white border border-red-200 rounded-lg p-2.5">
+                    <div class="w-full text-[11px] font-bold text-red-800">Prolongation n°${i + 1}</div>
+                    <div class="flex-1 min-w-[130px]"><label class="block text-[11px] font-semibold text-slate-600 mb-1">Début</label><input type="date" class="atr-p-debut w-full p-2 border rounded text-sm bg-white" value="${escapeHtml(p.debut || '')}" onchange="updateAtRegistreJoursPerdus()"></div>
+                    <div class="flex-1 min-w-[130px]"><label class="block text-[11px] font-semibold text-slate-600 mb-1">Fin</label><input type="date" class="atr-p-fin w-full p-2 border rounded text-sm bg-white" value="${escapeHtml(p.fin || '')}" onchange="updateAtRegistreJoursPerdus()"></div>
+                    <div class="w-24"><label class="block text-[11px] font-semibold text-slate-600 mb-1">Jours perdus</label><input type="number" class="atr-p-jours w-full p-2 border rounded text-sm bg-slate-100" readonly value="0"></div>
+                    <button type="button" onclick="removeAtRegistreProlongation(${i})" class="text-red-500 hover:text-red-700 font-bold px-2 py-2" title="Supprimer cette prolongation">✕</button>
+                </div>`).join('');
+            updateAtRegistreJoursPerdus();
+            if(focusIndex >= 0) box.querySelectorAll('.atr-prolong-row')[focusIndex]?.querySelector('.atr-p-fin')?.focus();
+        }
+        function addAtRegistreProlongation() {
+            const list = readAtRegistreProlongations();
+            const lastEnd = list.length ? list[list.length - 1].fin : (document.getElementById('atr-fin-arret')?.value || '');
+            list.push({ debut: atrNextDay(lastEnd), fin: '' });
+            renderAtRegistreProlongations(list, list.length - 1);
+        }
+        function removeAtRegistreProlongation(i) {
+            const list = readAtRegistreProlongations(); list.splice(i, 1);
+            renderAtRegistreProlongations(list);
+        }
+        // Calcule (et contrôle) l'arrêt initial + les prolongations. Renvoie { error } ou { initial, prolongations, total, finTotal }.
+        function collectAtRegistreArret(classification) {
+            const debut = document.getElementById('atr-debut-arret')?.value || '';
+            const fin = document.getElementById('atr-fin-arret')?.value || '';
+            if(classification !== 'AT avec arrêt') return { initial: 0, prolongations: [], total: 0, finTotal: fin };
+            const initial = calculateAtLostDays(debut, fin);
+            const raw = readAtRegistreProlongations().filter(p => p.debut || p.fin);
+            if(raw.length && (!debut || !fin)) return { error: "Renseignez d'abord le début et la fin de l'arrêt initial avant d'ajouter une prolongation." };
+            if(debut && fin && fin < debut) return { error: "La fin de l'arrêt ne peut pas être antérieure à son début." };
+            let prevEnd = fin; const list = [];
+            for(let i = 0; i < raw.length; i++) {
+                const p = raw[i], n = i + 1;
+                if(!p.debut || !p.fin) return { error: `Prolongation n°${n} : renseignez la date de début et la date de fin.` };
+                if(p.fin < p.debut) return { error: `Prolongation n°${n} : la fin ne peut pas être antérieure au début.` };
+                if(p.debut <= prevEnd) return { error: `Prolongation n°${n} : elle doit commencer après la fin de la période précédente (${atrDateFr(prevEnd)}).` };
+                list.push({ debut: p.debut, fin: p.fin, joursPerdus: calculateAtLostDays(p.debut, p.fin) });
+                prevEnd = p.fin;
+            }
+            return { initial, prolongations: list, total: initial + list.reduce((sum, p) => sum + p.joursPerdus, 0), finTotal: list.length ? list[list.length - 1].fin : fin };
+        }
+
         function updateAtRegistreJoursPerdus() {
             const classification = document.getElementById('atr-classification')?.value || '';
             const start = document.getElementById('atr-debut-arret')?.value || '';
             const end = document.getElementById('atr-fin-arret')?.value || '';
             const out = document.getElementById('atr-jours-perdus');
             if(!out) return;
-            out.value = classification === 'AT avec arrêt' ? calculateAtLostDays(start, end) : 0;
+            const initial = calculateAtLostDays(start, end);
+            let extra = 0; let count = 0;
+            document.querySelectorAll('#atr-prolongations-list .atr-prolong-row').forEach(row => {
+                const d = calculateAtLostDays(row.querySelector('.atr-p-debut')?.value || '', row.querySelector('.atr-p-fin')?.value || '');
+                const o = row.querySelector('.atr-p-jours'); if(o) o.value = d;
+                extra += d; if(d > 0) count++;
+            });
+            const total = classification === 'AT avec arrêt' ? initial + extra : 0;
+            out.value = total;
+            const detail = document.getElementById('atr-jours-detail');
+            if(detail) detail.textContent = (classification === 'AT avec arrêt' && count > 0) ? `Arrêt initial : ${initial} j + ${count} prolongation${count > 1 ? 's' : ''} : ${extra} j = ${total} j` : '';
         }
 
         function openAtRegistreModal(idx = null) {
@@ -9045,6 +9177,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 set('atr-heure', a.heure);
                 set('atr-unite', a.unite);
                 set('atr-poste', a.poste);
+                set('atr-statut-personnel', sstResolveStatut(a.salarie, a.statutPersonnel));
                 set('atr-lieu', a.lieu);
                 set('atr-classification', a.classification || 'AT avec arrêt');
                 set('atr-origine', a.origine);
@@ -9059,6 +9192,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 set('atr-debut-arret', a.debutArret);
                 set('atr-fin-arret', a.finArret);
                 set('atr-jours-perdus', a.joursPerdus || 0);
+                renderAtRegistreProlongations(Array.isArray(a.prolongations) ? a.prolongations : []);
                 set('atr-analyse-requise', a.analyseRequise || '');
             } else {
                 const resetIds = [
@@ -9071,6 +9205,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 set('atr-analyse-requise', '');
                 set('atr-jours-perdus', 0);
                 set('atr-unite', '');
+                set('atr-statut-personnel', 'Salarié');
+                renderAtRegistreProlongations([]);
             }
             updateAtRegistreRef();
             toggleAtRegistreArretFields();
@@ -9099,6 +9235,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         id: `ATA-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
                         sourceAtRef: atObj.ref,
                         salarie: atObj.salarie,
+                        statutPersonnel: sstResolveStatut(atObj.salarie, atObj.statutPersonnel),
                         date: atObj.date,
                         service: atObj.unite,
                         poste: atObj.poste || '',
@@ -9118,6 +9255,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     analyses[linkedIdx] = {
                         ...existing,
                         salarie: atObj.salarie,
+                        statutPersonnel: sstResolveStatut(atObj.salarie, atObj.statutPersonnel),
                         date: atObj.date,
                         service: atObj.unite,
                         poste: atObj.poste || '',
@@ -9172,7 +9310,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const idxVal = get('edit-at-registre-index');
             const isEdit = idxVal !== '';
             const existing = isEdit ? data[parseInt(idxVal, 10)] : null;
-            const joursPerdus = classification === 'AT avec arrêt' ? calculateAtLostDays(get('atr-debut-arret'), get('atr-fin-arret')) : 0;
+            const arret = collectAtRegistreArret(classification);
+            if(arret.error) { alert(arret.error); return; }
+            const joursPerdus = arret.total;
             const obj = {
                 ...(existing || {}),
                 ref: existing?.ref || generateAtCode(date),
@@ -9183,7 +9323,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 salarie, date, heure: get('atr-heure'), unite, poste: get('atr-poste'), lieu: get('atr-lieu'), classification,
                 origine: get('atr-origine'), activite: get('atr-activite'), materiel: get('atr-materiel'), circonstances: get('atr-circonstances'),
                 siege: get('atr-siege'), natureLesion: get('atr-nature-lesion'), lesions: get('atr-lesions'), temoins: get('atr-temoins'), soins: get('atr-soins'),
+                statutPersonnel: sstNormalizeStatut(get('atr-statut-personnel')),
                 debutArret: get('atr-debut-arret'), finArret: get('atr-fin-arret'), joursPerdus,
+                joursInitiaux: arret.initial, prolongations: arret.prolongations, finArretTotal: arret.finTotal,
                 analyseRequise
             };
 
@@ -9286,6 +9428,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 return true;
             });
 
+            const sstStatutMapAt = sstBuildStatutMap();
             const total = filtered.length;
             const avecArret = filtered.filter(a => a.classification === 'AT avec arrêt').length;
             const jours = filtered.reduce((sum, a) => sum + (Number(a.joursPerdus) || 0), 0);
@@ -9299,6 +9442,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const tg = hours > 0 ? (jours / hours) * 1000 : null;
             const setText = (id, val) => { const el = document.getElementById(id); if(el) el.innerText = val; };
             setText('at-kpi-total', total);
+            const nbInterim = filtered.filter(a => sstResolveStatut(a.salarie, a.statutPersonnel, sstStatutMapAt) === 'Intérimaire').length;
+            setText('at-kpi-interim', nbInterim ? `dont ${nbInterim} intérimaire${nbInterim > 1 ? 's' : ''}` : '');
             setText('at-kpi-avec-arret', avecArret);
             setText('at-kpi-sans-arret', sansArret);
             setText('at-kpi-jours', jours);
@@ -9334,14 +9479,16 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     : (a.analyseRequise === 'Non' || a.analyseStatut === 'Non nécessaire'
                         ? '<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-semibold">Non requise</span>'
                         : '<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 font-semibold">À suivre</span>');
+                const proList = Array.isArray(a.prolongations) ? a.prolongations : [];
+                const proDays = proList.reduce((sum, p) => sum + (Number(p.joursPerdus) || 0), 0);
                 const stopBadge = a.classification === 'AT avec arrêt'
-                    ? `<span class="font-bold text-red-700">${Number(a.joursPerdus)||0} j</span>`
+                    ? `<span class="font-bold text-red-700">${Number(a.joursPerdus)||0} j</span>${proList.length ? `<div class="text-[10px] text-slate-500 leading-tight">dont ${proDays} j de prolongation${proList.length > 1 ? 's' : ''} (${proList.length})</div>` : ''}`
                     : '<span class="text-slate-500">0 j</span>';
                 const row = `
                     <tr class="hover:bg-slate-50 align-top">
                         <td class="p-3 border-b font-bold text-blue-700 whitespace-nowrap">${escapeHtml(a.ref || '')}</td>
                         <td class="p-3 border-b whitespace-nowrap">${escapeHtml(a.date || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.heure || '')}</div></td>
-                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(a.salarie || 'N/C')}</td>
+                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(a.salarie || 'N/C')}<div class="mt-0.5">${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel, sstStatutMapAt))}</div></td>
                         <td class="p-3 border-b"><div class="font-semibold">${escapeHtml(a.unite || 'N/C')}</div><div class="text-[11px] text-slate-500">${escapeHtml(a.poste || '')}</div></td>
                         <td class="p-3 border-b">${escapeHtml(a.lieu || 'N/C')}</td>
                         <td class="p-3 border-b"><span class="px-2 py-0.5 rounded border bg-slate-50 font-semibold">${escapeHtml(a.classification || 'N/C')}</span></td>
@@ -9695,6 +9842,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 date:document.getElementById('at-date').value,
                 service:document.getElementById('at-service').value,
                 poste:existing.poste || '',
+                statutPersonnel:sstNormalizeStatut(document.getElementById('at-statut-personnel')?.value),
                 gravite:document.getElementById('at-gravite').value,
                 lesions:document.getElementById('at-lesions').value.trim(),
                 circonstances:document.getElementById('at-deroule-faits').value.trim(),
@@ -9732,7 +9880,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const atRowKey = String(a?._cloudId || a?.id || a?.reference || a?.sourceAtRef || idx);
                 const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]').filter(x=>x?.origine==='AT' && (String(x?.atAnalysisId||'')===String(a?.id||'') || String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'') || String(x?.atAnalysisReference||'')===String(atReference||'')));
                 const actionHtml=papActions.length ? `<details class="mt-2 text-left"><summary class="cursor-pointer text-[11px] font-bold text-indigo-700 hover:text-indigo-900">📋 ${papActions.length} action${papActions.length>1?'s':''} PAPRIPACT</summary><div class="mt-2 space-y-1.5">${papActions.map(ac=>{const stable=JSON.stringify(String(ac._cloudId||ac.id||ac.numero||''));const st=ac.statut||'À traiter';const scls=st==='Clôturée'?'bg-green-50 text-green-700 border-green-200':st==='En cours'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200';return `<button type="button" onclick='scrollToPapripactAction(${stable})' class="w-full text-left border rounded-lg bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 px-2.5 py-2 transition"><div class="font-semibold text-xs text-slate-700">N° ${escapeHtml(ac.numero||'?')} — ${escapeHtml(ac.action||'Action')}</div><div class="flex justify-between gap-2 mt-1"><span class="text-[10px] text-slate-500">${escapeHtml(ac.responsable||'À définir')} · ${escapeHtml(ac.delai||'N/C')}</span><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${scls}">${escapeHtml(st)}</span></div></button>`;}).join('')}</div></details>` : `<div class="mt-2 text-[10px] text-slate-400 italic">Aucune action PAPRIPACT liée.</div>`;
-                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span><div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
+                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
             });
 
             if(isCloudAtTenant() && !skipCloud) {
@@ -9766,6 +9914,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             editAtIndex=sourceIdx; document.getElementById('edit-at-index').value=sourceIdx===null?'':sourceIdx;
             fillAtUniteSelect(existing?.service||'');
             document.getElementById('at-salarie').value=existing?.salarie||''; document.getElementById('at-date').value=existing?.date||new Date().toISOString().split('T')[0]; document.getElementById('at-gravite').value=existing?.gravite||'Sans arrêt'; document.getElementById('at-lesions').value=existing?.lesions||''; document.getElementById('at-deroule-faits').value=existing?.deriveFaits||existing?.circonstances||''; document.getElementById('at-date-analyse').value=existing?.dateAnalyse||new Date().toISOString().split('T')[0]; document.getElementById('at-personnes-presentes').value=existing?.personnesPresentes||''; document.getElementById('at-conclusion').value=existing?.conclusion||''; document.getElementById('at-analyse-statut').value=existing?.statut||'À réaliser'; document.getElementById('at-source-at-ref').value=existing?.sourceAtRef||''; document.getElementById('at-analysis-ref-badge').innerText=existing?.reference?`Analyse : ${existing.reference}${existing.sourceAtRef?` · AT : ${existing.sourceAtRef}`:''}`:(existing?.sourceAtRef?`Réf. AT : ${existing.sourceAtRef}`:'');
+            { const stSel=document.getElementById('at-statut-personnel'); if(stSel) stSel.value=sstResolveStatut(existing?.salarie||'', existing?.statutPersonnel||''); }
             setAtTreeNodes(existing?.arbreNoeuds||getDefaultAtTree());
             const list=document.getElementById('at-analysis-actions-list'); if(list){ list.innerHTML=''; (existing?.actionsPapripact||[]).forEach(a=>addAtAnalysisActionRow(a)); }
             document.getElementById('at-modal').classList.remove('hidden');
@@ -9880,6 +10029,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let y=34;
                 y=wrapped('Référence AT :',a.sourceAtRef||'Analyse libre',y);
                 y=wrapped('Salarié :',a.salarie,y);
+                y=wrapped('Statut :',sstResolveStatut(a.salarie,a.statutPersonnel),y);
                 y=wrapped('Date accident :',a.date,y);
                 y=wrapped('Unité / Poste :',`${a.service||'N/C'}${a.poste?' / '+a.poste:''}`,y);
                 y=wrapped('Date analyse :',a.dateAnalyse,y);
@@ -11959,6 +12109,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
+            // La fiche formations liée à un QR code (étiquette casque, #fiche=...) doit toujours
+            // s'afficher sans connexion, qu'on soit en mode local ou en mode commercial Firebase.
+            if(renderStandaloneFicheIfPresent()) return;
             if(typeof window.sstV242InstallCloudApi==='function') window.sstV242InstallCloudApi();
             if(window.SST_COMMERCIAL_REQUESTED && !window.SSTCloud) {
                 setAppLocked(true);
@@ -11968,10 +12121,24 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 showAuthGate(true);
                 return;
             }
-            if(!window.SSTCloud?.isCommercial?.() && renderStandaloneFicheIfPresent()) return;
             if(window.SSTCloud?.isCommercial?.()) {
                 showAuthLoading(true);
-                const signedIn = await window.SSTCloud.ready();
+                // Sécurité : si Firebase ne répond jamais (réseau, blocage navigateur après un
+                // avertissement de sécurité, etc.), on ne laisse plus l'écran tourner indéfiniment.
+                let signedIn;
+                try {
+                    signedIn = await Promise.race([
+                        window.SSTCloud.ready(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+                    ]);
+                } catch(err) {
+                    showAuthLoading(false);
+                    setAppLocked(true);
+                    const box=document.getElementById('sst-login-error');
+                    if(box){box.textContent="La connexion à Firebase n'a pas abouti (réseau instable, ou le navigateur a bloqué une ressource après un avertissement de sécurité). Rechargez la page, ou réessayez avec une autre connexion internet.";box.className='rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3';}
+                    showAuthGate(true);
+                    return;
+                }
                 if(!signedIn) return;
                 if(window.SST_APP_CONTEXT?.companyId && window.SST_APP_CONTEXT?.role!=='local-dev') {
                     sstV242ScopeLocalStorage(window.SST_APP_CONTEXT.companyId);
