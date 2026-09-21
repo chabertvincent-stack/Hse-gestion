@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.74</title>
+    <title>Application SST & RH - Gestion V2.75</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.74</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.75</div>
         </aside>
 
         <!-- Main Content -->
@@ -1712,6 +1712,7 @@
                 <div id="public-report-qr-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div class="bg-white rounded-xl p-6 max-w-sm w-full text-center">
                         <h3 class="text-lg font-bold text-slate-800 mb-1">📥 Affiche remontée terrain</h3>
+                        <div id="public-report-qr-site" class="text-sm font-extrabold text-indigo-700 mb-1">Site : —</div>
                         <p class="text-xs text-slate-500 mb-4">À imprimer et afficher en atelier, à l'accueil, sur un panneau HSE...</p>
                         <div id="public-report-qrcode" class="mx-auto w-[194px] h-[194px] flex items-center justify-center bg-white"></div>
                         <p id="public-report-qr-status" class="text-[11px] text-slate-500 mt-3"></p>
@@ -3181,7 +3182,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.73';
+        const SST_APP_VERSION = '2.75';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -6872,15 +6873,71 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         }
 
+        function buildPublicReportQrPayload() {
+            const ctx = window.SST_APP_CONTEXT || {};
+            const companyId = String(ctx.companyId || window.SST_ADMIN_SELECTED_COMPANY?.id || '').trim();
+            if (!companyId) return null;
+
+            let units = [];
+            try {
+                const raw = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+                units = [...new Set((Array.isArray(raw) ? raw : [])
+                    .map(u => String(u?.nom || '').trim())
+                    .filter(Boolean))].slice(0, 150);
+            } catch (e) {
+                units = [];
+            }
+
+            const branding = typeof getSstDocumentBranding === 'function' ? getSstDocumentBranding() : {};
+            return {
+                v: 2,
+                c: companyId,
+                n: String(branding?.companyName || ctx.companyName || ctx.company?.name || 'Entreprise').trim(),
+                s: String(branding?.establishment || '').trim(),
+                u: units
+            };
+        }
+
+        function parsePublicReportQrPayload() {
+            const hash = window.location.hash || '';
+            if (!hash.startsWith('#report=')) return null;
+            const raw = decodeURIComponent(hash.slice('#report='.length));
+            if (!raw) return null;
+
+            // Compatibilité avec les anciens QR : #report=<companyId>
+            if (!raw.startsWith('v2.')) return { c: raw, n: '', s: '', u: [] };
+
+            try {
+                const data = decodeFicheDataFromBase64Url(raw.slice(3));
+                if (!data?.c) return null;
+                return {
+                    v: 2,
+                    c: String(data.c),
+                    n: String(data.n || ''),
+                    s: String(data.s || ''),
+                    u: Array.isArray(data.u) ? [...new Set(data.u.map(x => String(x || '').trim()).filter(Boolean))].slice(0, 150) : []
+                };
+            } catch (err) {
+                console.error('QR remontée terrain illisible', err);
+                return null;
+            }
+        }
+
         function generatePublicReportQr() {
-            const ctx = window.SST_APP_CONTEXT;
-            if (!ctx?.companyId) { alert("Cette fonction nécessite un espace entreprise en ligne (Firebase)."); return; }
+            const payload = buildPublicReportQrPayload();
+            if (!payload) { alert("Cette fonction nécessite un espace entreprise en ligne (Firebase). Sélectionnez d'abord l'entreprise concernée si vous êtes administrateur plateforme."); return; }
+
+            const encoded = encodeFicheDataToBase64Url(payload);
             const base = window.location.origin + window.location.pathname;
-            const url = base + '#report=' + encodeURIComponent(ctx.companyId);
+            const url = base + '#report=v2.' + encoded;
             const container = document.getElementById('public-report-qrcode');
             const status = document.getElementById('public-report-qr-status');
+            const siteEl = document.getElementById('public-report-qr-site');
+            const siteLabel = payload.s || payload.n || 'Site non renseigné';
             if (!container) return;
             container.innerHTML = '';
+            if (siteEl) siteEl.textContent = `Site : ${siteLabel}`;
+
             try {
                 if (typeof QRCode === 'function') { new QRCode(container, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.L }); }
                 else { throw new Error('QRCode.js indisponible'); }
@@ -6890,7 +6947,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 img.src = 'https://quickchart.io/qr?size=180&ecLevel=L&text=' + encodeURIComponent(url);
                 container.appendChild(img);
             }
-            if (status) status.innerText = url.startsWith('file:') ? "⚠️ Ouvrez l'application via son lien en ligne pour générer un QR scannable." : "Scannez pour proposer une amélioration ou signaler une urgence, sans connexion.";
+            if (status) status.innerText = url.startsWith('file:')
+                ? "⚠️ Ouvrez l'application via son lien en ligne pour générer un QR scannable."
+                : `Scannez pour proposer une amélioration ou signaler une urgence, sans connexion. ${payload.u.length ? `${payload.u.length} unité(s) seront proposées dans le formulaire.` : 'Aucune unité de travail n\'est actuellement configurée.'}`;
             document.getElementById('public-report-qr-modal')?.classList.remove('hidden');
         }
         function closePublicReportQrModal() { document.getElementById('public-report-qr-modal')?.classList.add('hidden'); }
@@ -6953,9 +7012,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 // un rendu complet pour éviter d'afficher "4" avec une liste en erreur.
                 const html = items.length ? items.map(it => `
                     <div class="border rounded-lg p-3 ${it.type === 'SU' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}">
-                        <div class="flex items-center justify-between gap-2">
+                        <div class="flex flex-wrap items-start justify-between gap-2">
                             <span class="text-[11px] font-bold ${it.type === 'SU' ? 'text-amber-700' : 'text-blue-700'}">${it.type === 'SU' ? "🚨 Situation d'urgence" : '🛠️ Amélioration'}</span>
-                            <span class="text-[10px] text-slate-400">${escapeHtml(it.redacteur || '')}${it.unite ? ' · ' + escapeHtml(it.unite) : ''}</span>
+                            <div class="text-right">
+                                <div class="text-[11px] font-extrabold text-slate-800">👤 Déclaré par : ${escapeHtml(it.redacteur || 'Nom non renseigné')}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">🏭 Unité : ${escapeHtml(it.unite || 'Non renseignée')}</div>
+                            </div>
                         </div>
                         <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap"><strong>Faits :</strong> ${escapeHtml(it.faits || '')}</p>
                         <p class="text-xs text-slate-700 mt-1 whitespace-pre-wrap"><strong>Axes d'amélioration :</strong> ${escapeHtml(it.axes || '')}</p>
@@ -6982,29 +7044,112 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const api = window.SSTFirebaseApi;
             const db = api?.getDb?.();
             if (!ctx || !api || !db) return;
-            const targetCompanyId = String(ctx.role === 'platformAdmin' ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '') : (ctx.companyId || ''));
+
+            const targetCompanyId = String(
+                ctx.role === 'platformAdmin'
+                    ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '')
+                    : (ctx.companyId || '')
+            );
             if (!targetCompanyId) { alert('Sélectionnez d’abord l’entreprise concernée.'); return; }
+
             try {
                 const ref = api.doc(db, 'companies', targetCompanyId, 'pending_reports', reportId);
                 const snap = await api.getDoc(ref);
-                if (!snap.exists()) { alert('Cette demande a déjà été traitée.'); await loadPendingReports(targetCompanyId); return; }
-                const data = snap.data();
+                if (!snap.exists()) {
+                    alert('Cette demande a déjà été traitée.');
+                    await loadPendingReports(targetCompanyId);
+                    return;
+                }
+
+                const data = snap.data() || {};
+                const type = data.type === 'SU' ? 'SU' : 'FA';
                 const today = new Date().toISOString().split('T')[0];
-                const key = data.type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
-                const prefix = `${(new Date(today)).getFullYear()}-${data.type === 'SU' ? 'SU' : 'FA'}-`;
-                const list = JSON.parse(localStorage.getItem(key) || '[]');
-                let maxNum = 0;
-                list.forEach(f => { if (f.code && f.code.startsWith(prefix)) { const n = parseInt(f.code.replace(prefix, ''), 10); if (!isNaN(n) && n > maxNum) maxNum = n; } });
-                const code = `${prefix}${String(maxNum + 1).padStart(2, '0')}`;
-                list.push({ code, redacteur: data.redacteur || '', date: today, unite: data.unite || '', secteur: '', faits: data.faits || '', axes: data.axes || '' });
-                localStorage.setItem(key, JSON.stringify(list));
-                if (data.type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
-                if (data.type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
-                try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys(key); } catch (e) { console.warn(e); }
+                const key = type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
+                const code = type === 'SU' ? generateSuCode(today) : generateFaCode(today);
+                const redacteur = String(data.redacteur || '').trim();
+                const unite = String(data.unite || '').trim();
+                const faits = String(data.faits || '').trim();
+                const axes = String(data.axes || '').trim();
+
+                if (!redacteur || !faits || !axes) {
+                    throw new Error('La demande est incomplète : rédacteur, faits et axes d’amélioration sont obligatoires.');
+                }
+
+                const fiches = JSON.parse(localStorage.getItem(key) || '[]');
+                const fiche = type === 'FA'
+                    ? {
+                        code, redacteur, date: today, unite: '', secteur: unite,
+                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId
+                    }
+                    : {
+                        code, redacteur, date: today, unite, secteur: '',
+                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId
+                    };
+                fiches.push(fiche);
+                localStorage.setItem(key, JSON.stringify(fiches));
+
+                // Même logique que les créations normales : chaque FA/SU validée possède
+                // son action PAPRIPACT issue des Axes d'amélioration.
+                let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+                let actionIndex = findPapripactActionForSource(actions, type, code);
+                let generatedAction = actionIndex >= 0 ? actions[actionIndex] : null;
+
+                if (actionIndex === -1) {
+                    const action = {
+                        origine: type,
+                        sourceType: type,
+                        sourceReference: code,
+                        ...(type === 'FA' ? { faCode: code } : { suCode: code }),
+                        unite: unite || '',
+                        action: axes,
+                        type: 'Technique',
+                        priorite: '',
+                        statut: 'À traiter',
+                        responsable: '',
+                        dateCreation: today,
+                        delai: '',
+                        dateCloture: '',
+                        cout: '',
+                        commentaires: `${type === 'FA' ? "Action générée automatiquement depuis la Fiche d'Amélioration" : "Action générée automatiquement depuis la fiche Presqu'accident / Situation d'Urgence"} ${code} (Rédacteur : ${redacteur}, remontée via QR)`
+                    };
+                    actions.push(action);
+                    const normalizedPap = ensurePapripactActionNumbersInArray(actions);
+                    actions = normalizedPap.actions;
+                    localStorage.setItem('papripact_next_action_num', String(normalizedPap.nextGlobal));
+                    generatedAction = actions[actions.length - 1];
+                    if (isCloudPapripactTenant()) {
+                        generatedAction._cloudId = generatedAction._cloudId || `PAP-${generatedAction.numero}`;
+                    }
+                } else {
+                    // Compatibilité : une action existante est conservée sans création de doublon.
+                    const normalizedPap = ensurePapripactActionNumbersInArray(actions);
+                    actions = normalizedPap.actions;
+                    localStorage.setItem('papripact_next_action_num', String(normalizedPap.nextGlobal));
+                    generatedAction = actions[actionIndex] || generatedAction;
+                }
+                localStorage.setItem('papripact_actions', JSON.stringify(actions));
+
+                // Rafraîchissement local immédiat.
+                if (type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
+                if (type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
+                if (typeof loadPapripactLocalOnly === 'function') loadPapripactLocalOnly();
+                if (typeof loadDashboard === 'function') loadDashboard();
+
+                // Synchronisation cloud des deux modules : la fiche + son action PAPRIPACT.
+                try {
+                    if (window.SSTCloud?.isCloudTenant?.()) {
+                        await sstV247CommitKeys(key, 'papripact_actions', 'papripact_next_action_num');
+                    }
+                } catch (syncErr) {
+                    console.warn('Synchronisation cloud FA/SU + PAPRIPACT après validation QR impossible :', syncErr);
+                }
+
+                // Suppression uniquement après création locale/synchronisation.
                 await api.deleteDoc(ref);
                 await loadPendingReports(targetCompanyId);
-                alert(`Ajouté à ${data.type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}.`);
+                alert(`Demande ${type} validée : ${code} a été intégrée dans ${type === 'FA' ? "les Fiches d'Amélioration" : "les Situations d'Urgence"} et une action PAPRIPACT a été créée.`);
             } catch (err) {
+                console.error('Validation demande QR impossible :', err);
                 alert("Validation impossible : " + (err?.message || 'erreur inconnue'));
             }
         }
@@ -7140,18 +7285,27 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         // (voir companies/{companyId}/pending_reports dans firestore.rules). Rien n'est ajouté
         // au PAPRIPACT depuis cette page : la validation reste une action volontaire d'un admin.
         function renderPublicReportFormIfPresent() {
-            const hash = window.location.hash || '';
-            if (!hash.startsWith('#report=')) return false;
-            const companyId = decodeURIComponent(hash.slice('#report='.length));
-            if (!companyId) return false;
+            const payload = parsePublicReportQrPayload();
+            if (!payload?.c) return false;
 
-            document.title = 'Signaler une amélioration ou une urgence';
+            const companyId = String(payload.c);
+            const siteName = String(payload.s || payload.n || 'Site non renseigné').trim();
+            const units = Array.isArray(payload.u) ? payload.u : [];
+            const escapePublic = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({
+                '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+            }[ch]));
+            const unitOptions = units.length
+                ? `<option value="">Sélectionner l'unité de travail</option>${units.map(u => `<option value="${escapePublic(u)}">${escapePublic(u)}</option>`).join('')}`
+                : `<option value="">Aucune unité configurée</option>`;
+
+            document.title = `Remontée terrain — ${siteName}`;
             document.body.innerHTML = `
                 <div style="font-family:Arial,Helvetica,sans-serif;background:#f1f5f9;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;">
                     <div style="max-width:520px;margin:0 auto;background:#fff;border:2px solid #0f172a;border-radius:14px;overflow:hidden;">
                         <div style="background:#0f172a;color:#fff;padding:18px;text-align:center;">
                             <div style="font-size:19px;font-weight:800;">🛡️ Remontée terrain</div>
-                            <div style="font-size:12px;color:#93c5fd;margin-top:4px;">Sans connexion — transmis à votre encadrement HSE</div>
+                            <div style="font-size:13px;font-weight:800;color:#fff;margin-top:8px;">${escapePublic(siteName)}</div>
+                            <div style="font-size:11px;color:#93c5fd;margin-top:3px;">Signalement sans connexion — transmis à l'encadrement HSE</div>
                         </div>
                         <div id="pr-step-choice" style="padding:22px 18px;">
                             <p style="font-size:13px;color:#475569;margin:0 0 16px;">Que souhaitez-vous signaler ?</p>
@@ -7165,20 +7319,21 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <form id="pr-step-form" style="display:none;padding:0 18px 22px;">
                             <p id="pr-type-label" style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 14px;"></p>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Votre nom *</label>
-                            <input id="pr-redacteur" required style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
-                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité / zone concernée</label>
-                            <input id="pr-unite" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
+                            <input id="pr-redacteur" required maxlength="120" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité de travail concernée *</label>
+                            <select id="pr-unite" required ${units.length ? '' : 'disabled'} style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;background:#fff;">${unitOptions}</select>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Les faits *</label>
-                            <textarea id="pr-faits" required rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;"></textarea>
+                            <textarea id="pr-faits" required maxlength="4000" rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;"></textarea>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Axes d'amélioration *</label>
-                            <textarea id="pr-axes" required rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;font-size:14px;"></textarea>
+                            <textarea id="pr-axes" required maxlength="4000" rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;font-size:14px;"></textarea>
+                            ${units.length ? '' : '<div style="font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px;margin:-4px 0 12px;">Aucune unité de travail n\'est disponible dans l\'affiche QR. Générez une nouvelle affiche après avoir configuré les unités.</div>'}
                             <button type="submit" style="width:100%;padding:13px;border:0;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Envoyer</button>
                             <button type="button" id="pr-btn-back" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;">← Retour</button>
                         </form>
                         <div id="pr-step-done" style="display:none;padding:32px 18px;text-align:center;">
                             <div style="font-size:36px;">✅</div>
                             <p style="font-size:14px;color:#0f172a;font-weight:700;margin:10px 0 4px;">Merci, c'est transmis.</p>
-                            <p style="font-size:12px;color:#64748b;">Votre signalement a bien été envoyé à l'équipe HSE.</p>
+                            <p style="font-size:12px;color:#64748b;">Votre signalement a bien été envoyé à l'équipe HSE du site <strong>${escapePublic(siteName)}</strong>.</p>
                         </div>
                         <div id="pr-step-error" style="display:none;padding:24px 18px;text-align:center;color:#b91c1c;font-size:13px;"></div>
                     </div>
@@ -7204,13 +7359,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const unite = document.getElementById('pr-unite').value.trim();
                 const faits = document.getElementById('pr-faits').value.trim();
                 const axes = document.getElementById('pr-axes').value.trim();
-                if (!redacteur || !faits || !axes) return;
+                if (!redacteur || !unite || !faits || !axes) {
+                    alert('Veuillez renseigner votre nom, l’unité de travail, les faits et les axes d’amélioration.');
+                    return;
+                }
                 const btn = e.target.querySelector('button[type="submit"]');
                 btn.disabled = true; btn.textContent = 'Envoi...';
                 try {
-                    // Le formulaire QR s'exécute hors authentification et dans un script classique.
-                    // Les imports Firebase résident dans le module ES : on passe donc systématiquement
-                    // par le bridge public window.SSTFirebaseApi.
                     let waited = 0;
                     while ((!window.SSTFirebaseApi?.getDb || !window.SSTFirebaseApi?.doc) && waited < 5000) {
                         await new Promise(r => setTimeout(r, 200));
@@ -7232,10 +7387,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     document.getElementById('pr-step-done').style.display = 'block';
                 } catch (err) {
                     console.error('Envoi remontée terrain impossible :', err);
-                    document.getElementById('pr-step-form').style.display = 'none';
+                    btn.disabled = false; btn.textContent = 'Envoyer';
                     const errBox = document.getElementById('pr-step-error');
+                    document.getElementById('pr-step-form').style.display = 'none';
                     errBox.style.display = 'block';
-                    errBox.textContent = "L'envoi a échoué (connexion internet ?). Réessayez, ou signalez-le directement à votre encadrement.";
+                    errBox.textContent = "L'envoi a échoué. Vérifiez la connexion internet puis réessayez.";
                 }
             });
             return true;
