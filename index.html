@@ -1702,7 +1702,7 @@
                                 <p class="text-xs text-slate-500 mb-4">Générez une affiche/QR à poser en atelier ou à l'accueil : n'importe qui peut proposer une Fiche d'Amélioration ou signaler une Situation d'Urgence sans se connecter. Chaque envoi arrive ici en attente — rien n'est ajouté au PAPRIPACT tant que vous n'avez pas validé la demande.</p>
                                 <button onclick="generatePublicReportQr()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">📱 Générer l'affiche QR</button>
                                 <div class="mt-5 pt-4 border-t">
-                                    <div class="flex items-center justify-between gap-2 mb-3"><h5 class="font-bold text-slate-800 text-sm">Demandes en attente <span id="sst-pending-reports-count" class="text-xs font-normal text-slate-400"></span></h5><button onclick="loadPendingReports()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div>
+                                    <div class="flex items-center justify-between gap-2 mb-3"><h5 class="font-bold text-slate-800 text-sm">Demandes en attente <span id="sst-pending-reports-count" class="text-xs font-normal text-slate-400"></span></h5><button type="button" onclick="window.loadPendingReports()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div>
                                     <div id="sst-pending-reports-list" class="space-y-2"></div>
                                 </div>
                             </div>
@@ -6896,16 +6896,34 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function closePublicReportQrModal() { document.getElementById('public-report-qr-modal')?.classList.add('hidden'); }
 
         async function loadPendingReports(companyIdOverride = '') {
-            const ctx = window.SST_APP_CONTEXT;
             const list = document.getElementById('sst-pending-reports-list');
             const countEl = document.getElementById('sst-pending-reports-count');
+            if (!list) return;
+
+            // Cette fonction est dans un script classique : les fonctions du module Firebase
+            // et les utilitaires du module ne sont pas visibles directement ici.
+            // On attend le contexte et le bridge public avant de lancer la lecture.
+            let waited = 0;
+            while ((!window.SST_APP_CONTEXT || !window.SSTFirebaseApi?.getDb?.()) && waited < 8000) {
+                await new Promise(r => setTimeout(r, 200));
+                waited += 200;
+            }
+
+            const ctx = window.SST_APP_CONTEXT;
             const api = window.SSTFirebaseApi;
             const db = api?.getDb?.();
-            if (!ctx || !api || !db || !list) return;
+
+            if (!ctx || !api || !db) {
+                if (countEl) countEl.textContent = '';
+                list.innerHTML = '<div class="text-xs text-red-600 p-3 border rounded-lg"><strong>Impossible de charger les demandes.</strong><div class="mt-1 text-[10px] text-slate-500">La connexion Firebase n’est pas prête pour ce compte.</div></div>';
+                return;
+            }
 
             const targetCompanyId = String(
-                companyIdOverride
-                || (ctx.role === 'platformAdmin' ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '') : (ctx.companyId || ''))
+                companyIdOverride ||
+                (ctx.role === 'platformAdmin'
+                    ? (window.SST_ADMIN_SELECTED_COMPANY?.id || '')
+                    : (ctx.companyId || ''))
             );
 
             if (!targetCompanyId) {
@@ -6914,35 +6932,51 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 return;
             }
 
+            if (countEl) countEl.textContent = '(chargement…)';
+            list.innerHTML = '<div class="text-xs text-slate-500 p-3 border rounded-lg">Chargement des demandes…</div>';
+
+            // Utilitaire local : escSstAdmin appartient au script type="module" et
+            // provoquerait une ReferenceError dans ce script classique.
+            const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({
+                '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;'
+            }[ch]));
+
             try {
-                const snaps = await api.getDocs(api.collection(db, 'companies', targetCompanyId, 'pending_reports'));
+                const snaps = await api.getDocs(
+                    api.collection(db, 'companies', targetCompanyId, 'pending_reports')
+                );
                 const items = snaps.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-                if (countEl) countEl.textContent = items.length ? `(${items.length})` : '';
-                list.innerHTML = items.length ? items.map(it => `
+                // On construit d'abord tout le HTML. Le compteur n'est validé qu'après
+                // un rendu complet pour éviter d'afficher "4" avec une liste en erreur.
+                const html = items.length ? items.map(it => `
                     <div class="border rounded-lg p-3 ${it.type === 'SU' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}">
                         <div class="flex items-center justify-between gap-2">
                             <span class="text-[11px] font-bold ${it.type === 'SU' ? 'text-amber-700' : 'text-blue-700'}">${it.type === 'SU' ? "🚨 Situation d'urgence" : '🛠️ Amélioration'}</span>
-                            <span class="text-[10px] text-slate-400">${escSstAdmin(it.redacteur || '')}${it.unite ? ' · ' + escSstAdmin(it.unite) : ''}</span>
+                            <span class="text-[10px] text-slate-400">${escapeHtml(it.redacteur || '')}${it.unite ? ' · ' + escapeHtml(it.unite) : ''}</span>
                         </div>
-                        <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap"><strong>Faits :</strong> ${escSstAdmin(it.faits || '')}</p>
-                        <p class="text-xs text-slate-700 mt-1 whitespace-pre-wrap"><strong>Axes d'amélioration :</strong> ${escSstAdmin(it.axes || '')}</p>
+                        <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap"><strong>Faits :</strong> ${escapeHtml(it.faits || '')}</p>
+                        <p class="text-xs text-slate-700 mt-1 whitespace-pre-wrap"><strong>Axes d'amélioration :</strong> ${escapeHtml(it.axes || '')}</p>
                         <div class="flex gap-2 mt-3">
-                            <button onclick="validatePendingReport('${it.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-semibold">✅ Valider</button>
-                            <button onclick="rejectPendingReport('${it.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">❌ Rejeter</button>
+                            <button type="button" onclick="window.validatePendingReport('${escapeHtml(it.id)}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-semibold">✅ Valider</button>
+                            <button type="button" onclick="window.rejectPendingReport('${escapeHtml(it.id)}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">❌ Rejeter</button>
                         </div>
                     </div>`).join('') : '<div class="text-xs text-slate-500 p-3 border rounded-lg">Aucune demande en attente.</div>';
+
+                list.innerHTML = html;
+                if (countEl) countEl.textContent = `(${items.length})`;
             } catch (err) {
                 console.error('Chargement des demandes terrain impossible :', err);
                 if (countEl) countEl.textContent = '';
                 const code = String(err?.code || 'erreur-inconnue');
                 const message = String(err?.message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                if (list) list.innerHTML = `<div class="text-xs text-red-600 p-3 border rounded-lg"><strong>Impossible de charger les demandes.</strong><div class="mt-1 text-[11px] text-red-500">${code}${targetCompanyId ? ' · entreprise : ' + escSstAdmin(targetCompanyId) : ''}</div>${message ? `<div class="mt-1 text-[10px] text-slate-500 break-words">${message}</div>` : ''}</div>`;
+                list.innerHTML = `<div class="text-xs text-red-600 p-3 border rounded-lg"><strong>Impossible de charger les demandes.</strong><div class="mt-1 text-[11px] text-red-500">${code} · entreprise : ${escapeHtml(targetCompanyId)}</div>${message ? `<div class="mt-1 text-[10px] text-slate-500 break-words">${message}</div>` : ''}</div>`;
             }
         }
 
+        window.loadPendingReports = loadPendingReports;
         async function validatePendingReport(reportId) {
             const ctx = window.SST_APP_CONTEXT;
             const api = window.SSTFirebaseApi;
@@ -6988,6 +7022,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 await loadPendingReports(targetCompanyId);
             } catch (err) { alert("Suppression impossible : " + (err?.message || 'erreur inconnue')); }
         }
+
+        window.validatePendingReport = validatePendingReport;
+        window.rejectPendingReport = rejectPendingReport;
 
         function decodeFicheDataFromBase64Url(b64url) {
             let b64 = String(b64url || '').replace(/-/g, '+').replace(/_/g, '/');
