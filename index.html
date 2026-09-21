@@ -1696,8 +1696,31 @@
                                     <div id="sst-company-users-list" class="space-y-2"></div>
                                 </div>
                             </div>
+
+                            <div class="border rounded-xl p-5 bg-white">
+                                <h4 class="font-bold text-slate-800 mb-2">📥 Remontées terrain sans connexion (FA / SU)</h4>
+                                <p class="text-xs text-slate-500 mb-4">Générez une affiche/QR à poser en atelier ou à l'accueil : n'importe qui peut proposer une Fiche d'Amélioration ou signaler une Situation d'Urgence sans se connecter. Chaque envoi arrive ici en attente — rien n'est ajouté au PAPRIPACT tant que vous n'avez pas validé la demande.</p>
+                                <button onclick="generatePublicReportQr()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">📱 Générer l'affiche QR</button>
+                                <div class="mt-5 pt-4 border-t">
+                                    <div class="flex items-center justify-between gap-2 mb-3"><h5 class="font-bold text-slate-800 text-sm">Demandes en attente <span id="sst-pending-reports-count" class="text-xs font-normal text-slate-400"></span></h5><button onclick="loadPendingReports()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div>
+                                    <div id="sst-pending-reports-list" class="space-y-2"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                <div id="public-report-qr-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl p-6 max-w-sm w-full text-center">
+                        <h3 class="text-lg font-bold text-slate-800 mb-1">📥 Affiche remontée terrain</h3>
+                        <p class="text-xs text-slate-500 mb-4">À imprimer et afficher en atelier, à l'accueil, sur un panneau HSE...</p>
+                        <div id="public-report-qrcode" class="mx-auto w-[194px] h-[194px] flex items-center justify-center bg-white"></div>
+                        <p id="public-report-qr-status" class="text-[11px] text-slate-500 mt-3"></p>
+                        <div class="flex justify-center gap-2 mt-4">
+                            <button onclick="window.print()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-blue-700">🖨️ Imprimer</button>
+                            <button onclick="closePublicReportQrModal()" class="bg-gray-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold hover:bg-gray-300">Fermer</button>
+                        </div>
+                    </div>
+                </div>
                 </div>
 
                 <!-- MODAL CONFIGURATION DU DASHBOARD -->
@@ -2712,6 +2735,7 @@
                 }catch(err){console.error(err);}            } else if(ctx.role==='companyAdmin'){
                 renderSstModuleChecks('sst-company-modules-editor', ctx.company?.modules||ctx.modules||{});
                 await loadSstCompanyUsers();
+                loadPendingReports();
             }
         };
 
@@ -6841,6 +6865,94 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         }
 
+        function generatePublicReportQr() {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx?.companyId) { alert("Cette fonction nécessite un espace entreprise en ligne (Firebase)."); return; }
+            const base = window.location.origin + window.location.pathname;
+            const url = base + '#report=' + encodeURIComponent(ctx.companyId);
+            const container = document.getElementById('public-report-qrcode');
+            const status = document.getElementById('public-report-qr-status');
+            if (!container) return;
+            container.innerHTML = '';
+            try {
+                if (typeof QRCode === 'function') { new QRCode(container, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.L }); }
+                else { throw new Error('QRCode.js indisponible'); }
+            } catch (err) {
+                const img = document.createElement('img');
+                img.className = 'qr-fallback'; img.alt = 'QR remontée terrain'; img.width = 180; img.height = 180;
+                img.src = 'https://quickchart.io/qr?size=180&ecLevel=L&text=' + encodeURIComponent(url);
+                container.appendChild(img);
+            }
+            if (status) status.innerText = url.startsWith('file:') ? "⚠️ Ouvrez l'application via son lien en ligne pour générer un QR scannable." : "Scannez pour proposer une amélioration ou signaler une urgence, sans connexion.";
+            document.getElementById('public-report-qr-modal')?.classList.remove('hidden');
+        }
+        function closePublicReportQrModal() { document.getElementById('public-report-qr-modal')?.classList.add('hidden'); }
+
+        async function loadPendingReports() {
+            const ctx = window.SST_APP_CONTEXT;
+            const list = document.getElementById('sst-pending-reports-list');
+            const countEl = document.getElementById('sst-pending-reports-count');
+            if (!ctx?.companyId || !firebaseDb || !list) return;
+            try {
+                const snaps = await getDocs(collection(firebaseDb, 'companies', ctx.companyId, 'pending_reports'));
+                const items = snaps.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                if (countEl) countEl.textContent = items.length ? `(${items.length})` : '';
+                list.innerHTML = items.length ? items.map(it => `
+                    <div class="border rounded-lg p-3 ${it.type === 'SU' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[11px] font-bold ${it.type === 'SU' ? 'text-amber-700' : 'text-blue-700'}">${it.type === 'SU' ? "🚨 Situation d'urgence" : '🛠️ Amélioration'}</span>
+                            <span class="text-[10px] text-slate-400">${escSstAdmin(it.redacteur || '')}${it.unite ? ' · ' + escSstAdmin(it.unite) : ''}</span>
+                        </div>
+                        <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap">${escSstAdmin(it.faits || '')}</p>
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="validatePendingReport('${it.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-semibold">✅ Valider</button>
+                            <button onclick="rejectPendingReport('${it.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">❌ Rejeter</button>
+                        </div>
+                    </div>`).join('') : '<div class="text-xs text-slate-500 p-3 border rounded-lg">Aucune demande en attente.</div>';
+            } catch (err) { console.error(err); if (list) list.innerHTML = '<div class="text-xs text-red-600 p-3 border rounded-lg">Impossible de charger les demandes.</div>'; }
+        }
+
+        async function validatePendingReport(reportId) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx?.companyId || !firebaseDb) return;
+            try {
+                const ref = doc(firebaseDb, 'companies', ctx.companyId, 'pending_reports', reportId);
+                const snap = await getDoc(ref);
+                if (!snap.exists()) { alert('Cette demande a déjà été traitée.'); loadPendingReports(); return; }
+                const data = snap.data();
+                const today = new Date().toISOString().split('T')[0];
+                // Validation = transformer la remontée en vraie fiche FA/SU, sans générer d'action
+                // PAPRIPACT automatiquement : c'est l'admin qui décide, en complétant les axes ensuite,
+                // exactement comme pour n'importe quelle FA/SU créée manuellement.
+                const key = data.type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
+                const prefix = `${(new Date(today)).getFullYear()}-${data.type === 'SU' ? 'SU' : 'FA'}-`;
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                let maxNum = 0;
+                list.forEach(f => { if (f.code && f.code.startsWith(prefix)) { const n = parseInt(f.code.replace(prefix, ''), 10); if (!isNaN(n) && n > maxNum) maxNum = n; } });
+                const code = `${prefix}${String(maxNum + 1).padStart(2, '0')}`;
+                list.push({ code, redacteur: data.redacteur || '', date: today, unite: data.unite || '', secteur: '', faits: data.faits || '', axes: '' });
+                localStorage.setItem(key, JSON.stringify(list));
+                if (data.type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
+                if (data.type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
+                try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys(key); } catch (e) { console.warn(e); }
+                await deleteDoc(ref);
+                loadPendingReports();
+                alert(`Ajouté à ${data.type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}. Ouvrez-la pour compléter les axes d'amélioration si besoin : ça générera alors l'action PAPRIPACT.`);
+            } catch (err) {
+                alert("Validation impossible : " + (err?.message || 'erreur inconnue'));
+            }
+        }
+
+        async function rejectPendingReport(reportId) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx?.companyId || !firebaseDb) return;
+            if (!confirm('Rejeter cette demande ? Elle sera définitivement supprimée.')) return;
+            try {
+                await deleteDoc(doc(firebaseDb, 'companies', ctx.companyId, 'pending_reports', reportId));
+                loadPendingReports();
+            } catch (err) { alert("Suppression impossible : " + (err?.message || 'erreur inconnue')); }
+        }
+
         function decodeFicheDataFromBase64Url(b64url) {
             let b64 = String(b64url || '').replace(/-/g, '+').replace(/_/g, '/');
             while(b64.length % 4) b64 += '=';
@@ -6947,6 +7059,99 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         // Affiche une page "fiche formations" autonome et légère quand l'application est ouverte
         // via un lien de QR code (#fiche=...), par ex. après avoir scanné une étiquette casque.
+        // ------------------------------------------------------------------
+        // REMONTÉE TERRAIN SANS CONNEXION (FA / SU via QR) — #report=<companyId>
+        // ------------------------------------------------------------------
+        // Contrairement à la fiche formations (lecture seule), cette page écrit dans Firestore
+        // sans authentification : la règle Firestore associée doit rester strictement limitée
+        // (voir companies/{companyId}/pending_reports dans firestore.rules). Rien n'est ajouté
+        // au PAPRIPACT depuis cette page : la validation reste une action volontaire d'un admin.
+        function renderPublicReportFormIfPresent() {
+            const hash = window.location.hash || '';
+            if (!hash.startsWith('#report=')) return false;
+            const companyId = decodeURIComponent(hash.slice('#report='.length));
+            if (!companyId) return false;
+
+            document.title = 'Signaler une amélioration ou une urgence';
+            document.body.innerHTML = `
+                <div style="font-family:Arial,Helvetica,sans-serif;background:#f1f5f9;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;">
+                    <div style="max-width:520px;margin:0 auto;background:#fff;border:2px solid #0f172a;border-radius:14px;overflow:hidden;">
+                        <div style="background:#0f172a;color:#fff;padding:18px;text-align:center;">
+                            <div style="font-size:19px;font-weight:800;">🛡️ Remontée terrain</div>
+                            <div style="font-size:12px;color:#93c5fd;margin-top:4px;">Sans connexion — transmis à votre encadrement HSE</div>
+                        </div>
+                        <div id="pr-step-choice" style="padding:22px 18px;">
+                            <p style="font-size:13px;color:#475569;margin:0 0 16px;">Que souhaitez-vous signaler ?</p>
+                            <button id="pr-btn-fa" style="display:block;width:100%;margin-bottom:10px;padding:14px;border-radius:10px;border:2px solid #2563eb;background:#eff6ff;color:#1e3a8a;font-weight:700;font-size:14px;cursor:pointer;">🛠️ Proposer une amélioration
+                                <div style="font-weight:400;font-size:12px;margin-top:3px;">Un danger, un dysfonctionnement, une idée...</div>
+                            </button>
+                            <button id="pr-btn-su" style="display:block;width:100%;padding:14px;border-radius:10px;border:2px solid #d97706;background:#fffbeb;color:#78350f;font-weight:700;font-size:14px;cursor:pointer;">🚨 Signaler une urgence / presqu'accident
+                                <div style="font-weight:400;font-size:12px;margin-top:3px;">Un évènement qui aurait pu causer un accident</div>
+                            </button>
+                        </div>
+                        <form id="pr-step-form" style="display:none;padding:0 18px 22px;">
+                            <p id="pr-type-label" style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 14px;"></p>
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Votre nom *</label>
+                            <input id="pr-redacteur" required style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité / zone concernée</label>
+                            <input id="pr-unite" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Que se passe-t-il ? *</label>
+                            <textarea id="pr-faits" required rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;font-size:14px;"></textarea>
+                            <button type="submit" style="width:100%;padding:13px;border:0;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Envoyer</button>
+                            <button type="button" id="pr-btn-back" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;">← Retour</button>
+                        </form>
+                        <div id="pr-step-done" style="display:none;padding:32px 18px;text-align:center;">
+                            <div style="font-size:36px;">✅</div>
+                            <p style="font-size:14px;color:#0f172a;font-weight:700;margin:10px 0 4px;">Merci, c'est transmis.</p>
+                            <p style="font-size:12px;color:#64748b;">Votre signalement a bien été envoyé à l'équipe HSE.</p>
+                        </div>
+                        <div id="pr-step-error" style="display:none;padding:24px 18px;text-align:center;color:#b91c1c;font-size:13px;"></div>
+                    </div>
+                </div>
+            `;
+
+            let selectedType = '';
+            const showForm = (type) => {
+                selectedType = type;
+                document.getElementById('pr-step-choice').style.display = 'none';
+                document.getElementById('pr-step-form').style.display = 'block';
+                document.getElementById('pr-type-label').textContent = type === 'FA' ? "🛠️ Proposition d'amélioration" : "🚨 Situation d'urgence / presqu'accident";
+            };
+            document.getElementById('pr-btn-fa').addEventListener('click', () => showForm('FA'));
+            document.getElementById('pr-btn-su').addEventListener('click', () => showForm('SU'));
+            document.getElementById('pr-btn-back').addEventListener('click', () => {
+                document.getElementById('pr-step-form').style.display = 'none';
+                document.getElementById('pr-step-choice').style.display = 'block';
+            });
+            document.getElementById('pr-step-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const redacteur = document.getElementById('pr-redacteur').value.trim();
+                const unite = document.getElementById('pr-unite').value.trim();
+                const faits = document.getElementById('pr-faits').value.trim();
+                if (!redacteur || !faits) return;
+                const btn = e.target.querySelector('button[type="submit"]');
+                btn.disabled = true; btn.textContent = 'Envoi...';
+                try {
+                    // Petite attente défensive : firebaseDb s'initialise en tout début de script,
+                    // mais on laisse une marge si la page vient tout juste de s'ouvrir.
+                    let waited = 0;
+                    while (!firebaseDb && waited < 4000) { await new Promise(r => setTimeout(r, 200)); waited += 200; }
+                    if (!firebaseDb) throw new Error('Connexion au serveur indisponible.');
+                    const ref = doc(collection(firebaseDb, 'companies', companyId, 'pending_reports'));
+                    await setDoc(ref, { type: selectedType, redacteur, unite, faits, createdAt: serverTimestamp() });
+                    document.getElementById('pr-step-form').style.display = 'none';
+                    document.getElementById('pr-step-done').style.display = 'block';
+                } catch (err) {
+                    console.error('Envoi remontée terrain impossible :', err);
+                    document.getElementById('pr-step-form').style.display = 'none';
+                    const errBox = document.getElementById('pr-step-error');
+                    errBox.style.display = 'block';
+                    errBox.textContent = "L'envoi a échoué (connexion internet ?). Réessayez, ou signalez-le directement à votre encadrement.";
+                }
+            });
+            return true;
+        }
+
         function renderStandaloneFicheIfPresent() {
             const data = decodeFicheDataFromHash();
             if(!data) return false;
@@ -12112,6 +12317,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             // La fiche formations liée à un QR code (étiquette casque, #fiche=...) doit toujours
             // s'afficher sans connexion, qu'on soit en mode local ou en mode commercial Firebase.
             if(renderStandaloneFicheIfPresent()) return;
+            if(renderPublicReportFormIfPresent()) return;
             if(typeof window.sstV242InstallCloudApi==='function') window.sstV242InstallCloudApi();
             if(window.SST_COMMERCIAL_REQUESTED && !window.SSTCloud) {
                 setAppLocked(true);
