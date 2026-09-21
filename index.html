@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.76</title>
+    <title>Application SST & RH - Gestion V2.78</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.75</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.78</div>
         </aside>
 
         <!-- Main Content -->
@@ -3182,7 +3182,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.75';
+        const SST_APP_VERSION = '2.78';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -5848,20 +5848,27 @@
 
             let salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
 
+            let savedSalarie = null;
             if(editSalarieIndex !== null && editSalarieIndex !== undefined && editSalarieIndex !== "") {
                 let existing = salaries[editSalarieIndex];
-                salaries[editSalarieIndex] = {
+                savedSalarie = {
                     ...existing,
                     nom, poste, service, statutPersonnel,
                     formations: forms
                 };
+                // Le QR public est permanent : on conserve impérativement son identifiant.
+                ensureSalarieQrPublicId(savedSalarie);
+                salaries[editSalarieIndex] = savedSalarie;
             } else {
-                salaries.push({
+                savedSalarie = {
                     nom, poste, service, statutPersonnel,
                     visite: "",
                     docConduite: false,
                     formations: forms
-                });
+                };
+                // L'identifiant est créé une seule fois, à la création du salarié.
+                ensureSalarieQrPublicId(savedSalarie);
+                salaries.push(savedSalarie);
             }
 
             localStorage.setItem('salaries_formations', JSON.stringify(salaries));
@@ -5871,7 +5878,12 @@
                 loadFormations();
             }
             try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('salaries_formations');
+                if(window.SSTCloud?.isCloudTenant?.()) {
+                    await sstV247CommitKeys('salaries_formations');
+                    // Publication directe après l'enregistrement : toute modification ou ajout
+                    // de formation met immédiatement à jour la fiche publique associée au même QR.
+                    await publishSalariePublicQrIfNeeded(savedSalarie);
+                }
             } catch(err) {
                 console.warn('Synchronisation cloud du salarié impossible :', err);
             }
@@ -7180,7 +7192,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return JSON.parse(json);
         }
 
-        // QR CASQUE DYNAMIQUE V2.77 : le QR ne contient plus les formations.
+        // QR CASQUE DYNAMIQUE V2.78 : le QR ne contient plus les formations.
         // Il contient uniquement une référence stable vers la fiche publique du salarié.
         // Les formations et leurs dates restent dans Firestore et sont donc recalculées
         // au moment du scan : une échéance peut changer sans jamais réimprimer le QR.
