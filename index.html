@@ -6936,7 +6936,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     </div>`).join('') : '<div class="text-xs text-slate-500 p-3 border rounded-lg">Aucune demande en attente.</div>';
             } catch (err) {
                 console.error('Chargement des demandes terrain impossible :', err);
-                if (list) list.innerHTML = '<div class="text-xs text-red-600 p-3 border rounded-lg">Impossible de charger les demandes.</div>';
+                if (countEl) countEl.textContent = '';
+                const code = String(err?.code || 'erreur-inconnue');
+                const message = String(err?.message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                if (list) list.innerHTML = `<div class="text-xs text-red-600 p-3 border rounded-lg"><strong>Impossible de charger les demandes.</strong><div class="mt-1 text-[11px] text-red-500">${code}${targetCompanyId ? ' · entreprise : ' + escSstAdmin(targetCompanyId) : ''}</div>${message ? `<div class="mt-1 text-[10px] text-slate-500 break-words">${message}</div>` : ''}</div>`;
             }
         }
 
