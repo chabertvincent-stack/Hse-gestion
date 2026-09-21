@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.73</title>
+    <title>Application SST & RH - Gestion V2.74</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -3175,7 +3175,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.73';
+        const SST_APP_VERSION = '2.74';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -6903,7 +6903,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <span class="text-[11px] font-bold ${it.type === 'SU' ? 'text-amber-700' : 'text-blue-700'}">${it.type === 'SU' ? "🚨 Situation d'urgence" : '🛠️ Amélioration'}</span>
                             <span class="text-[10px] text-slate-400">${escSstAdmin(it.redacteur || '')}${it.unite ? ' · ' + escSstAdmin(it.unite) : ''}</span>
                         </div>
-                        <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap">${escSstAdmin(it.faits || '')}</p>
+                        <div class="text-xs text-slate-700 mt-2 space-y-2">
+                            <div><span class="font-bold text-slate-900">Faits :</span> ${escSstAdmin(it.faits || '')}</div>
+                            <div><span class="font-bold text-blue-700">Axes d'amélioration :</span> ${escSstAdmin(it.axes || '')}</div>
+                        </div>
                         <div class="flex gap-2 mt-3">
                             <button onclick="validatePendingReport('${it.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-semibold">✅ Valider</button>
                             <button onclick="rejectPendingReport('${it.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">❌ Rejeter</button>
@@ -6921,23 +6924,85 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 if (!snap.exists()) { alert('Cette demande a déjà été traitée.'); loadPendingReports(); return; }
                 const data = snap.data();
                 const today = new Date().toISOString().split('T')[0];
-                // Validation = transformer la remontée en vraie fiche FA/SU, sans générer d'action
-                // PAPRIPACT automatiquement : c'est l'admin qui décide, en complétant les axes ensuite,
-                // exactement comme pour n'importe quelle FA/SU créée manuellement.
-                const key = data.type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
-                const prefix = `${(new Date(today)).getFullYear()}-${data.type === 'SU' ? 'SU' : 'FA'}-`;
+                const type = data.type === 'SU' ? 'SU' : 'FA';
+                const axes = String(data.axes || '').trim();
+                if (!axes) throw new Error("Les axes d'amélioration sont obligatoires pour valider cette remontée.");
+
+                // Validation = transformation en vraie fiche FA/SU avec les mêmes champs métier
+                // que les formulaires internes, puis création de l'action PAPRIPACT correspondante.
+                const key = type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
+                const prefix = `${(new Date(today)).getFullYear()}-${type}-`;
                 const list = JSON.parse(localStorage.getItem(key) || '[]');
                 let maxNum = 0;
-                list.forEach(f => { if (f.code && f.code.startsWith(prefix)) { const n = parseInt(f.code.replace(prefix, ''), 10); if (!isNaN(n) && n > maxNum) maxNum = n; } });
+                list.forEach(f => {
+                    if (f.code && f.code.startsWith(prefix)) {
+                        const n = parseInt(f.code.replace(prefix, ''), 10);
+                        if (!isNaN(n) && n > maxNum) maxNum = n;
+                    }
+                });
                 const code = `${prefix}${String(maxNum + 1).padStart(2, '0')}`;
-                list.push({ code, redacteur: data.redacteur || '', date: today, unite: data.unite || '', secteur: '', faits: data.faits || '', axes: '' });
+                list.push({
+                    code,
+                    redacteur: data.redacteur || '',
+                    date: today,
+                    unite: data.unite || '',
+                    secteur: '',
+                    faits: data.faits || '',
+                    axes
+                });
                 localStorage.setItem(key, JSON.stringify(list));
-                if (data.type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
-                if (data.type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
-                try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys(key); } catch (e) { console.warn(e); }
+
+                let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+                const existingActionIdx = actions.findIndex(a =>
+                    a?.origine === type &&
+                    (String(a?.sourceReference || '') === String(code) ||
+                     String(type === 'FA' ? (a?.faCode || '') : (a?.suCode || '')) === String(code))
+                );
+                if (existingActionIdx === -1 && axes) {
+                    actions.push({
+                        origine: type,
+                        sourceType: type,
+                        sourceReference: code,
+                        ...(type === 'FA' ? { faCode: code } : { suCode: code }),
+                        unite: data.unite || '',
+                        action: axes,
+                        type: 'Technique',
+                        priorite: '',
+                        statut: 'À traiter',
+                        responsable: '',
+                        dateCreation: today,
+                        delai: '',
+                        dateCloture: '',
+                        cout: '',
+                        commentaires: `Action générée automatiquement depuis la remontée terrain ${type} ${code} (Rédacteur : ${data.redacteur || ''})`
+                    });
+                }
+                const normalizedPap = ensurePapripactActionNumbersInArray(actions);
+                actions = normalizedPap.actions;
+                let linkedAction = actions.find(a => a?.origine === type && String(a?.sourceReference || '') === String(code));
+                if (linkedAction && isCloudPapripactTenant()) {
+                    linkedAction._cloudId = linkedAction._cloudId || `PAP-${linkedAction.numero}`;
+                }
+                localStorage.setItem('papripact_actions', JSON.stringify(actions));
+                localStorage.setItem('papripact_next_action_num', String(normalizedPap.nextGlobal));
+
+                if (type === 'SU' && typeof loadSituationsUrgence === 'function') loadSituationsUrgence();
+                if (type === 'FA' && typeof loadFichesAmelioration === 'function') await loadFichesAmelioration();
+                loadPapripactLocalOnly();
+                loadDashboard();
+
+                try {
+                    if (window.SSTCloud?.isCloudTenant?.()) {
+                        await sstV247CommitKeys(key, 'papripact_actions', 'papripact_next_action_num');
+                    }
+                } catch (e) {
+                    console.warn('Synchronisation cloud de la validation QR impossible :', e);
+                    throw e;
+                }
+
                 await deleteDoc(ref);
                 loadPendingReports();
-                alert(`Ajouté à ${data.type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}. Ouvrez-la pour compléter les axes d'amélioration si besoin : ça générera alors l'action PAPRIPACT.`);
+                alert(`Ajouté à ${type === 'SU' ? "Situations d'Urgence" : "Fiches d'Amélioration"} sous la référence ${code}. L'action PAPRIPACT associée a également été créée.`);
             } catch (err) {
                 alert("Validation impossible : " + (err?.message || 'erreur inconnue'));
             }
@@ -7095,8 +7160,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <input id="pr-redacteur" required style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité / zone concernée</label>
                             <input id="pr-unite" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
-                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Que se passe-t-il ? *</label>
-                            <textarea id="pr-faits" required rows="4" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;font-size:14px;"></textarea>
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Les Faits *</label>
+                            <textarea id="pr-faits" required rows="4" placeholder="Décrivez les faits constatés..." style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;"></textarea>
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Axes d'amélioration *</label>
+                            <textarea id="pr-axes" required rows="4" placeholder="Décrivez les axes d'amélioration proposés..." style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;font-size:14px;"></textarea>
                             <button type="submit" style="width:100%;padding:13px;border:0;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Envoyer</button>
                             <button type="button" id="pr-btn-back" style="width:100%;margin-top:8px;padding:10px;border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;">← Retour</button>
                         </form>
@@ -7128,25 +7195,41 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const redacteur = document.getElementById('pr-redacteur').value.trim();
                 const unite = document.getElementById('pr-unite').value.trim();
                 const faits = document.getElementById('pr-faits').value.trim();
-                if (!redacteur || !faits) return;
+                const axes = document.getElementById('pr-axes').value.trim();
+                if (!selectedType || !redacteur || !faits || !axes) return;
                 const btn = e.target.querySelector('button[type="submit"]');
                 btn.disabled = true; btn.textContent = 'Envoi...';
                 try {
-                    // Petite attente défensive : firebaseDb s'initialise en tout début de script,
-                    // mais on laisse une marge si la page vient tout juste de s'ouvrir.
+                    // Le formulaire public est dans un script classique : les imports Firebase
+                    // sont dans le module ES et ne sont donc pas accessibles directement ici.
+                    // On passe exclusivement par le bridge window.SSTFirebaseApi.
+                    const fb = window.SSTFirebaseApi;
                     let waited = 0;
-                    while (!firebaseDb && waited < 4000) { await new Promise(r => setTimeout(r, 200)); waited += 200; }
-                    if (!firebaseDb) throw new Error('Connexion au serveur indisponible.');
-                    const ref = doc(collection(firebaseDb, 'companies', companyId, 'pending_reports'));
-                    await setDoc(ref, { type: selectedType, redacteur, unite, faits, createdAt: serverTimestamp() });
+                    while ((!fb || !fb.getDb?.()) && waited < 8000) {
+                        await new Promise(r => setTimeout(r, 200));
+                        waited += 200;
+                    }
+                    const db = fb?.getDb?.();
+                    if (!db || !fb) throw new Error('Connexion au serveur indisponible.');
+                    const reportId = (window.crypto?.randomUUID?.() || ('report-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
+                    const ref = fb.doc(db, 'companies', companyId, 'pending_reports', reportId);
+                    await fb.setDoc(ref, {
+                        type: selectedType,
+                        redacteur,
+                        unite,
+                        faits,
+                        axes,
+                        createdAt: fb.serverTimestamp()
+                    });
                     document.getElementById('pr-step-form').style.display = 'none';
                     document.getElementById('pr-step-done').style.display = 'block';
                 } catch (err) {
                     console.error('Envoi remontée terrain impossible :', err);
-                    document.getElementById('pr-step-form').style.display = 'none';
+                    btn.disabled = false; btn.textContent = 'Envoyer';
                     const errBox = document.getElementById('pr-step-error');
                     errBox.style.display = 'block';
-                    errBox.textContent = "L'envoi a échoué (connexion internet ?). Réessayez, ou signalez-le directement à votre encadrement.";
+                    errBox.textContent = "L'envoi a échoué. Vérifiez votre connexion puis réessayez.";
+                    document.getElementById('pr-step-form').style.display = 'none';
                 }
             });
             return true;
