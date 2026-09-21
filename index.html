@@ -7180,24 +7180,54 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return JSON.parse(json);
         }
 
-        function buildCompactFicheData(sal) {
-            const forms = Array.isArray(sal?.formations) ? sal.formations : [];
-            return {
-                n: sal?.nom || 'N/C',
-                p: sal?.poste || 'N/C',
-                s: sal?.service || 'N/C',
-                f: forms.map(f => [
-                    String(f?.intitule || 'Formation').slice(0, 60),
-                    f?.datePassage || '',
-                    f?.dateFin || ''
-                ])
-            };
+        // QR CASQUE DYNAMIQUE V2.77 : le QR ne contient plus les formations.
+        // Il contient uniquement une référence stable vers la fiche publique du salarié.
+        // Les formations et leurs dates restent dans Firestore et sont donc recalculées
+        // au moment du scan : une échéance peut changer sans jamais réimprimer le QR.
+        function ensureSalarieQrPublicId(sal) {
+            if (!sal || typeof sal !== 'object') return '';
+            if (sal.qrPublicId) return String(sal.qrPublicId);
+            try {
+                sal.qrPublicId = (crypto?.randomUUID ? crypto.randomUUID() : ('qr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12)));
+            } catch (e) {
+                sal.qrPublicId = 'qr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+            }
+            return String(sal.qrPublicId);
         }
 
         function buildSalarieQrUrl(sal) {
-            const encoded = encodeFicheDataToBase64Url(buildCompactFicheData(sal));
+            const ctx = window.SST_APP_CONTEXT || {};
+            const companyId = String(ctx.companyId || sal?.companyId || '');
+            const qrPublicId = ensureSalarieQrPublicId(sal);
+            if (!companyId || !qrPublicId) return '';
             const base = window.location.origin + window.location.pathname;
-            return base + '#fiche=' + encoded;
+            return base + '#casque=' + encodeURIComponent(companyId) + '|' + encodeURIComponent(qrPublicId);
+        }
+
+        async function publishSalariePublicQrIfNeeded(sal) {
+            try {
+                const api = window.SSTFirebaseApi;
+                const db = api?.getDb?.();
+                const companyId = String(window.SST_APP_CONTEXT?.companyId || '');
+                const qrPublicId = ensureSalarieQrPublicId(sal);
+                if (!api || !db || !companyId || !qrPublicId) return false;
+                const formations = Array.isArray(sal?.formations) ? sal.formations.map(f => ({
+                    intitule: String(f?.intitule || 'Formation').slice(0, 120),
+                    datePassage: f?.datePassage || '',
+                    dateFin: f?.dateFin || ''
+                })) : [];
+                const ref = api.doc(db, 'companies', companyId, 'public_helmet_fiches', qrPublicId);
+                await api.setDoc(ref, {
+                    nom: sal?.nom || 'N/C',
+                    unite: sal?.service || 'N/C',
+                    formations,
+                    updatedAt: api.serverTimestamp()
+                }, { merge: true });
+                return true;
+            } catch (err) {
+                console.warn('Publication de la fiche QR casque impossible :', err);
+                return false;
+            }
         }
 
         function renderSalarieQrCode(url) {
@@ -7237,10 +7267,15 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(!w) alert('Le navigateur bloque la nouvelle fenêtre. Autorisez les fenêtres contextuelles puis réessayez.');
         }
 
-        function openQrModal(idx) {
+        async function openQrModal(idx) {
             const salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             const sal = salaries[idx];
             if(!sal) { alert('Salarié introuvable.'); return; }
+            ensureSalarieQrPublicId(sal);
+            // Le QR doit rester stable : on enregistre son identifiant dans la fiche salarié.
+            localStorage.setItem('salaries_formations', JSON.stringify(salaries));
+            try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('salaries_formations'); } catch (e) { console.warn('Enregistrement de la référence QR impossible :', e); }
+            await publishSalariePublicQrIfNeeded(sal);
             document.getElementById('label-modal-title').innerText = sal.nom || 'Sans nom';
             document.getElementById('label-modal-service').innerText = sal.service || 'N/C';
             document.getElementById('label-modal-poste').innerText = sal.poste || 'N/C';
@@ -7403,14 +7438,73 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return true;
         }
 
-        function renderStandaloneFicheIfPresent() {
-            const data = decodeFicheDataFromHash();
-            if(!data) return false;
+        async function renderStandaloneFicheIfPresent() {
+            const hash = window.location.hash || '';
+            let legacyData = null;
+            if (hash.startsWith('#fiche=')) {
+                legacyData = decodeFicheDataFromHash();
+            }
 
+            // Anciennes étiquettes : on conserve leur fonctionnement pour ne pas casser
+            // les QR déjà imprimés. Elles restent statiques ; les nouveaux QR utilisent #casque=.
+            if (legacyData) {
+                return renderStandaloneFicheData(legacyData);
+            }
+
+            if (!hash.startsWith('#casque=')) return false;
+            const raw = decodeURIComponent(hash.slice('#casque='.length));
+            const parts = raw.split('|');
+            const companyId = String(parts[0] || '');
+            const qrPublicId = String(parts[1] || '');
+            if (!companyId || !qrPublicId) return false;
+
+            document.title = 'Fiche formations - Casque';
+            document.body.innerHTML = `
+                <div style="font-family:Arial,Helvetica,sans-serif;background:#f1f5f9;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;">
+                    <div style="max-width:640px;margin:0 auto;background:#fff;border:2px solid #0f172a;border-radius:14px;overflow:hidden;">
+                        <div style="background:#0f172a;color:#fff;padding:18px;text-align:center;">
+                            <div style="font-size:20px;font-weight:800;">🪖 FICHE FORMATIONS</div>
+                            <div style="font-size:12px;color:#93c5fd;margin-top:4px;">Suivi Sécurité &amp; Prévention</div>
+                        </div>
+                        <div id="public-helmet-loading" style="padding:34px 18px;text-align:center;color:#64748b;font-size:13px;">Chargement de la fiche…</div>
+                    </div>
+                </div>`;
+
+            try {
+                if (typeof window.sstV242InstallCloudApi === 'function') window.sstV242InstallCloudApi();
+                const started = Date.now();
+                while ((!window.SSTFirebaseApi?.getDb || !window.SSTFirebaseApi?.getDoc) && Date.now() - started < 10000) {
+                    await new Promise(r => setTimeout(r, 150));
+                }
+                const api = window.SSTFirebaseApi;
+                const db = api?.getDb?.();
+                if (!api || !db) throw new Error('Connexion au serveur indisponible.');
+                const ref = api.doc(db, 'companies', companyId, 'public_helmet_fiches', qrPublicId);
+                const snap = await api.getDoc(ref);
+                if (!snap?.exists?.()) throw new Error('Fiche casque introuvable ou QR non encore activé.');
+                const data = snap.data() || {};
+                renderStandaloneFicheData({
+                    n: data.nom || 'N/C',
+                    s: data.unite || 'N/C',
+                    f: Array.isArray(data.formations) ? data.formations.map(f => [f?.intitule || 'Formation', f?.datePassage || '', f?.dateFin || '']) : []
+                });
+            } catch (err) {
+                console.error('Lecture fiche QR casque impossible :', err);
+                const box = document.getElementById('public-helmet-loading');
+                if (box) {
+                    box.innerHTML = '<div style="font-size:32px;margin-bottom:10px;">⚠️</div><strong style="color:#b91c1c;">Fiche indisponible</strong><div style="margin-top:8px;font-size:12px;">Vérifiez votre connexion internet ou contactez le service HSE.</div>';
+                }
+            }
+            return true;
+        }
+
+        function renderStandaloneFicheData(data) {
             const safe = v => escapeHtml(String(v || ''));
             const rowsHtml = (data.f || []).length ? (data.f || []).map(row => {
                 const [intitule, datePassage, dateFin] = row;
                 const finLabel = dateFin === '2099-12-31' ? 'Illimitée' : (dateFin || 'Non renseignée');
+                // Le statut est recalculé à chaque scan à partir de la date de fin.
+                // Le QR ne contient donc jamais un statut figé.
                 const statut = dateFin ? getDateStatus(dateFin) : 'EXPIRED';
                 const color = statut === 'OK' ? '#16a34a' : (statut === 'WARNING' ? '#d97706' : '#dc2626');
                 const bg = statut === 'OK' ? '#f0fdf4' : (statut === 'WARNING' ? '#fffbeb' : '#fef2f2');
@@ -7435,7 +7529,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         </div>
                         <div style="padding:16px 18px;background:#f8fafc;border-bottom:1px solid #cbd5e1;">
                             <div style="margin:4px 0;"><strong>Salarié :</strong> ${safe(data.n)}</div>
-                            <div style="margin:4px 0;"><strong>Poste :</strong> ${safe(data.p)}</div>
                             <div style="margin:4px 0;"><strong>Unité :</strong> ${safe(data.s)}</div>
                         </div>
                         <div style="padding:16px 18px;overflow-x:auto;">
@@ -7444,7 +7537,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                     <tr style="background:#e2e8f0;">
                                         <th style="padding:10px;border:1px solid #cbd5e1;text-align:left;">Formation</th>
                                         <th style="padding:10px;border:1px solid #cbd5e1;">Réalisation</th>
-                                        <th style="padding:10px;border:1px solid #cbd5e1;">Fin de validité</th>
+                                        <th style="padding:10px;border:1px solid #cbd5e1;">Fin de validité / statut</th>
                                     </tr>
                                 </thead>
                                 <tbody>${rowsHtml}</tbody>
@@ -7453,12 +7546,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <div style="padding:14px 18px;text-align:center;border-top:1px solid #e2e8f0;">
                             <button onclick="window.print()" style="background:#2563eb;color:#fff;border:0;padding:11px 18px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;">🖨️ Imprimer / Enregistrer en PDF</button>
                         </div>
-                        <div style="text-align:center;font-size:11px;color:#64748b;padding:0 18px 16px;">Fiche générée automatiquement — Application SST &amp; Prévention.</div>
+                        <div style="text-align:center;font-size:11px;color:#64748b;padding:0 18px 16px;">Fiche consultée en temps réel — le statut est recalculé à chaque scan.</div>
                     </div>
-                </div>
-            `;
+                </div>`;
             return true;
         }
+
 
 
         // --- DUERP : MÉTHODOLOGIE DE COTATION CONFIGURABLE ---
@@ -11989,6 +12082,39 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             }
             for(const [id] of prevMap){ if(!curMap.has(id)) await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
         }
+        async function sstV242SyncPublicHelmetRecords(previous, current){
+            if (!sstV242CompanyNamespace || !sstV242Db() || !window.SSTFirebaseApi) return;
+            const api = window.SSTFirebaseApi;
+            const db = sstV242Db();
+            const prev = Array.isArray(previous) ? previous : [];
+            const cur = Array.isArray(current) ? current : [];
+            const prevIds = new Set(prev.map(x => x?.qrPublicId).filter(Boolean).map(String));
+            const curIds = new Set();
+            for (const sal of cur) {
+                if (!sal || typeof sal !== 'object') continue;
+                const qrPublicId = ensureSalarieQrPublicId(sal);
+                if (!qrPublicId) continue;
+                curIds.add(String(qrPublicId));
+                const ref = api.doc(db, 'companies', sstV242CompanyNamespace, 'public_helmet_fiches', String(qrPublicId).replace(/\//g,'_'));
+                await api.setDoc(ref, {
+                    nom: sal?.nom || 'N/C',
+                    unite: sal?.service || 'N/C',
+                    formations: Array.isArray(sal?.formations) ? sal.formations.map(f => ({
+                        intitule: String(f?.intitule || 'Formation').slice(0, 120),
+                        datePassage: f?.datePassage || '',
+                        dateFin: f?.dateFin || ''
+                    })) : [],
+                    updatedAt: api.serverTimestamp()
+                }, { merge: true });
+            }
+            for (const oldId of prevIds) {
+                if (curIds.has(String(oldId))) continue;
+                try {
+                    await api.deleteDoc(api.doc(db, 'companies', sstV242CompanyNamespace, 'public_helmet_fiches', String(oldId).replace(/\//g,'_')));
+                } catch (e) { console.warn('Suppression fiche QR publique impossible :', e); }
+            }
+        }
+
         async function sstV242SyncKeyToCloud(key, forceFull=false){
             if(!window.SSTFirebaseApi || !sstV242Db() || !window.SSTCloud?.isCloudTenant?.() || !sstV242CanWriteStorage(key)) return false;
             const def=SST_V242_STORAGE[key];
@@ -11998,8 +12124,15 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(previous===undefined || forceFull) previous=sstV242BlankFor(key);
             if(def.kind==='array'){
                 const arr=Array.isArray(value)?value.map(x=>x):[];
+                if (key === 'salaries_formations') arr.forEach(sal => { if (sal && typeof sal === 'object') ensureSalarieQrPublicId(sal); });
                 sstV242WriteLocalSilently(key,arr);
                 await sstV242WriteArrayDiff(key, Array.isArray(previous)?previous:[], arr);
+                if (key === 'salaries_formations') {
+                    // Publication séparée, limitée aux données nécessaires à la fiche casque publique.
+                    // Une erreur ici ne doit jamais bloquer la synchronisation RH principale.
+                    try { await sstV242SyncPublicHelmetRecords(previous, arr); }
+                    catch (publicErr) { console.warn('Synchronisation des fiches QR casque publiques impossible :', publicErr); }
+                }
                 sstV242Snapshots.set(key, JSON.parse(JSON.stringify(arr)));
                 sstV242WriteLocalSilently(key,arr);
             } else {
@@ -12567,7 +12700,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         window.addEventListener('DOMContentLoaded', async () => {
             // La fiche formations liée à un QR code (étiquette casque, #fiche=...) doit toujours
             // s'afficher sans connexion, qu'on soit en mode local ou en mode commercial Firebase.
-            if(renderStandaloneFicheIfPresent()) return;
+            if(await renderStandaloneFicheIfPresent()) return;
             if(renderPublicReportFormIfPresent()) return;
             if(typeof window.sstV242InstallCloudApi==='function') window.sstV242InstallCloudApi();
             if(window.SST_COMMERCIAL_REQUESTED && !window.SSTCloud) {
