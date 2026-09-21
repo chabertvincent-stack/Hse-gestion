@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.75</title>
+    <title>Application SST & RH - Gestion V2.76</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -7016,7 +7016,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <span class="text-[11px] font-bold ${it.type === 'SU' ? 'text-amber-700' : 'text-blue-700'}">${it.type === 'SU' ? "🚨 Situation d'urgence" : '🛠️ Amélioration'}</span>
                             <div class="text-right">
                                 <div class="text-[11px] font-extrabold text-slate-800">👤 Déclaré par : ${escapeHtml(it.redacteur || 'Nom non renseigné')}</div>
-                                <div class="text-[10px] text-slate-500 mt-0.5">🏭 Unité : ${escapeHtml(it.unite || 'Non renseignée')}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">👥 Unité du rédacteur : ${escapeHtml(it.uniteRedacteur || 'Non renseignée')}</div>
+                                <div class="text-[10px] text-slate-500 mt-0.5">🏭 Unité concernée : ${escapeHtml(it.unite || 'Non renseignée')}</div>
                             </div>
                         </div>
                         <p class="text-xs text-slate-700 mt-2 whitespace-pre-wrap"><strong>Faits :</strong> ${escapeHtml(it.faits || '')}</p>
@@ -7067,23 +7068,24 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const key = type === 'SU' ? 'situations_urgence' : 'fiches_amelioration';
                 const code = type === 'SU' ? generateSuCode(today) : generateFaCode(today);
                 const redacteur = String(data.redacteur || '').trim();
+                const uniteRedacteur = String(data.uniteRedacteur || data.unite || '').trim();
                 const unite = String(data.unite || '').trim();
                 const faits = String(data.faits || '').trim();
                 const axes = String(data.axes || '').trim();
 
-                if (!redacteur || !faits || !axes) {
-                    throw new Error('La demande est incomplète : rédacteur, faits et axes d’amélioration sont obligatoires.');
+                if (!redacteur || !uniteRedacteur || !unite || !faits || !axes) {
+                    throw new Error('La demande est incomplète : rédacteur, unité d’appartenance, unité concernée, faits et axes d’amélioration sont obligatoires.');
                 }
 
                 const fiches = JSON.parse(localStorage.getItem(key) || '[]');
                 const fiche = type === 'FA'
                     ? {
-                        code, redacteur, date: today, unite: '', secteur: unite,
-                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId
+                        code, redacteur, date: today, unite: uniteRedacteur, secteur: unite,
+                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId, uniteRedacteur
                     }
                     : {
                         code, redacteur, date: today, unite, secteur: '',
-                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId
+                        faits, axes, sourceCanal: 'QR', pendingReportId: reportId, uniteRedacteur
                     };
                 fiches.push(fiche);
                 localStorage.setItem(key, JSON.stringify(fiches));
@@ -7320,6 +7322,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <p id="pr-type-label" style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 14px;"></p>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Votre nom *</label>
                             <input id="pr-redacteur" required maxlength="120" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;">
+                            <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité d'appartenance du rédacteur *</label>
+                            <select id="pr-unite-redacteur" required ${units.length ? '' : 'disabled'} style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;background:#fff;">${unitOptions}</select>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Unité de travail concernée *</label>
                             <select id="pr-unite" required ${units.length ? '' : 'disabled'} style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;font-size:14px;background:#fff;">${unitOptions}</select>
                             <label style="display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px;">Les faits *</label>
@@ -7356,11 +7360,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('pr-step-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const redacteur = document.getElementById('pr-redacteur').value.trim();
+                const uniteRedacteur = document.getElementById('pr-unite-redacteur').value.trim();
                 const unite = document.getElementById('pr-unite').value.trim();
                 const faits = document.getElementById('pr-faits').value.trim();
                 const axes = document.getElementById('pr-axes').value.trim();
-                if (!redacteur || !unite || !faits || !axes) {
-                    alert('Veuillez renseigner votre nom, l’unité de travail, les faits et les axes d’amélioration.');
+                if (!redacteur || !uniteRedacteur || !unite || !faits || !axes) {
+                    alert('Veuillez renseigner votre nom, votre unité d’appartenance, l’unité concernée, les faits et les axes d’amélioration.');
                     return;
                 }
                 const btn = e.target.querySelector('button[type="submit"]');
@@ -7378,6 +7383,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     await api.setDoc(ref, {
                         type: selectedType,
                         redacteur,
+                        uniteRedacteur,
                         unite,
                         faits,
                         axes,
@@ -8715,7 +8721,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                     ${faStatutBadgeHtml}
                                     <h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur}</h4>
                                 </div>
-                                <p class="text-xs text-slate-500 mt-1">Unité du rédacteur : ${f.unite || 'N/C'} | Unité concernée : ${f.secteur || 'N/C'}</p>
+                                <p class="text-xs text-slate-500 mt-1">👥 Unité du rédacteur : ${f.unite || 'N/C'} | 🏭 Unité concernée : ${f.secteur || 'N/C'}</p>
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="text-xs text-slate-400 font-semibold">Rédigé le : ${f.date}</span>
@@ -8986,7 +8992,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                     ${suStatutBadgeHtml}
                                     <h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur}</h4>
                                 </div>
-                                <p class="text-xs text-slate-500 mt-1">Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p>
+                                <p class="text-xs text-slate-500 mt-1">${f.uniteRedacteur ? `Unité du rédacteur : ${f.uniteRedacteur} | ` : ''}Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p>
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="text-xs text-slate-400 font-semibold">Date : ${f.date}</span>
