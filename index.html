@@ -1909,16 +1909,10 @@
                         </div>
 
                         <div class="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                            <div class="text-sm font-bold text-slate-800">🔢 Plan de codification documentaire</div>
-                            <p class="text-xs text-slate-500 mt-1 mb-3">Attribue automatiquement un code unique (type ISO) à chaque document généré — ex : <span class="font-mono">HSE-AT-2026-004</span>. Le code d'un document déjà créé ne change jamais, même si vous régénérez son PDF.</p>
-                            <div class="flex flex-col md:flex-row md:items-end gap-3">
-                                <div class="flex-1">
-                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Préfixe (entreprise / site)</label>
-                                    <input type="text" id="sst-doc-code-prefixe" placeholder="Ex : HSE, ou vos initiales" maxlength="10" class="w-full p-2.5 border rounded text-sm bg-white uppercase">
-                                    <p class="text-[11px] text-slate-500 mt-1">Laissez vide pour désactiver la codification (aucun code ne s'affichera sur les documents).</p>
-                                </div>
-                                <button onclick="saveSstDocCodificationConfig()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap">Enregistrer</button>
-                            </div>
+                            <div class="text-sm font-bold text-slate-800">🔢 Codification documentaire</div>
+                            <p class="text-xs text-slate-500 mt-1 mb-3">Le code et la version de vos formulaires internes (type ISO), ex : <span class="font-mono">FOR-HSEE-015 v2.01</span>. Le même code s'affiche sur tous les documents de ce type — mettez à jour la version ici lorsque vous révisez un formulaire.</p>
+                            <div id="sst-doc-type-codes-table" class="mb-3"></div>
+                            <button onclick="saveSstDocTypeCodes()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">Enregistrer</button>
                         </div>
 
                         <div class="mb-6 rounded-xl border border-violet-200 bg-violet-50 p-4">
@@ -3758,44 +3752,57 @@
         // et uniquement écrits lorsqu'un administrateur clique sur Enregistrer.
         // ------------------------------------------------------------------
         // ------------------------------------------------------------------
-        // CODIFICATION DOCUMENTAIRE (type ISO) — HSE-AT-2026-004, etc.
+        // CODIFICATION DOCUMENTAIRE (type ISO) — un code et une version fixes par TYPE de
+        // document (ex: FOR-HSEE-015 v2.01 pour toutes les analyses AT), pas un numéro qui
+        // s'incrémente à chaque création. Vous mettez à jour la version quand vous révisez
+        // le formulaire lui-même.
         // ------------------------------------------------------------------
-        // Volontairement local à cet appareil pour l'instant (pas encore synchronisé cloud) :
-        // le numéro attribué à un document ne change jamais une fois assigné, donc pas de risque
-        // de "collision" entre appareils, juste un compteur qui peut légèrement diverger si vous
-        // générez des documents depuis plusieurs postes avant la prochaine synchro.
-        function getSstDocCodificationConfig() {
-            try { return JSON.parse(localStorage.getItem('doc_codification_config') || '{}'); }
+        const SST_DOC_TYPES = [
+            { key:'AT', label:"Analyse d'accident du travail" },
+            { key:'TOURNEE', label:'Tournée HSE / Audit terrain' },
+            { key:'DUERP', label:'DUERP (export)' },
+            { key:'PAPRIPACT', label:"PAPRIPACT / Plan d'actions (export)" },
+            { key:'FA', label:"Fiche d'Amélioration" },
+            { key:'SU', label:"Situation d'Urgence / Presqu'accident" },
+            { key:'AT_REGISTRE', label:'Registre des AT (export)' }
+        ];
+        function getSstDocTypeCodes() {
+            try { return JSON.parse(localStorage.getItem('doc_type_codes') || '{}'); }
             catch (e) { return {}; }
         }
-        function persistSstDocCodificationConfig(cfg) {
-            localStorage.setItem('doc_codification_config', JSON.stringify(cfg));
+        function persistSstDocTypeCodes(cfg) {
+            localStorage.setItem('doc_type_codes', JSON.stringify(cfg));
         }
-        function saveSstDocCodificationConfig() {
-            const input = document.getElementById('sst-doc-code-prefixe');
-            const prefixe = (input?.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-            const cfg = getSstDocCodificationConfig();
-            cfg.prefixe = prefixe;
-            cfg.counters = cfg.counters || {};
-            persistSstDocCodificationConfig(cfg);
-            if (input) input.value = prefixe;
-            alert(prefixe ? `Codification activée. Les nouveaux documents porteront le préfixe "${prefixe}".` : 'Codification désactivée : les documents ne porteront plus de code.');
+        // Renvoie "FOR-HSEE-015 v2.01" (ou '' si non configuré pour ce type).
+        function getDocTypeCode(type) {
+            const entry = getSstDocTypeCodes()[type];
+            if (!entry || !entry.code) return '';
+            return entry.version ? `${entry.code} ${entry.version}` : entry.code;
         }
-        // Attribue un code au document s'il n'en a pas déjà un (le code, une fois assigné, est
-        // stable : régénérer le même PDF ne change jamais son numéro). Renvoie '' si la
-        // codification n'est pas activée (aucun préfixe configuré).
-        function getOrAssignDocCode(record, type) {
-            if (!record) return '';
-            if (record.docCode) return record.docCode;
-            const cfg = getSstDocCodificationConfig();
-            if (!cfg.prefixe) return '';
-            cfg.counters = cfg.counters || {};
-            cfg.counters[type] = (cfg.counters[type] || 0) + 1;
-            const year = new Date().getFullYear();
-            const code = `${cfg.prefixe}-${type}-${year}-${String(cfg.counters[type]).padStart(3, '0')}`;
-            persistSstDocCodificationConfig(cfg);
-            record.docCode = code;
-            return code;
+        function renderSstDocCodeSettings() {
+            const host = document.getElementById('sst-doc-type-codes-table');
+            if (!host) return;
+            const cfg = getSstDocTypeCodes();
+            host.innerHTML = SST_DOC_TYPES.map(t => {
+                const entry = cfg[t.key] || {};
+                return `<div class="grid grid-cols-1 md:grid-cols-[1fr_140px_110px] gap-2 items-center border-b border-slate-200 py-2 last:border-0">
+                    <div class="text-xs font-semibold text-slate-700">${t.label}</div>
+                    <input type="text" data-doc-type="${t.key}" data-field="code" value="${escSstAdmin(entry.code||'')}" placeholder="Ex : FOR-HSEE-015" class="p-1.5 border rounded text-xs font-mono">
+                    <input type="text" data-doc-type="${t.key}" data-field="version" value="${escSstAdmin(entry.version||'')}" placeholder="Ex : v2.01" class="p-1.5 border rounded text-xs font-mono">
+                </div>`;
+            }).join('');
+        }
+        function saveSstDocTypeCodes() {
+            const host = document.getElementById('sst-doc-type-codes-table');
+            if (!host) return;
+            const cfg = {};
+            host.querySelectorAll('input[data-doc-type]').forEach(input => {
+                const type = input.dataset.docType, field = input.dataset.field;
+                if (!cfg[type]) cfg[type] = { code:'', version:'' };
+                cfg[type][field] = input.value.trim();
+            });
+            persistSstDocTypeCodes(cfg);
+            alert('Codification documentaire enregistrée.');
         }
 
         function getSstDocumentSettings() {
@@ -3845,8 +3852,7 @@
             if(save) save.disabled=!can;
             if(save) save.classList.toggle('opacity-50',!can);
             if(perm) perm.textContent=can?'Modifiable par un administrateur':'Lecture seule';
-            const prefixEl=document.getElementById('sst-doc-code-prefixe');
-            if(prefixEl && document.activeElement!==prefixEl) prefixEl.value=getSstDocCodificationConfig().prefixe||'';
+            renderSstDocCodeSettings();
         }
 
         async function handleSstDocumentLogo(event){
@@ -10564,7 +10570,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const boxHeights = {};
             const boxWidth = 270;
             const levelOf = {};
-            const levelMaxHeight = {};
             nodes.forEach(n => {
                 textLines[n.id] = wrapAtSvgText(n.text, 24);
                 boxHeights[n.id] = Math.max(88, 58 + textLines[n.id].length * 18);
@@ -10577,47 +10582,46 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 stack.add(id);
                 return levelOf[id]=levelFor(n.parentId, stack)+1;
             }
-            nodes.forEach(n => {
-                const lvl = levelFor(n.id);
-                levelMaxHeight[lvl] = Math.max(levelMaxHeight[lvl] || 0, boxHeights[n.id]);
-            });
+            nodes.forEach(n => levelFor(n.id));
 
-            const xGap = 40, yGap = 55;
-            const xPositions = {}, levelCursor = { value:0 };
+            // Orientation horizontale : l'événement (racine, niveau 0) est placé le plus à DROITE ;
+            // les causes plus en amont (niveaux supérieurs) s'étendent vers la GAUCHE, feuille en
+            // paysage. L'axe des niveaux devient l'axe X, l'axe des frères/sœurs devient l'axe Y.
+            const xGap = 60, yGap = 26;
+            const maxBoxHeight = Math.max(88, ...Object.values(boxHeights));
+            const breadthSlot = maxBoxHeight + yGap;
+
+            const yPositions = {};
             let cursor = 0;
-
             function walk(id) {
                 const kids = children[id] || [];
                 if(!kids.length) {
-                    xPositions[id] = cursor * (boxWidth + xGap) + boxWidth/2;
+                    yPositions[id] = cursor * breadthSlot + breadthSlot/2;
                     cursor += 1;
                     return;
                 }
                 kids.forEach(k => walk(k));
-                xPositions[id] = (xPositions[kids[0]] + xPositions[kids[kids.length-1]]) / 2;
+                yPositions[id] = (yPositions[kids[0]] + yPositions[kids[kids.length-1]]) / 2;
             }
-
             const roots = nodes.filter(n => !n.parentId || !byId[n.parentId]);
             roots.forEach(r => walk(r.id));
 
-            const levelY = {};
-            let currentY = 50;
-            const maxLevel = Math.max(0, ...Object.keys(levelMaxHeight).map(Number));
-            for(let lvl=0; lvl<=maxLevel; lvl++) {
-                const h = levelMaxHeight[lvl] || 72;
-                levelY[lvl] = currentY + h/2;
-                currentY += h + yGap;
-            }
+            const maxLevel = Math.max(0, ...nodes.map(n => levelOf[n.id]));
+            const levelStep = boxWidth + xGap;
+            const rawX = {};
+            nodes.forEach(n => { rawX[n.id] = -levelOf[n.id] * levelStep; });
+            const marginLeft = 40;
+            const minX = Math.min(0, ...Object.values(rawX));
 
             const positions = {};
             nodes.forEach(n => {
-                positions[n.id] = { x: xPositions[n.id] || boxWidth/2, y: levelY[levelOf[n.id]] || 50 };
+                positions[n.id] = { x: rawX[n.id] - minX + marginLeft + boxWidth/2, y: yPositions[n.id] || breadthSlot/2 };
             });
 
             const leafCount = Math.max(1, cursor);
-            const width = Math.max(760, leafCount * (boxWidth + xGap) + 40);
-            const height = Math.max(260, currentY + 20);
-            return { positions, children, width, height, boxWidth, boxHeights, textLines, levelOf, levelMaxHeight, xGap, yGap };
+            const width = Math.max(760, (maxLevel+1) * levelStep + marginLeft + boxWidth/2 + 40);
+            const height = Math.max(260, leafCount * breadthSlot + 40);
+            return { positions, children, width, height, boxWidth, boxHeights, textLines, levelOf, breadthSlot, xGap, yGap };
         }
 
         function getAtTreeTypeClass(type) {
@@ -10644,9 +10648,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             nodes.forEach(n => {
                 if(n.parentId && positions[n.parentId] && positions[n.id]) {
                     const p=positions[n.parentId], c=positions[n.id];
-                    const ph=boxHeights[n.parentId]/2, ch=boxHeights[n.id]/2;
-                    const y1=p.y+ph, y2=c.y-ch;
-                    svg += `<path d="M ${p.x} ${y1} C ${p.x} ${(y1+y2)/2}, ${c.x} ${(y1+y2)/2}, ${c.x} ${y2}" stroke="#94a3b8" stroke-width="2.5" fill="none"/>`;
+                    const bw=boxWidth;
+                    const x1=p.x-bw/2, y1=p.y, x2=c.x+bw/2, y2=c.y;
+                    const midX=(x1+x2)/2;
+                    svg += `<path d="M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" stroke="#94a3b8" stroke-width="2.5" fill="none"/>`;
                 }
             });
 
@@ -10983,12 +10988,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
             const a=analyses[idx];
             if(!a) return false;
-            const docCode=getOrAssignDocCode(a,'AT');
-            if(docCode){
-                analyses[idx]=a;
-                sstSafeSetLocalStorage('at_analyses',JSON.stringify(analyses));
-                try{ if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_analyses'); }catch(e){ console.warn(e); }
-            }
+            const docCode=getDocTypeCode('AT');
             if(!window.jspdf||typeof window.jspdf.jsPDF!=='function'){
                 alert('Le générateur PDF n\'est pas disponible dans ce navigateur. Rechargez la page avec Internet activé.');
                 return false;
@@ -11033,10 +11033,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 nodes.forEach(n=>{
                     if(!n.parentId||!lay.positions[n.parentId]||!lay.positions[n.id]) return;
                     const p=lay.positions[n.parentId],q=lay.positions[n.id];
-                    const ph=lay.boxHeights[n.parentId]/2,ch=lay.boxHeights[n.id]/2;
-                    const x1=svgPad+p.x,y1=svgPad+p.y+ph,x2=svgPad+q.x,y2=svgPad+q.y-ch;
-                    const cy=(y1+y2)/2;
-                    svgParts.push(`<path d="M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}" stroke="#94a3b8" stroke-width="3" fill="none"/>`);
+                    const bw=lay.boxWidth;
+                    const x1=svgPad+p.x-bw/2,y1=svgPad+p.y,x2=svgPad+q.x+bw/2,y2=svgPad+q.y;
+                    const cx=(x1+x2)/2;
+                    svgParts.push(`<path d="M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}" stroke="#94a3b8" stroke-width="3" fill="none"/>`);
                 });
                 // Toutes les boîtes et tout le texte de chaque nœud, sans troncature
                 nodes.forEach(n=>{
@@ -12173,7 +12173,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 const header=(subtitle='')=>{ drawSstPdfHeaderBar(doc,`COMPTE-RENDU TOURNÉE QHSE — ${t.reference||''}`,{margin:M,height:24,titleSize:10}); if(subtitle){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(203,213,225);doc.text(subtitle,W-M,17,{align:'right'});doc.setTextColor(15,23,42);} };
                 const pageFoot=()=>{drawSstPdfFooter(doc);doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(100,116,139);doc.text(`Tournée ${t.reference||''} · page ${doc.getNumberOfPages()}`,W-M,H-5,{align:'right'});doc.setTextColor(15,23,42);};
                 const split=(txt,w)=>doc.splitTextToSize(String(txt||''),w);
-                header(`${t.secteur||'Secteur non défini'} · ${t.date||''}`);let y=29;
+                const docCode=getDocTypeCode('TOURNEE');
+                header(`${docCode?docCode+' · ':''}${t.secteur||'Secteur non défini'} · ${t.date||''}`);let y=29;
                 // Informations
                 doc.setDrawColor(203,213,225);doc.setFillColor(248,250,252);doc.roundedRect(M,y,C,23,2,2,'FD');
                 const info=[['Secteur / UT',t.secteur],['Date / heure',`${t.date||'N/C'}${t.heure?' · '+t.heure:''}`],['Intervenant(s)',t.technicien],['Responsable de zone',t.contremaitre],['Encadrant de l’unité',t.encadrant],['Autre participant',t.membreCoop],['Statut',t.statut||'En cours']];
