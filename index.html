@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.78</title>
+    <title>Application SST & RH - Gestion V2.79</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.78</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.79</div>
         </aside>
 
         <!-- Main Content -->
@@ -895,12 +895,15 @@
                             </div>
                             <div class="flex flex-wrap gap-2">
                                 <button onclick="toggleDuerpCotationPanel()" class="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-900 font-semibold text-sm">⚙️ Ma grille de cotation</button>
-                                <button onclick="downloadDuerpTemplate()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📥 Modèle Excel</button>
-                                <label class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold text-sm cursor-pointer">
+                                <span id="duerp-viewer-badge" class="hidden self-center text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-300">👁️ Lecture seule</span>
+                                <button onclick="downloadDuerpTemplate()" data-duerp-write class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📥 Modèle Excel</button>
+                                <label data-duerp-write class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold text-sm cursor-pointer">
                                     📤 Importer des risques
                                     <input type="file" id="import-duerp-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="importDuerpFile(event)">
                                 </label>
-                                <button onclick="openDuerpModal()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un risque</button>
+                                <button onclick="exportDuerpXlsx()" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-semibold text-sm">📊 Exporter en Excel</button>
+                                <button onclick="openDuerpAccessModal()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📄 Avis d'accès</button>
+                                <button onclick="openDuerpModal()" data-duerp-write class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un risque</button>
                             </div>
                         </div>
 
@@ -951,6 +954,17 @@
                                 </div>
                                 <div id="duerp-cotation-grid-preview" class="mt-3 text-[11px] text-slate-600 bg-slate-50 border rounded-lg p-3"></div>
                             </div>
+                            <div class="mt-5 pt-4 border-t border-slate-200 flex flex-col md:flex-row md:items-center gap-3">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Quand un risque est coté au niveau le plus élevé, sans action associée</label>
+                                    <select id="duerp-policy-alert-mode" class="w-full md:w-96 p-2 border rounded text-sm bg-white">
+                                        <option value="advise">Conseiller une action (message d'information)</option>
+                                        <option value="must">Exiger une action (message d'avertissement)</option>
+                                        <option value="off">Ne rien signaler</option>
+                                    </select>
+                                </div>
+                                <button type="button" onclick="saveDuerpPolicyFromUi()" id="duerp-policy-save-btn" class="bg-slate-800 text-white px-4 py-2 rounded text-xs font-semibold hover:bg-slate-900 shrink-0">💾 Enregistrer ce réglage</button>
+                            </div>
                             <div class="flex flex-wrap justify-end gap-2 mt-4">
                                 <button type="button" onclick="resetDuerpCotationEditor()" class="bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded text-xs font-semibold hover:bg-slate-100">Réinitialiser la grille historique</button>
                                 <button type="button" onclick="saveDuerpCotationConfig()" id="duerp-cotation-save-btn" class="bg-emerald-600 text-white px-4 py-2 rounded text-xs font-semibold hover:bg-emerald-700">💾 Enregistrer la méthodologie</button>
@@ -975,7 +989,60 @@
                             </div>
                         </div>
 
+                        <div id="duerp-alert-banner" class="hidden"></div>
                         <div id="table-duerp-risques" class="space-y-4"></div>
+                    </div>
+                </div>
+
+
+                <!-- MODALE : ALERTE RISQUE ÉLEVÉ SANS ACTION -->
+                <div id="duerp-alert-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+                        <div class="flex items-start gap-3 mb-3">
+                            <span class="text-3xl">⚠️</span>
+                            <div>
+                                <h3 id="duerp-alert-title" class="text-lg font-bold text-slate-800"></h3>
+                                <p id="duerp-alert-text" class="text-sm text-slate-600 mt-1"></p>
+                            </div>
+                        </div>
+                        <div id="duerp-alert-risk" class="text-xs bg-slate-50 border rounded-lg p-3 text-slate-700 mb-4"></div>
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="closeDuerpAlertModal()" class="bg-gray-200 text-slate-700 px-4 py-2 rounded text-sm font-semibold hover:bg-gray-300">Plus tard</button>
+                            <button type="button" onclick="createActionFromDuerpAlert()" class="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-indigo-700">📋 Créer l'action maintenant</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODALE : AVIS D'ACCÈS AU DUERP -->
+                <div id="duerp-access-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
+                        <h3 class="text-xl font-bold text-slate-800 mb-1">📄 Avis d'accès au DUERP</h3>
+                        <p class="text-xs text-slate-500 mb-4">Le DUERP doit être tenu à la disposition des travailleurs, du CSE, du service de prévention et de santé au travail et de l'inspection du travail. Renseignez ci-dessous comment le consulter dans votre établissement, puis générez l'avis à afficher.</p>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Lieu de consultation</label>
+                                <input type="text" id="duerp-access-lieu" placeholder="Ex : Bureau HSE, bâtiment A" class="w-full p-2 border rounded text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Personne à contacter</label>
+                                <input type="text" id="duerp-access-contact" placeholder="Ex : DUPONT Jean, responsable HSE" class="w-full p-2 border rounded text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Jours et horaires</label>
+                                <input type="text" id="duerp-access-horaires" placeholder="Ex : du lundi au vendredi, 9h-17h" class="w-full p-2 border rounded text-sm">
+                            </div>
+                            <label class="flex items-start gap-2 text-xs text-slate-700">
+                                <input type="checkbox" id="duerp-access-online" class="mt-0.5">
+                                <span>Le DUERP est aussi consultable en ligne (compte « Consultation DUERP uniquement », en lecture seule) — voir Administration pour créer ce type de compte.</span>
+                            </label>
+                        </div>
+                        <div class="flex flex-wrap justify-between gap-2 mt-6">
+                            <button type="button" onclick="generateDuerpAccessNoticePdf()" class="bg-slate-800 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-slate-900">🖨️ Générer l'avis (PDF)</button>
+                            <div class="flex gap-2">
+                                <button type="button" onclick="closeDuerpAccessModal()" class="bg-gray-200 text-slate-700 px-4 py-2 rounded text-sm font-semibold hover:bg-gray-300">Fermer</button>
+                                <button type="button" id="duerp-access-save-btn" onclick="saveDuerpAccessSettings()" class="bg-emerald-600 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-emerald-700">💾 Enregistrer</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1003,12 +1070,16 @@
                                 <textarea id="duerp-danger" placeholder="Décrivez le danger..." class="w-full p-2 border rounded h-20 text-sm"></textarea>
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-slate-600 mb-1">Dommage potentiel / Conséquence</label>
-                                <input type="text" id="duerp-dommage" placeholder="Ex: Chute..." class="w-full p-2 border rounded text-sm">
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Dommage(s) potentiel(s) / Conséquence(s)</label>
+                                <textarea id="duerp-dommage" placeholder="Ex: Chute..." class="w-full p-2 border rounded h-16 text-sm hidden" data-duerp-write></textarea>
+                                <div id="duerp-dommage-picker" class="hidden" data-duerp-write></div>
+                                <p class="text-[10px] text-slate-400 mt-1" data-duerp-write>Choisissez un ou plusieurs dommages types, ou ajoutez le vôtre.</p>
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-slate-600 mb-1">Moyens de prévention existants</label>
-                                <textarea id="duerp-prevention" placeholder="EPI, consignes..." class="w-full p-2 border rounded h-16 text-sm"></textarea>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Mesures de prévention existantes</label>
+                                <textarea id="duerp-prevention" placeholder="EPI, consignes..." class="w-full p-2 border rounded h-16 text-sm hidden" data-duerp-write></textarea>
+                                <div id="duerp-prevention-picker" class="hidden" data-duerp-write></div>
+                                <p class="text-[10px] text-slate-400 mt-1" data-duerp-write>Choisissez une ou plusieurs mesures types, ou ajoutez la vôtre.</p>
                             </div>
 
                             <div class="bg-slate-50 p-4 rounded-lg border">
@@ -2320,6 +2391,10 @@
             viewer: {
                 modules: ['dashboard'],
                 permissions: ['dashboard.read']
+            },
+            viewerDuerp: {
+                modules: ['dashboard', 'duerp'],
+                permissions: ['dashboard.read', 'duerp.read']
             }
         };
 
@@ -2501,7 +2576,7 @@
         function renderAdminRoleOptions() {
             const sel=document.getElementById('admin-user-role');
             if(!sel) return;
-            const roles=[['companyAdmin','Administrateur entreprise'],['hse','Responsable HSE'],['rh','RH'],['infirmiere','Infirmière'],['manager','Manager'],['employee','Salarié / utilisateur'],['viewer','Lecture seule']];
+            const roles=[['companyAdmin','Administrateur entreprise'],['hse','Responsable HSE'],['rh','RH'],['infirmiere','Infirmière'],['manager','Manager'],['employee','Salarié / utilisateur'],['viewerDuerp','Consultation DUERP uniquement'],['viewer','Lecture seule']];
             sel.innerHTML=roles.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('');
             applyAdminRolePreset();
         }
@@ -3182,7 +3257,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.78';
+        const SST_APP_VERSION = '2.79';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -7567,6 +7642,232 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
 
         // --- DUERP : MÉTHODOLOGIE DE COTATION CONFIGURABLE ---
+        // ============================================================
+        // DUERP V2.81 — listes de référence, alerte « risque élevé », export Excel, avis d'accès, compte consultation
+        // ============================================================
+
+        // Listes de référence (typologies courantes de dommages ; mesures classées selon la hiérarchie des principes
+        // généraux de prévention). Elles proposent, elles n'imposent rien : la saisie libre reste possible.
+        const SST_DUERP_DOMMAGES = [
+            { group: 'Chutes, chocs et blessures', items: ['Contusion / hématome', 'Entorse / foulure', 'Fracture', 'Plaie / coupure', 'Traumatisme crânien', 'Écrasement', 'Amputation', 'Décès'] },
+            { group: 'Manutention et postures', items: ['Lombalgie / lumbago', 'Troubles musculo-squelettiques (TMS)', 'Hernie discale', 'Fatigue physique'] },
+            { group: 'Produits et agents chimiques', items: ['Brûlure chimique', 'Irritation / dermatose', 'Intoxication / asphyxie', 'Allergie / asthme professionnel', 'Atteinte respiratoire', 'Maladie professionnelle (effets différés)'] },
+            { group: 'Feu, explosion, électricité', items: ['Brûlure thermique', 'Électrisation / électrocution', 'Incendie / explosion'] },
+            { group: 'Bruit, vibrations, ambiances', items: ['Surdité / acouphènes', 'Syndrome vibratoire', 'Coup de chaleur / hypothermie', 'Fatigue visuelle'] },
+            { group: 'Déplacements et circulation', items: ['Accident de la route / de trajet', 'Collision avec un engin ou un véhicule', 'Renversement / chute d\'engin'] },
+            { group: 'Risques psychosociaux et violences', items: ['Stress / épuisement professionnel', 'Agression / violence externe', 'Harcèlement', 'Isolement (travail isolé)'] },
+            { group: 'Risques biologiques', items: ['Infection / contamination', 'Piqûre / morsure'] }
+        ];
+        const SST_DUERP_MESURES = [
+            { group: '1 · Supprimer ou substituer le danger', items: ['Suppression de l\'opération dangereuse', 'Substitution par un produit ou un procédé moins dangereux', 'Mécanisation / automatisation de la tâche'] },
+            { group: '2 · Protection collective', items: ['Protecteurs / carters de machine', 'Garde-corps', 'Ventilation / aspiration à la source', 'Balisage et séparation des flux piétons / engins', 'Consignation / verrouillage des énergies', 'Aide à la manutention (chariot, palan, table élévatrice)', 'Éclairage adapté', 'Bac de rétention'] },
+            { group: '3 · Organisation et information', items: ['Consignes / procédures écrites', 'Plan de circulation', 'Plan de prévention / permis de feu', 'Vérifications périodiques des équipements', 'Maintenance préventive', 'Limitation du temps d\'exposition / rotation des postes', 'Signalisation et affichage', 'Dispositif d\'alarme du travailleur isolé (DATI)'] },
+            { group: '4 · Formation et habilitation', items: ['Accueil sécurité des nouveaux arrivants', 'Formation à la sécurité du poste', 'Habilitation / autorisation de conduite', 'Formation gestes et postures', 'Sauveteurs secouristes du travail (SST)'] },
+            { group: '5 · Protection individuelle (en dernier recours)', items: ['Gants adaptés', 'Lunettes / écran facial', 'Casque', 'Chaussures de sécurité', 'Protections auditives', 'Masque / appareil respiratoire', 'Vêtements de protection / haute visibilité', 'Harnais antichute'] },
+            { group: '6 · Moyens de secours', items: ['Extincteurs', 'Douche de sécurité / lave-œil', 'Trousse de secours / défibrillateur', 'Plan d\'évacuation et exercices'] }
+        ];
+        const SST_DUERP_PICKERS = {
+            'duerp-dommage': { data: () => SST_DUERP_DOMMAGES, choose: 'Choisir un dommage type dans la liste…', custom: 'Autre dommage (à préciser)' },
+            'duerp-prevention': { data: () => SST_DUERP_MESURES, choose: 'Choisir une mesure type dans la liste…', custom: 'Autre mesure (à préciser)' }
+        };
+        function sstChipItems(id) { return String(document.getElementById(id)?.value || '').split(/[;\n]+/).map(x => x.trim()).filter(Boolean); }
+        function sstChipSetItems(id, items) { const el = document.getElementById(id); if(el) el.value = items.join(' ; '); }
+        function sstChipRender(id) {
+            const cfg = SST_DUERP_PICKERS[id]; const host = document.getElementById(id + '-picker'); if(!cfg || !host) return;
+            const items = sstChipItems(id);
+            host.innerHTML = `
+                <select onchange="sstChipPick('${id}', this)" class="w-full p-2 border rounded text-sm bg-white">
+                    <option value="">➕ ${escapeHtml(cfg.choose)}</option>
+                    ${cfg.data().map(g => `<optgroup label="${escapeHtml(g.group)}">${g.items.map(it => `<option value="${escapeHtml(it)}"${items.includes(it) ? ' disabled' : ''}>${escapeHtml(it)}</option>`).join('')}</optgroup>`).join('')}
+                </select>
+                <div class="flex gap-2 mt-2">
+                    <input type="text" id="${id}-custom" maxlength="160" placeholder="${escapeHtml(cfg.custom)}" onkeydown="if(event.key==='Enter'){event.preventDefault();sstChipAddCustom('${id}');}" class="flex-1 min-w-0 p-2 border rounded text-sm">
+                    <button type="button" onclick="sstChipAddCustom('${id}')" class="shrink-0 bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-2 rounded text-xs font-semibold">Ajouter</button>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mt-2">${items.length ? items.map((it, i) => `<span class="inline-flex items-center gap-1 bg-slate-100 border border-slate-300 text-slate-700 text-xs rounded-full pl-2.5 pr-1.5 py-1">${escapeHtml(it)}<button type="button" onclick="sstChipRemove('${id}', ${i})" class="text-slate-400 hover:text-red-600 font-bold leading-none px-1" title="Retirer">✕</button></span>`).join('') : '<span class="text-[11px] text-slate-400 italic">Aucun élément sélectionné.</span>'}</div>`;
+        }
+        function sstChipPick(id, sel) { const v = sel.value; if(v) { const items = sstChipItems(id); if(!items.includes(v)) items.push(v); sstChipSetItems(id, items); } sstChipRender(id); }
+        function sstChipAddCustom(id) {
+            const inp = document.getElementById(id + '-custom'); const v = String(inp?.value || '').replace(/[;\n]+/g, ' ').trim(); if(!v) return;
+            const items = sstChipItems(id); if(!items.some(x => x.toLowerCase() === v.toLowerCase())) items.push(v);
+            sstChipSetItems(id, items); sstChipRender(id); document.getElementById(id + '-custom')?.focus();
+        }
+        function sstChipRemove(id, i) { const items = sstChipItems(id); items.splice(i, 1); sstChipSetItems(id, items); sstChipRender(id); }
+        function sstDuerpListHtml(v) {
+            const items = String(v || '').split(/[;\n]+/).map(x => x.trim()).filter(Boolean);
+            if(!items.length) return 'N/C';
+            if(items.length === 1) return escapeHtml(items[0]);
+            return '<ul class="list-disc pl-4 space-y-0.5">' + items.map(i => `<li>${escapeHtml(i)}</li>`).join('') + '</ul>';
+        }
+
+        // --- Droits : compte « consultation » (lecture seule) ---
+        function sstDuerpReadOnly() {
+            const ctx = window.SST_APP_CONTEXT;
+            if(!ctx || ctx.role === 'local-dev') return false;
+            if(ctx.permissions?.['*'] === true) return false;
+            return ctx.permissions?.['duerp.write'] !== true;
+        }
+        function applyDuerpReadOnlyUi() {
+            const ro = sstDuerpReadOnly();
+            document.querySelectorAll('[data-duerp-write]').forEach(el => el.classList.toggle('hidden', ro));
+            const panel = document.getElementById('duerp-cotation-panel'); if(ro && panel) panel.classList.add('hidden');
+            const badge = document.getElementById('duerp-viewer-badge'); if(badge) badge.classList.toggle('hidden', !ro);
+        }
+
+        // --- Politique DUERP de l'entreprise (alerte risque élevé, avis d'accès) ---
+        function getDuerpPolicy() {
+            const ctx = window.SST_APP_CONTEXT; let stored = ctx?.company?.settings?.duerpPolicy;
+            if(!stored) { try { stored = JSON.parse(localStorage.getItem('sst_local_duerp_policy') || 'null'); } catch(e) { stored = null; } }
+            stored = stored && typeof stored === 'object' ? stored : {};
+            const a = stored.access && typeof stored.access === 'object' ? stored.access : {};
+            return {
+                alertMode: ['must', 'advise', 'off'].includes(stored.alertMode) ? stored.alertMode : 'advise',
+                access: { lieu: String(a.lieu || ''), contact: String(a.contact || ''), horaires: String(a.horaires || ''), online: a.online === true }
+            };
+        }
+        async function sstSaveCompanySetting(settingKey, value, localKey) {
+            const ctx = window.SST_APP_CONTEXT; const api = window.SSTFirebaseApi; const db = api?.getDb?.();
+            if(!ctx || !db || !ctx.companyId || ctx.role === 'local-dev') {
+                try { localStorage.setItem(localKey, JSON.stringify(value)); } catch(e) {}
+                if(ctx) { ctx.company = ctx.company || {}; ctx.company.settings = { ...(ctx.company.settings || {}), [settingKey]: value }; }
+                return;
+            }
+            const currentSettings = ctx.company?.settings || {};
+            await api.setDoc(api.doc(db, 'companies', ctx.companyId), { settings: { ...currentSettings, [settingKey]: value }, updatedAt: api.serverTimestamp() }, { merge: true });
+            const snap = await api.getDoc(api.doc(db, 'companies', ctx.companyId));
+            if(snap.exists()) ctx.company = { id: snap.id, ...snap.data() };
+        }
+        function syncDuerpPolicyUi() {
+            const sel = document.getElementById('duerp-policy-alert-mode'); if(!sel) return;
+            sel.value = getDuerpPolicy().alertMode;
+            const canEdit = getDuerpConfigEditorPermission(); sel.disabled = !canEdit;
+            const btn = document.getElementById('duerp-policy-save-btn'); if(btn) btn.disabled = !canEdit;
+        }
+        async function saveDuerpPolicyFromUi() {
+            if(!getDuerpConfigEditorPermission()) { alert('Seul un administrateur de l’entreprise peut modifier ce réglage.'); return; }
+            const mode = document.getElementById('duerp-policy-alert-mode')?.value;
+            const policy = { ...getDuerpPolicy(), alertMode: ['must', 'advise', 'off'].includes(mode) ? mode : 'advise' };
+            try { await sstSaveCompanySetting('duerpPolicy', policy, 'sst_local_duerp_policy'); loadDuerp(); alert('Réglage enregistré.'); }
+            catch(err) { console.error(err); alert(err?.message || 'Enregistrement impossible.'); }
+        }
+
+        // --- Risque élevé sans action : alerte, bandeau, notification ---
+        function getDuerpLinkedActions(r, riskId, idx, actionsPap) {
+            return actionsPap.filter(a => a.duerpRiskId === riskId || a.duerpIndex === idx || (a.origine === 'DUERP' && a.unite === r.unite && String(a.action || '').includes(r.danger)));
+        }
+        function sstDuerpRisksNeedingAction() {
+            const policy = getDuerpPolicy(); if(policy.alertMode === 'off') return [];
+            let risques = [], actions = [];
+            try { risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]'); actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]'); } catch(e) { return []; }
+            const out = [];
+            risques.forEach((r, i) => {
+                const riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0'));
+                const calc = calculateDuerpCotation(r);
+                if(calc.zone === 'red' && getDuerpLinkedActions(r, riskId, i, actions).length === 0) out.push({ r, idx: i, riskId, calc });
+            });
+            return out;
+        }
+        function duerpAlertText(mode) {
+            return mode === 'must' ? 'Une action de prévention doit être planifiée dans le PAPRIPACT.' : 'Une action de prévention est fortement conseillée dans le PAPRIPACT.';
+        }
+        function renderDuerpAlertBanner() {
+            const box = document.getElementById('duerp-alert-banner'); if(!box) return;
+            const policy = getDuerpPolicy(); const list = (sstDuerpReadOnly() || window.SSTCloud && !window.SSTCloud.canModule?.('papripact')) ? [] : sstDuerpRisksNeedingAction();
+            if(!list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+            const label = getDuerpCurrentCotationConfig().zones[2].label; const must = policy.alertMode === 'must'; const s = list.length > 1 ? 's' : '';
+            box.className = 'mb-4 rounded-xl border p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2 ' + (must ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300');
+            box.innerHTML = `<div class="text-sm ${must ? 'text-red-900' : 'text-amber-900'}"><strong>⚠️ ${list.length} risque${s} coté${s} « ${escapeHtml(label)} » sans action PAPRIPACT.</strong> <span class="text-xs">${duerpAlertText(policy.alertMode)}</span></div>
+                <button type="button" onclick="showDuerpRisksNeedingAction()" class="shrink-0 bg-white border ${must ? 'border-red-300 text-red-800' : 'border-amber-300 text-amber-800'} px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-50">Afficher ces risques</button>`;
+        }
+        function showDuerpRisksNeedingAction() {
+            const f = document.getElementById('filter-duerp-niveau'); const u = document.getElementById('filter-duerp-unite');
+            if(f) f.value = 'red'; if(u) u.value = ''; loadDuerp();
+        }
+        function sstMaybeAlertHighDuerpRisk(idx) {
+            const policy = getDuerpPolicy(); if(policy.alertMode === 'off' || sstDuerpReadOnly()) return;
+            const risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]'); const r = risques[idx]; if(!r) return;
+            const calc = calculateDuerpCotation(r); if(calc.zone !== 'red') return;
+            const riskId = r.riskId || ('DUERP-R' + String(idx + 1).padStart(3, '0'));
+            const actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            if(getDuerpLinkedActions(r, riskId, idx, actions).length) return;
+            window._duerpAlertIdx = idx;
+            document.getElementById('duerp-alert-title').textContent = `⚠️ Risque coté « ${calc.zoneInfo.label} »`;
+            document.getElementById('duerp-alert-text').textContent = `Ce risque a obtenu un score de ${calc.score}. ${duerpAlertText(policy.alertMode)}`;
+            document.getElementById('duerp-alert-risk').textContent = `${riskId} · ${r.unite || 'Unité non définie'} · ${r.danger || ''}`;
+            document.getElementById('duerp-alert-modal').classList.remove('hidden');
+        }
+        function closeDuerpAlertModal() { document.getElementById('duerp-alert-modal')?.classList.add('hidden'); }
+        function createActionFromDuerpAlert() { const i = window._duerpAlertIdx; closeDuerpAlertModal(); if(i !== undefined && i !== null) openDuerpPapModalFromIndex(i); }
+
+        // --- Export Excel du DUERP ---
+        function exportDuerpXlsx() {
+            if(sstDuerpReadOnly()) { alert('Export non disponible avec un compte en lecture seule.'); return; }
+            const risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
+            if(!risques.length) { alert('Aucun risque à exporter.'); return; }
+            const actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            const cfg = getDuerpCurrentCotationConfig(); const crit = getDuerpActiveCriteria(cfg);
+            const fmt = d => (d ? String(d).split('-').reverse().join('/') : '');
+            const lines = v => String(v || '').split(/[;\n]+/).map(x => x.trim()).filter(Boolean).join('\n');
+            const rows = [], actRows = [];
+            risques.map((r, i) => ({ r, i })).sort((a, b) => String(a.r.unite || '').localeCompare(String(b.r.unite || ''), 'fr', { sensitivity: 'base' }) || a.i - b.i).forEach(({ r, i }) => {
+                const riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0'));
+                const calc = calculateDuerpCotation(r); const linked = getDuerpLinkedActions(r, riskId, i, actionsPap);
+                const critCells = crit.map(c => { const rc = calc.config.criteria.find(x => x.key === c.key && x.active); if(!rc) return ''; const v = calc.values[c.key]; return `${v} - ${rc.levels[v - 1]?.label || ''}`; });
+                rows.push([riskId, r.unite || '', fmt(r.date), r.danger || '', lines(r.dommage), lines(r.prevention), ...critCells, calc.score, calc.zoneInfo.label, linked.length, linked.map(a => `N°${a.numero || '?'} – ${a.action || ''} (${a.statut || ''})`).join('\n')]);
+                linked.forEach(a => actRows.push([riskId, r.unite || '', a.numero || '', a.action || '', a.type || '', a.priorite || '', a.responsable || '', fmt(a.delai), a.statut || '', fmt(a.dateCloture)]));
+            });
+            const gridRows = [];
+            crit.forEach(c => c.levels.forEach(l => gridRows.push([c.label, l.value, l.label])));
+            gridRows.push(['', '', '']);
+            cfg.zones.forEach((z, i) => gridRows.push(['Niveau de risque : ' + z.label, i === 0 ? `score de 1 à ${z.max}` : (i === 1 ? `score de ${cfg.zones[0].max + 1} à ${z.max}` : `score supérieur à ${cfg.zones[1].max}`), '']));
+            const name = String((typeof getSstDocumentBranding === 'function' ? getSstDocumentBranding().companyName : '') || 'entreprise').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'entreprise';
+            sstDownloadXlsx([
+                { name: 'DUERP', data: [['Réf.', 'Unité de travail', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes', ...crit.map(c => c.label), 'Score', 'Niveau de risque', 'Nb d’actions', 'Actions PAPRIPACT liées'], ...rows], widths: [14, 26, 16, 50, 36, 42, ...crit.map(() => 22), 9, 16, 12, 60] },
+                { name: 'Actions PAPRIPACT liées', data: [['Réf. risque', 'Unité de travail', 'N° action', 'Action', 'Type', 'Priorité', 'Responsable', 'Échéance', 'Statut', 'Date de clôture'], ...actRows], widths: [14, 26, 10, 60, 14, 10, 22, 14, 14, 14] },
+                { name: 'Grille de cotation', data: [['Critère / niveau', 'Valeur', 'Libellé'], ...gridRows], widths: [40, 26, 34] }
+            ], `DUERP_${name}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        // --- Avis d'accès au DUERP (affichage) ---
+        function openDuerpAccessModal() {
+            const a = getDuerpPolicy().access;
+            document.getElementById('duerp-access-lieu').value = a.lieu; document.getElementById('duerp-access-contact').value = a.contact;
+            document.getElementById('duerp-access-horaires').value = a.horaires; document.getElementById('duerp-access-online').checked = a.online === true;
+            const btn = document.getElementById('duerp-access-save-btn'); if(btn) btn.disabled = !getDuerpConfigEditorPermission();
+            document.getElementById('duerp-access-modal').classList.remove('hidden');
+        }
+        function closeDuerpAccessModal() { document.getElementById('duerp-access-modal')?.classList.add('hidden'); }
+        function collectDuerpAccessFields() {
+            return { lieu: document.getElementById('duerp-access-lieu').value.trim(), contact: document.getElementById('duerp-access-contact').value.trim(), horaires: document.getElementById('duerp-access-horaires').value.trim(), online: document.getElementById('duerp-access-online').checked };
+        }
+        async function saveDuerpAccessSettings() {
+            if(!getDuerpConfigEditorPermission()) { alert('Seul un administrateur de l’entreprise peut mémoriser ces informations pour toute l’entreprise. Vous pouvez tout de même générer l’avis.'); return; }
+            try { await sstSaveCompanySetting('duerpPolicy', { ...getDuerpPolicy(), access: collectDuerpAccessFields() }, 'sst_local_duerp_policy'); alert('Informations enregistrées.'); }
+            catch(err) { console.error(err); alert(err?.message || 'Enregistrement impossible.'); }
+        }
+        function generateDuerpAccessNoticePdf() {
+            const jsPDFCtor = window.jspdf?.jsPDF;
+            if(!jsPDFCtor) { alert('La génération du PDF n’a pas pu se charger. Vérifiez votre connexion internet puis réessayez.'); return; }
+            const f = collectDuerpAccessFields(); const branding = getSstDocumentBranding();
+            const doc = new jsPDFCtor({ unit: 'mm', format: 'a4' }); const W = doc.internal.pageSize.getWidth(); const M = 18;
+            let y = drawSstPdfHeaderBar(doc, 'AVIS D’ACCÈS AU DUERP', { margin: 15, height: 24 }) + 8;
+            const para = (text, size = 10.5, bold = false, gap = 4) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); const lines = doc.splitTextToSize(String(text), W - 2 * M); doc.text(lines, M, y); y += lines.length * (size * 0.42) + gap; };
+            doc.setTextColor(15, 23, 42);
+            para('DOCUMENT UNIQUE D’ÉVALUATION DES RISQUES PROFESSIONNELS', 15, true, 6);
+            para(`${branding.companyName || 'L’entreprise'}${branding.establishment ? ' — ' + branding.establishment : ''}`, 11, true, 8);
+            para('Le document unique d’évaluation des risques professionnels (DUERP) et ses versions antérieures sont conservés pendant 40 ans et tenus à la disposition des travailleurs et anciens travailleurs (pour les versions en vigueur pendant leur période d’activité dans l’entreprise), des membres de la délégation du personnel du comité social et économique, du service de prévention et de santé au travail, des agents de l’inspection du travail, des agents des services de prévention des organismes de sécurité sociale et des autres personnes ou organismes mentionnés à l’article R. 4121-4 du code du travail.', 10.5, false, 8);
+            para('COMMENT LE CONSULTER DANS NOTRE ÉTABLISSEMENT', 12, true, 5);
+            para(`Lieu de consultation : ${f.lieu || '………………………………………………………………'}`, 11, false, 3);
+            para(`Personne à contacter : ${f.contact || '………………………………………………………………'}`, 11, false, 3);
+            para(`Jours et horaires : ${f.horaires || '………………………………………………………………'}`, 11, false, 6);
+            if(f.online) para(`Le DUERP est aussi consultable en ligne, en lecture seule, dans l’application de suivi santé-sécurité de l’entreprise. Un accès « Consultation » peut être demandé auprès de : ${f.contact || 'la personne indiquée ci-dessus'}.`, 10.5, false, 10);
+            y = Math.max(y + 10, 200);
+            para('Fait à ……………………………………, le ……… / ……… / ………………', 11, false, 10);
+            para('L’employeur (nom, qualité et signature) :', 11, false, 4);
+            drawSstPdfFooter(doc);
+            doc.save('Avis_acces_DUERP.pdf');
+        }
+
         function getDefaultDuerpCotationConfig() {
             return {
                 version: 1,
@@ -7886,6 +8187,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             let filterUnite = document.getElementById('filter-duerp-unite')?.value || '';
             let filterNiveau = document.getElementById('filter-duerp-niveau')?.value || '';
             updateDuerpCotationUi();
+            syncDuerpPolicyUi();
+            renderDuerpAlertBanner();
 
             const container = document.getElementById('table-duerp-risques');
             if(!container) return;
@@ -7986,15 +8289,15 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
                                 <div class="text-xs text-slate-600">${r.danger}</div>
                             </td>
-                            <td class="p-3 border-b text-xs">${r.dommage || 'N/C'}</td>
-                            <td class="p-3 border-b text-xs">${r.prevention || 'N/C'}</td>
+                            <td class="p-3 border-b text-xs">${sstDuerpListHtml(r.dommage)}</td>
+                            <td class="p-3 border-b text-xs">${sstDuerpListHtml(r.prevention)}</td>
                             <td class="p-3 border-b text-center font-bold text-xs">${score} (${valueText})</td>
                             <td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs ${badgeClass}">${nivText}</span></td>
                             <td class="p-3 border-b text-xs max-w-xs">${actionsHtml}</td>
                             <td class="p-3 border-b text-right space-x-1 whitespace-nowrap">
-                                <button onclick="openDuerpPapModalFromIndex(${actualIdx})" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded text-xs font-semibold shadow-sm transition">📋 + Action</button>
-                                <button onclick="editDuerpRisque(${actualIdx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                                <button onclick="deleteDuerpRisque(${actualIdx})" class="text-red-500 text-xs hover:underline">Supprimer</button>
+                                <button onclick="openDuerpPapModalFromIndex(${actualIdx})" data-duerp-write class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded text-xs font-semibold shadow-sm transition">📋 + Action</button>
+                                <button onclick="editDuerpRisque(${actualIdx})" data-duerp-write class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                                <button onclick="deleteDuerpRisque(${actualIdx})" data-duerp-write class="text-red-500 text-xs hover:underline">Supprimer</button>
                             </td>
                         </tr>`;
                 });
@@ -8003,6 +8306,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }
 
             container.innerHTML = html;
+            applyDuerpReadOnlyUi();
         }
 
         function openDuerpModal() {
@@ -8015,6 +8319,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('duerp-date').value = new Date().toISOString().split('T')[0];
             document.getElementById('duerp-modal-add-pap-btn').classList.add('hidden');
             renderDuerpRiskCotationFields(null);
+            sstChipRender('duerp-dommage'); sstChipRender('duerp-prevention');
+            applyDuerpReadOnlyUi();
             document.getElementById('duerp-modal').classList.remove('hidden');
         }
 
@@ -8036,6 +8342,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('duerp-dommage').value = r.dommage || '';
             document.getElementById('duerp-prevention').value = r.prevention || '';
             renderDuerpRiskCotationFields(r);
+            sstChipRender('duerp-dommage'); sstChipRender('duerp-prevention');
+            applyDuerpReadOnlyUi();
 
             document.getElementById('duerp-modal-add-pap-btn').classList.remove('hidden');
             document.getElementById('duerp-modal').classList.remove('hidden');
@@ -8059,6 +8367,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             let unite = document.getElementById('duerp-unite').value;
             let date = document.getElementById('duerp-date').value;
             let danger = document.getElementById('duerp-danger').value.trim();
+            sstChipSetItems('duerp-dommage', sstChipItems('duerp-dommage'));
             let dommage = document.getElementById('duerp-dommage').value.trim();
             let prevention = document.getElementById('duerp-prevention').value.trim();
             const cotationConfigForForm = (editDuerpIndex !== null && editDuerpIndex !== "")
@@ -8071,6 +8380,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
             if(!unite) { alert("Veuillez sélectionner une unité."); return; }
             if(!danger) { alert("Veuillez saisir le danger."); return; }
+            if(sstDuerpReadOnly()) { alert('Votre compte est en lecture seule sur le DUERP.'); return; }
 
             let risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
 
@@ -8085,6 +8395,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 risques.push({ riskId: newRiskId, unite, date, danger, dommage, prevention, gravite, frequence, maitrise, duerpCotationValues: riskValues.values, duerpCotationConfig: cloneDuerpCotationConfig(cotationConfigForForm) });
             }
 
+            const savedIdx = (editDuerpIndex !== null && editDuerpIndex !== '') ? parseInt(editDuerpIndex, 10) : risques.length - 1;
             localStorage.setItem('duerp_risques', JSON.stringify(risques));
             closeDuerpModal();
             loadDuerp();
@@ -8093,9 +8404,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             } catch(err) {
                 console.warn('Synchronisation cloud du risque DUERP impossible :', err);
             }
+            sstMaybeAlertHighDuerpRisk(savedIdx);
         }
 
         async function deleteDuerpRisque(idx) {
+            if(sstDuerpReadOnly()) { alert('Votre compte est en lecture seule sur le DUERP.'); return; }
             if(!confirm("Supprimer ce risque DUERP ?")) return;
             let risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
             risques.splice(idx, 1);
@@ -12553,6 +12866,24 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                         });
                     }
                 });
+            }
+
+            // DUERP : risques cotés au niveau le plus élevé sans action PAPRIPACT associée.
+            if(sstNotifCan('duerp') && sstNotifCan('papripact')) {
+                try {
+                    const policy = getDuerpPolicy();
+                    if(policy.alertMode !== 'off') sstDuerpRisksNeedingAction().forEach(({ r, riskId, calc }) => {
+                        sstNotifAdd(list, {
+                            severity: policy.alertMode === 'must' ? 'danger' : 'warning',
+                            category: 'DUERP',
+                            title: `${riskId} — ${r.danger || 'Risque'}`,
+                            detail: `Coté « ${calc.zoneInfo.label} » (score ${calc.score}), sans action PAPRIPACT associée. ${duerpAlertText(policy.alertMode)}`,
+                            module: 'DUERP',
+                            target: { tab: 'duerp' },
+                            sortDate: policy.alertMode === 'must' ? -1 : 0
+                        });
+                    });
+                } catch(e) {}
             }
 
             list.sort((a,b) => {
