@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.80</title>
+    <title>Application SST & RH - Gestion V2.83</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.80</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.83</div>
         </aside>
 
         <!-- Main Content -->
@@ -1910,7 +1910,7 @@
 
                         <div class="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
                             <div class="text-sm font-bold text-slate-800">🔢 Codification documentaire</div>
-                            <p class="text-xs text-slate-500 mt-1 mb-3">Le code et la version de vos formulaires internes (type ISO), ex : <span class="font-mono">FOR-HSEE-015 v2.01</span>. Le même code s'affiche sur tous les documents de ce type — mettez à jour la version ici lorsque vous révisez un formulaire.</p>
+                            <p class="text-xs text-slate-500 mt-1 mb-3">Définissez ici la codification de vos <strong>types de documents</strong> (et non le numéro de chaque enregistrement). Ex. : toutes les analyses AT portent <span class="font-mono">FOR-HSEE-015 v2.01</span>. Le code et la version sont repris automatiquement dans l’en-tête des PDF concernés.</p>
                             <div id="sst-doc-type-codes-table" class="mb-3"></div>
                             <button onclick="saveSstDocTypeCodes()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">Enregistrer</button>
                         </div>
@@ -3288,7 +3288,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.80';
+        const SST_APP_VERSION = '2.83';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -3767,11 +3767,39 @@
             { key:'AT_REGISTRE', label:'Registre des AT (export)' }
         ];
         function getSstDocTypeCodes() {
+            const ctx = window.SST_APP_CONTEXT || {};
+            const companyCodes = ctx?.company?.settings?.documents?.documentCodes;
+            if (companyCodes && typeof companyCodes === 'object') return companyCodes;
             try { return JSON.parse(localStorage.getItem('doc_type_codes') || '{}'); }
             catch (e) { return {}; }
         }
-        function persistSstDocTypeCodes(cfg) {
-            localStorage.setItem('doc_type_codes', JSON.stringify(cfg));
+        async function persistSstDocTypeCodes(cfg) {
+            const ctx = window.SST_APP_CONTEXT || {};
+            // En local/dev, keep the configuration local.
+            if(!ctx || ctx.role === 'local-dev' || !ctx.companyId || !window.SSTFirebaseApi?.getDb?.()){
+                localStorage.setItem('doc_type_codes', JSON.stringify(cfg));
+                if(ctx){
+                    ctx.company = ctx.company || {};
+                    ctx.company.settings = {
+                        ...(ctx.company.settings || {}),
+                        documents: {
+                            ...(ctx.company.settings?.documents || {}),
+                            documentCodes: cfg
+                        }
+                    };
+                }
+                return;
+            }
+            const api = window.SSTFirebaseApi;
+            const db = api.getDb();
+            const current = ctx.company?.settings || {};
+            await api.setDoc(
+                api.doc(db, 'companies', ctx.companyId),
+                { settings: { ...current, documents: { ...(current.documents || {}), documentCodes: cfg } }, updatedAt: api.serverTimestamp() },
+                { merge: true }
+            );
+            const snap = await api.getDoc(api.doc(db, 'companies', ctx.companyId));
+            if(snap.exists()) ctx.company = { id: snap.id, ...snap.data() };
         }
         // Renvoie "FOR-HSEE-015 v2.01" (ou '' si non configuré pour ce type).
         function getDocTypeCode(type) {
@@ -3792,17 +3820,27 @@
                 </div>`;
             }).join('');
         }
-        function saveSstDocTypeCodes() {
+        async function saveSstDocTypeCodes() {
             const host = document.getElementById('sst-doc-type-codes-table');
             if (!host) return;
+            if(!sstDocumentSettingsCanEdit()){ alert('Seul un administrateur de l’entreprise peut modifier la codification documentaire.'); return; }
             const cfg = {};
             host.querySelectorAll('input[data-doc-type]').forEach(input => {
                 const type = input.dataset.docType, field = input.dataset.field;
                 if (!cfg[type]) cfg[type] = { code:'', version:'' };
                 cfg[type][field] = input.value.trim();
             });
-            persistSstDocTypeCodes(cfg);
-            alert('Codification documentaire enregistrée.');
+            const button = host.parentElement?.querySelector('button[onclick*="saveSstDocTypeCodes"]');
+            if(button) button.disabled = true;
+            try {
+                await persistSstDocTypeCodes(cfg);
+                alert('Codification documentaire enregistrée.');
+            } catch(err) {
+                console.error('Enregistrement de la codification documentaire impossible', err);
+                alert(err?.message || 'Impossible d’enregistrer la codification documentaire.');
+            } finally {
+                if(button) button.disabled = !sstDocumentSettingsCanEdit();
+            }
         }
 
         function getSstDocumentSettings() {
@@ -3962,6 +4000,7 @@
             const margin=Number(opts.margin ?? 12);
             const h=Number(opts.height ?? 24);
             const branding=getSstDocumentBranding();
+            const docCode = opts.docType ? getDocTypeCode(opts.docType) : String(opts.docCode || '').trim();
             doc.setFillColor(15,23,42); doc.rect(0,0,W,h,'F');
             let x=margin;
             if(branding.logoDataUrl){
@@ -3985,8 +4024,19 @@
             doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.text(branding.companyName,x,8.5);
             doc.setFontSize(Number(opts.titleSize ?? 11));
             doc.text(String(title||''),x,17);
+            const rightX = W-margin;
+            if(docCode){
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(7.2);
+                doc.text(docCode,rightX,9,{align:'right'});
+            }
             const meta=[branding.establishment,branding.address,branding.siret?`SIRET ${branding.siret}`:''].filter(Boolean).join(' · ');
-            if(meta){ doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.text(meta,W-margin,8.5,{align:'right',maxWidth:Math.max(50,W-x-25)}); }
+            if(meta){
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(5.3);
+                const metaY = docCode ? 17 : 8.5;
+                doc.text(meta,rightX,metaY,{align:'right',maxWidth:Math.max(50,W-x-25)});
+            }
             doc.setTextColor(15,23,42);
             return h+5;
         }
@@ -10988,7 +11038,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
             const a=analyses[idx];
             if(!a) return false;
-            const docCode=getDocTypeCode('AT');
             if(!window.jspdf||typeof window.jspdf.jsPDF!=='function'){
                 alert('Le générateur PDF n\'est pas disponible dans ce navigateur. Rechargez la page avec Internet activé.');
                 return false;
@@ -10998,12 +11047,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const {jsPDF}=window.jspdf;
                 const doc=new jsPDF({unit:'mm',format:'a4'});
                 const W=210,M=16,C=W-M*2;
-                const header=title=>{ drawSstPdfHeaderBar(doc,title,{margin:M,height:24,titleSize:11}); };
+                const header=title=>{ drawSstPdfHeaderBar(doc,title,{margin:M,height:24,titleSize:11,docType:'AT'}); };
                 const wrapped=(label,text,y)=>{doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text(label,M,y);doc.setFont('helvetica','normal');const lines=doc.splitTextToSize(String(text||'N/C'),C-38);doc.text(lines,M+38,y);return y+Math.max(7,lines.length*4.5+2);};
 
                 header('RAPPORT D\'ANALYSE D\'ACCIDENT DU TRAVAIL');
                 let y=34;
-                if(docCode) y=wrapped('Document N° :',docCode,y);
                 y=wrapped('Référence AT :',a.sourceAtRef||'Analyse libre',y);
                 y=wrapped('Salarié :',a.salarie,y);
                 y=wrapped('Statut :',sstResolveStatut(a.salarie,a.statutPersonnel),y);
@@ -11091,7 +11139,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const drawH=svgH*treeScale;
                 const drawX=LM+(pageContentW-drawW)/2;
                 const drawY=LT+(pageContentH-drawH)/2;
-                drawSstPdfHeaderBar(doc,'ARBRE DES CAUSES',{margin:LM,height:24,titleSize:10});
+                drawSstPdfHeaderBar(doc,'ARBRE DES CAUSES',{margin:LM,height:24,titleSize:10,docType:'AT'});
                 doc.addImage(dataUrl,'PNG',drawX,drawY,drawW,drawH,undefined,'FAST');
                 doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
                 doc.text(`${nodes.length} nœud(s) dans l'analyse`,LW-LM,202,{align:'right'});
@@ -11100,7 +11148,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 // La liste textuelle séparée a été supprimée pour éviter un doublon dans le PDF.
 
                 doc.addPage('a4','portrait');
-                const headerPortrait=title=>{doc.setFillColor(15,23,42);doc.rect(0,0,W,22,'F');doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(title,M,14);doc.setTextColor(15,23,42);};
+                const headerPortrait=title=>{drawSstPdfHeaderBar(doc,title,{margin:M,height:22,titleSize:10,docType:'AT'});};
                 headerPortrait('PLAN D\'ACTIONS - ANALYSE AT');
                 y=34;
                 const actions=a.actionsPapripact||[];
@@ -12142,11 +12190,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const responseLabel={OK:'OK',KO:'NOK',SO:'Sans objet', '':'Non contrôlé'};
             const rowsHtml=rows.map((r,i)=>`<tr class="status-${r.reponse||'none'}"><td class="num">${i+1}</td><td><strong>${esc(r.categorie||'')}</strong><br>${esc(r.libelle||'')}</td><td class="center">${r.reponse==='OK'?'✓':''}</td><td class="center">${r.reponse==='KO'?'✕':''}</td><td class="center">${r.reponse==='SO'?'—':''}</td><td>${esc(r.observation||'')}${photoDataUrls[r.id]?`<br><img src="${photoDataUrls[r.id]}" alt="Photo" class="photo">`:''}</td></tr>`).join('');
             const actionsHtml=actions.length?actions.map((a,i)=>`<tr><td>${i+1}</td><td><strong>${esc(a.action||'Action')}</strong><div class="muted">Point : ${esc((rows.find(r=>r.id===a.tourneeItemId)||{}).libelle||'Non précisé')}</div></td><td>${esc(a.statut||'À traiter')}</td><td>P${esc(a.priorite||'-')}</td><td>${esc(a.responsable||'À définir')}</td></tr>`).join(''):'<tr><td colspan="5" class="center muted">Aucune action PAPRIPACT associée.</td></tr>';
+            const docCode=getDocTypeCode('TOURNEE');
             const ok=rows.filter(r=>r.reponse==='OK').length, ko=rows.filter(r=>r.reponse==='KO').length, so=rows.filter(r=>r.reponse==='SO').length, done=rows.filter(r=>r.reponse).length;
             const pct=rows.length?Math.round(done/rows.length*100):0;
             const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.reference||'Tournée HSE')}</title><style>
 body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0f172a}.sheet{max-width:1180px;margin:18px auto;background:#fff;padding:24px;border:1px solid #cbd5e1;box-shadow:0 4px 14px rgba(15,23,42,.08)}h1{margin:0;font-size:22px}.sub{color:#475569;font-size:12px;margin-top:4px}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0}.meta div,.kpi{border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;padding:8px;font-size:11px}.label{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:18px}.kpi strong{display:block;font-size:18px;margin-top:3px}.progress{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:5px 0 14px}.progress>span{display:block;height:100%;background:#2563eb;width:${pct}%}table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:18px}th{background:#1e293b;color:#fff;text-align:left;padding:7px}td{border:1px solid #cbd5e1;padding:7px;vertical-align:top}.center{text-align:center}.num{width:28px;text-align:center;font-weight:700}.status-OK{background:#f0fdf4}.status-KO{background:#fef2f2}.status-SO{background:#f8fafc}.photo{max-width:180px;max-height:110px;display:block;margin-top:6px;border:1px solid #cbd5e1;border-radius:6px}.muted{color:#64748b;font-size:9px;margin-top:3px}.actions{margin-top:18px}button{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:10px 15px;font-weight:700;cursor:pointer}@media(max-width:800px){.meta,.kpis{grid-template-columns:1fr 1fr}}@media print{body{background:#fff}.sheet{margin:0;max-width:none;box-shadow:none;border:0;padding:10px}button{display:none}th{background:#1e293b!important;color:#fff!important}.photo{max-width:130px;max-height:90px}}
-</style></head><body><div class="sheet"><div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:12px">${getSstDocumentBranding().logoDataUrl?`<img src="${esc(getSstDocumentBranding().logoDataUrl)}" style="max-width:120px;max-height:50px;object-fit:contain">`:''}<div><div style="font-weight:800;font-size:15px">${esc(getSstDocumentBranding().companyName)}</div>${getSstDocumentBranding().establishment?`<div style="font-size:10px;color:#475569">${esc(getSstDocumentBranding().establishment)}</div>`:''}${getSstDocumentBranding().address?`<div style="font-size:9px;color:#64748b">${esc(getSstDocumentBranding().address)}</div>`:''}</div></div><h1>COMPTE-RENDU TOURNÉE QHSE — ${esc(t.reference||'')}</h1><div class="sub">Secteur : ${esc(t.secteur||'N/C')} · Date : ${esc(t.date||'N/C')} ${t.heure?'· '+esc(t.heure):''}</div><div class="meta"><div><div class="label">Intervenant(s)</div>${esc(t.technicien||'N/C')}</div><div><div class="label">Responsable de zone</div>${esc(t.contremaitre||'N/C')}</div><div><div class="label">Encadrant de l’unité</div>${esc(t.encadrant||'N/C')}</div><div><div class="label">Statut</div>${esc(t.statut||'En cours')}</div></div><div class="kpis"><div class="kpi"><div class="label">Contrôlés</div><strong>${done}/${rows.length}</strong></div><div class="kpi"><div class="label">OK</div><strong>${ok}</strong></div><div class="kpi"><div class="label">NOK</div><strong>${ko}</strong></div><div class="kpi"><div class="label">Sans objet</div><strong>${so}</strong></div><div class="kpi"><div class="label">Actions</div><strong>${actions.length}</strong></div></div><div class="label">Progression du contrôle · ${pct}%</div><div class="progress"><span></span></div><table><thead><tr><th>N°</th><th>Point de contrôle</th><th>OK</th><th>NOK</th><th>SO</th><th>Observation / Photo</th></tr></thead><tbody>${rowsHtml}</tbody></table><h2 style="font-size:15px">Plan d'actions PAPRIPACT (${actions.length})</h2><table><thead><tr><th>N°</th><th>Action</th><th>Statut</th><th>Priorité</th><th>Responsable</th></tr></thead><tbody>${actionsHtml}</tbody></table><div style="margin-top:20px;font-size:9px;color:#64748b">${esc([getSstDocumentBranding().companyName,getSstDocumentBranding().footer].filter(Boolean).join(' · '))}</div><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`;
+</style></head><body><div class="sheet"><div style="display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:12px"><div style="display:flex;align-items:center;gap:14px">${getSstDocumentBranding().logoDataUrl?`<img src="${esc(getSstDocumentBranding().logoDataUrl)}" style="max-width:120px;max-height:50px;object-fit:contain">`:''}<div><div style="font-weight:800;font-size:15px">${esc(getSstDocumentBranding().companyName)}</div>${getSstDocumentBranding().establishment?`<div style="font-size:10px;color:#475569">${esc(getSstDocumentBranding().establishment)}</div>`:''}${getSstDocumentBranding().address?`<div style="font-size:9px;color:#64748b">${esc(getSstDocumentBranding().address)}</div>`:''}</div></div>${docCode?`<div style="text-align:right;font-family:monospace;font-weight:800;font-size:11px;white-space:nowrap">${esc(docCode)}</div>`:''}</div><h1>COMPTE-RENDU TOURNÉE QHSE — ${esc(t.reference||'')}</h1><div class="sub">Secteur : ${esc(t.secteur||'N/C')} · Date : ${esc(t.date||'N/C')} ${t.heure?'· '+esc(t.heure):''}</div><div class="meta"><div><div class="label">Intervenant(s)</div>${esc(t.technicien||'N/C')}</div><div><div class="label">Responsable de zone</div>${esc(t.contremaitre||'N/C')}</div><div><div class="label">Encadrant de l’unité</div>${esc(t.encadrant||'N/C')}</div><div><div class="label">Statut</div>${esc(t.statut||'En cours')}</div></div><div class="kpis"><div class="kpi"><div class="label">Contrôlés</div><strong>${done}/${rows.length}</strong></div><div class="kpi"><div class="label">OK</div><strong>${ok}</strong></div><div class="kpi"><div class="label">NOK</div><strong>${ko}</strong></div><div class="kpi"><div class="label">Sans objet</div><strong>${so}</strong></div><div class="kpi"><div class="label">Actions</div><strong>${actions.length}</strong></div></div><div class="label">Progression du contrôle · ${pct}%</div><div class="progress"><span></span></div><table><thead><tr><th>N°</th><th>Point de contrôle</th><th>OK</th><th>NOK</th><th>SO</th><th>Observation / Photo</th></tr></thead><tbody>${rowsHtml}</tbody></table><h2 style="font-size:15px">Plan d'actions PAPRIPACT (${actions.length})</h2><table><thead><tr><th>N°</th><th>Action</th><th>Statut</th><th>Priorité</th><th>Responsable</th></tr></thead><tbody>${actionsHtml}</tbody></table><div style="margin-top:20px;font-size:9px;color:#64748b">${esc([getSstDocumentBranding().companyName,getSstDocumentBranding().footer].filter(Boolean).join(' · '))}</div><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`;
             const popup=window.open('','_blank','width=1200,height=900');
             if(!popup){alert('Le navigateur bloque la fenêtre d’impression. Autorisez les fenêtres contextuelles puis réessayez.');return false;}
             popup.document.open();popup.document.write(html);popup.document.close();
@@ -12170,11 +12219,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 const doc=new jsPDF({unit:'mm',format:'a4',orientation:'landscape'});
                 const W=297,H=210,M=9,C=W-M*2;
                 const actions=JSON.parse(localStorage.getItem('papripact_actions')||'[]').filter(a=>a.origine==='Tournée HSE' && ((a.tourneeReference&&a.tourneeReference===t.reference)||(!a.tourneeReference&&a.tourneeIndex===idx)));
-                const header=(subtitle='')=>{ drawSstPdfHeaderBar(doc,`COMPTE-RENDU TOURNÉE QHSE — ${t.reference||''}`,{margin:M,height:24,titleSize:10}); if(subtitle){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(203,213,225);doc.text(subtitle,W-M,17,{align:'right'});doc.setTextColor(15,23,42);} };
+                const header=(subtitle='')=>{ drawSstPdfHeaderBar(doc,`COMPTE-RENDU TOURNÉE QHSE — ${t.reference||''}`,{margin:M,height:24,titleSize:10,docType:'TOURNEE'}); if(subtitle){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(203,213,225);doc.text(subtitle,W-M,17,{align:'right'});doc.setTextColor(15,23,42);} };
                 const pageFoot=()=>{drawSstPdfFooter(doc);doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(100,116,139);doc.text(`Tournée ${t.reference||''} · page ${doc.getNumberOfPages()}`,W-M,H-5,{align:'right'});doc.setTextColor(15,23,42);};
                 const split=(txt,w)=>doc.splitTextToSize(String(txt||''),w);
-                const docCode=getDocTypeCode('TOURNEE');
-                header(`${docCode?docCode+' · ':''}${t.secteur||'Secteur non défini'} · ${t.date||''}`);let y=29;
+                header(`${t.secteur||'Secteur non défini'} · ${t.date||''}`);let y=29;
                 // Informations
                 doc.setDrawColor(203,213,225);doc.setFillColor(248,250,252);doc.roundedRect(M,y,C,23,2,2,'FD');
                 const info=[['Secteur / UT',t.secteur],['Date / heure',`${t.date||'N/C'}${t.heure?' · '+t.heure:''}`],['Intervenant(s)',t.technicien],['Responsable de zone',t.contremaitre],['Encadrant de l’unité',t.encadrant],['Autre participant',t.membreCoop],['Statut',t.statut||'En cours']];
