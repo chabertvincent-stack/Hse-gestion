@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.79</title>
+    <title>Application SST & RH - Gestion V2.80</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -126,7 +126,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.79</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.80</div>
         </aside>
 
         <!-- Main Content -->
@@ -1550,12 +1550,18 @@
 
                     <div id="tournee-form-view" class="hidden space-y-6">
                         <div class="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-slate-200 space-y-4">
-                            <div class="flex justify-between items-center border-b pb-3">
-                                <div>
-                                    <h3 class="text-lg font-bold text-slate-800">Compte-rendu de tournée QHSE</h3>
-                                    <div id="tournee-ref-badge" class="text-xs text-blue-700 font-semibold mt-1"></div>
+                            <div class="sticky top-0 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 px-4 md:px-6 pt-4 md:pt-6 pb-3 bg-white border-b flex justify-between items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <button onclick="closeTourneeForm()" class="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap">← Retour aux tournées</button>
+                                    <div class="min-w-0">
+                                        <h3 class="text-lg font-bold text-slate-800 truncate">Compte-rendu de tournée QHSE</h3>
+                                        <div id="tournee-ref-badge" class="text-xs text-blue-700 font-semibold mt-1"></div>
+                                    </div>
                                 </div>
-                                <button onclick="closeTourneeForm()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <button id="tournee-return-origin-btn" onclick="tourneeReturnToOrigin()" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap"></button>
+                                    <button onclick="closeTourneeForm()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button>
+                                </div>
                             </div>
                             <input type="hidden" id="tournee-edit-index" value="">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2563,10 +2569,27 @@
             return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
         }
 
+        // PAPRIPACT est le carnet d'actions de plusieurs modules (DUERP, fiches d'amélioration, urgence,
+        // analyse AT, tournées HSE) : sans lui, leurs liens vers un plan d'actions n'ont plus de destination.
+        // On le rend donc obligatoire dès que l'un de ces modules est activé.
+        const SST_MODULES_NEEDING_PAPRIPACT = ['duerp','amelioration','urgence','at','tournees'];
         function renderSstModuleChecks(containerId, selectedModules = {}) {
             const container=document.getElementById(containerId);
             if(!container) return;
-            container.innerHTML = SST_MODULE_ORDER.map(m => `<label class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-xs cursor-pointer"><input type="checkbox" value="${m}" class="sst-module-check" ${selectedModules[m]===true?'checked':''}><span>${SST_MODULE_LABELS[m]}</span></label>`).join('');
+            container.innerHTML = SST_MODULE_ORDER.map(m => `<label class="flex items-center gap-2 border rounded-lg bg-white px-2.5 py-2 text-xs cursor-pointer"><input type="checkbox" value="${m}" class="sst-module-check" onchange="sstEnforcePapripactDependency('${containerId}', this)" ${selectedModules[m]===true?'checked':''}><span>${SST_MODULE_LABELS[m]}</span></label>`).join('');
+            sstEnforcePapripactDependency(containerId, null, true);
+        }
+        function sstEnforcePapripactDependency(containerId, changedCb, silent = false) {
+            const container = document.getElementById(containerId); if(!container) return;
+            const papCb = container.querySelector('.sst-module-check[value="papripact"]'); if(!papCb) return;
+            const dependentsOn = () => SST_MODULES_NEEDING_PAPRIPACT.some(m => container.querySelector(`.sst-module-check[value="${m}"]`)?.checked);
+            if(changedCb && changedCb.value === 'papripact' && !changedCb.checked && dependentsOn()) {
+                changedCb.checked = true;
+                const names = SST_MODULES_NEEDING_PAPRIPACT.filter(m => container.querySelector(`.sst-module-check[value="${m}"]`)?.checked).map(m => SST_MODULE_LABELS[m]);
+                alert(`PAPRIPACT reste nécessaire : ${names.join(', ')} y créent des actions et perdraient leur lien sans lui. Désactivez d'abord ces module(s) si vous voulez retirer PAPRIPACT.`);
+                return;
+            }
+            if(dependentsOn() && !papCb.checked) papCb.checked = true;
         }
 
         function getSstCheckedModules(containerId) {
@@ -3248,6 +3271,7 @@
         window.sstV242Db = sstV242Db;
         window.sstV242Fb = sstV242Fb;
         window.updateAccountUi = updateAccountUi;
+        window.sstEnforcePapripactDependency = sstEnforcePapripactDependency;
 
         // Installe l'API cloud V2.47 par-dessus l'ancienne, maintenant que window.SSTCloud existe.
         if(typeof window.sstV242InstallCloudApi==='function') window.sstV242InstallCloudApi();
@@ -3257,7 +3281,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.79';
+        const SST_APP_VERSION = '2.80';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -4140,7 +4164,10 @@
 
 
         // --- NAVIGATION DIRECTE VERS UNE LIGNE DE TOURNEE HSE (depuis le PAPRIPACT) ---
-        function scrollToTourneeItem(tourneeReference, itemId, tourneeIndexFallback = null) {
+        // Origine de la navigation en cours vers une tournée (ex. depuis une action PAPRIPACT), pour
+        // proposer un chemin de retour direct plutôt que de forcer un défilement en haut ou en bas de page.
+        let sstTourneeReturnOrigin = null;
+        function scrollToTourneeItem(tourneeReference, itemId, tourneeIndexFallback = null, origin = null) {
             const tournees = JSON.parse(localStorage.getItem('tournees_hse') || '[]');
             let idx = tourneeReference ? tournees.findIndex(t => t.reference === tourneeReference) : -1;
             if(idx < 0 && tourneeIndexFallback !== null && tourneeIndexFallback !== undefined) idx = Number(tourneeIndexFallback);
@@ -4148,8 +4175,14 @@
                 alert('La tournée HSE liée à cette action n\'est plus disponible.');
                 return;
             }
+            sstTourneeReturnOrigin = origin;
             switchTab('tournees');
             showTourneeForm(idx);
+            const btn = document.getElementById('tournee-return-origin-btn');
+            if(btn) {
+                if(origin?.label) { btn.textContent = origin.label; btn.classList.remove('hidden'); }
+                else btn.classList.add('hidden');
+            }
             setTimeout(() => {
                 const target = itemId ? document.getElementById(`tournee-row-${idx}-${itemId}`) : null;
                 if(target) {
@@ -4159,6 +4192,12 @@
                     target.classList.add('row-highlight');
                 }
             }, 160);
+        }
+        function tourneeReturnToOrigin() {
+            const origin = sstTourneeReturnOrigin; sstTourneeReturnOrigin = null;
+            closeTourneeForm();
+            if(origin?.type === 'papripact') scrollToPapripactAction(origin.ref);
+            else if(origin?.type === 'duerp') scrollToDuerpRisk(origin.ref);
         }
 
         // --- NAVIGATION DIRECTE VERS UNE ANALYSE AT (depuis le PAPRIPACT) ---
@@ -8846,7 +8885,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     const safeTourneeRef = tourneeRef ? JSON.stringify(tourneeRef) : 'null';
                     const safeItemId = a.tourneeItemId ? JSON.stringify(a.tourneeItemId) : 'null';
                     const label = tourneeRef || (a.tourneeIndex !== null && a.tourneeIndex !== undefined ? `Tournée #${Number(a.tourneeIndex)+1}` : 'Tournée HSE');
-                    refBadge = `<button onclick='scrollToTourneeItem(${safeTourneeRef}, ${safeItemId}, ${a.tourneeIndex ?? 'null'})' class="inline-block px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-800 font-extrabold text-[10px] rounded border border-indigo-200 ml-1 transition cursor-pointer" title="Accéder directement à l'action dans la tournée HSE ${escapeHtml(label)}">🔗 ${escapeHtml(label)}</button>`;
+                    const safePapOrigin = JSON.stringify({type:'papripact', ref: papActionKey, label: '↩ Revenir à l’action PAPRIPACT'});
+                    refBadge = `<button onclick='scrollToTourneeItem(${safeTourneeRef}, ${safeItemId}, ${a.tourneeIndex ?? 'null'}, ${safePapOrigin})' class="inline-block px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-800 font-extrabold text-[10px] rounded border border-indigo-200 ml-1 transition cursor-pointer" title="Accéder directement à l'action dans la tournée HSE ${escapeHtml(label)}">🔗 ${escapeHtml(label)}</button>`;
                 }
 
                 let displayPrio = a.priorite ? `P${a.priorite}` : '-';
@@ -11745,6 +11785,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function closeTourneeForm() {
             document.getElementById('tournee-form-view').classList.add('hidden');
             document.getElementById('tournees-list-view').classList.remove('hidden');
+            document.getElementById('tournee-return-origin-btn')?.classList.add('hidden');
+            sstTourneeReturnOrigin = null;
             currentTourneeChecklist = [];
             const badge = document.getElementById('tournee-ref-badge');
             if(badge) delete badge.dataset.reference;
