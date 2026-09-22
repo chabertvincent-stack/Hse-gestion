@@ -1908,6 +1908,19 @@
                             </div>
                         </div>
 
+                        <div class="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div class="text-sm font-bold text-slate-800">🔢 Plan de codification documentaire</div>
+                            <p class="text-xs text-slate-500 mt-1 mb-3">Attribue automatiquement un code unique (type ISO) à chaque document généré — ex : <span class="font-mono">HSE-AT-2026-004</span>. Le code d'un document déjà créé ne change jamais, même si vous régénérez son PDF.</p>
+                            <div class="flex flex-col md:flex-row md:items-end gap-3">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Préfixe (entreprise / site)</label>
+                                    <input type="text" id="sst-doc-code-prefixe" placeholder="Ex : HSE, ou vos initiales" maxlength="10" class="w-full p-2.5 border rounded text-sm bg-white uppercase">
+                                    <p class="text-[11px] text-slate-500 mt-1">Laissez vide pour désactiver la codification (aucun code ne s'affichera sur les documents).</p>
+                                </div>
+                                <button onclick="saveSstDocCodificationConfig()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap">Enregistrer</button>
+                            </div>
+                        </div>
+
                         <div class="mb-6 rounded-xl border border-violet-200 bg-violet-50 p-4">
                             <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                                 <div>
@@ -3744,6 +3757,47 @@
         // Les réglages sont stockés dans companies/{companyId}.settings.documents
         // et uniquement écrits lorsqu'un administrateur clique sur Enregistrer.
         // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // CODIFICATION DOCUMENTAIRE (type ISO) — HSE-AT-2026-004, etc.
+        // ------------------------------------------------------------------
+        // Volontairement local à cet appareil pour l'instant (pas encore synchronisé cloud) :
+        // le numéro attribué à un document ne change jamais une fois assigné, donc pas de risque
+        // de "collision" entre appareils, juste un compteur qui peut légèrement diverger si vous
+        // générez des documents depuis plusieurs postes avant la prochaine synchro.
+        function getSstDocCodificationConfig() {
+            try { return JSON.parse(localStorage.getItem('doc_codification_config') || '{}'); }
+            catch (e) { return {}; }
+        }
+        function persistSstDocCodificationConfig(cfg) {
+            localStorage.setItem('doc_codification_config', JSON.stringify(cfg));
+        }
+        function saveSstDocCodificationConfig() {
+            const input = document.getElementById('sst-doc-code-prefixe');
+            const prefixe = (input?.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cfg = getSstDocCodificationConfig();
+            cfg.prefixe = prefixe;
+            cfg.counters = cfg.counters || {};
+            persistSstDocCodificationConfig(cfg);
+            if (input) input.value = prefixe;
+            alert(prefixe ? `Codification activée. Les nouveaux documents porteront le préfixe "${prefixe}".` : 'Codification désactivée : les documents ne porteront plus de code.');
+        }
+        // Attribue un code au document s'il n'en a pas déjà un (le code, une fois assigné, est
+        // stable : régénérer le même PDF ne change jamais son numéro). Renvoie '' si la
+        // codification n'est pas activée (aucun préfixe configuré).
+        function getOrAssignDocCode(record, type) {
+            if (!record) return '';
+            if (record.docCode) return record.docCode;
+            const cfg = getSstDocCodificationConfig();
+            if (!cfg.prefixe) return '';
+            cfg.counters = cfg.counters || {};
+            cfg.counters[type] = (cfg.counters[type] || 0) + 1;
+            const year = new Date().getFullYear();
+            const code = `${cfg.prefixe}-${type}-${year}-${String(cfg.counters[type]).padStart(3, '0')}`;
+            persistSstDocCodificationConfig(cfg);
+            record.docCode = code;
+            return code;
+        }
+
         function getSstDocumentSettings() {
             const ctx = window.SST_APP_CONTEXT || {};
             const stored = ctx?.company?.settings?.documents || {};
@@ -3791,6 +3845,8 @@
             if(save) save.disabled=!can;
             if(save) save.classList.toggle('opacity-50',!can);
             if(perm) perm.textContent=can?'Modifiable par un administrateur':'Lecture seule';
+            const prefixEl=document.getElementById('sst-doc-code-prefixe');
+            if(prefixEl && document.activeElement!==prefixEl) prefixEl.value=getSstDocCodificationConfig().prefixe||'';
         }
 
         async function handleSstDocumentLogo(event){
@@ -10927,6 +10983,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
             const a=analyses[idx];
             if(!a) return false;
+            const docCode=getOrAssignDocCode(a,'AT');
+            if(docCode){
+                analyses[idx]=a;
+                sstSafeSetLocalStorage('at_analyses',JSON.stringify(analyses));
+                try{ if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_analyses'); }catch(e){ console.warn(e); }
+            }
             if(!window.jspdf||typeof window.jspdf.jsPDF!=='function'){
                 alert('Le générateur PDF n\'est pas disponible dans ce navigateur. Rechargez la page avec Internet activé.');
                 return false;
@@ -10941,6 +11003,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 header('RAPPORT D\'ANALYSE D\'ACCIDENT DU TRAVAIL');
                 let y=34;
+                if(docCode) y=wrapped('Document N° :',docCode,y);
                 y=wrapped('Référence AT :',a.sourceAtRef||'Analyse libre',y);
                 y=wrapped('Salarié :',a.salarie,y);
                 y=wrapped('Statut :',sstResolveStatut(a.salarie,a.statutPersonnel),y);
@@ -10953,8 +11016,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 doc.setFont('helvetica','normal');doc.setFontSize(9);
                 const facts=doc.splitTextToSize(a.deriveFaits||a.circonstances||'Non renseigné',C);doc.text(facts,M,y);y+=facts.length*4.5+8;
                 if(y>260){doc.addPage();header('RAPPORT D\'ANALYSE - SUITE');y=34;}
-                doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Conclusion / enseignements',M,y);y+=6;
-                doc.setFont('helvetica','normal');doc.setFontSize(9);const concl=doc.splitTextToSize(a.conclusion||'Non renseigné',C);doc.text(concl,M,y);
 
                 // ===== ARBRE DES CAUSES : rendu complet, puis découpé en feuilles avec chevauchement =====
                 doc.addPage('a4','landscape');
@@ -11013,80 +11074,29 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 }
 
                 const treeImage=await svgToImage(svgString);
-                // Découpage sans chevauchement : chaque nœud n'est imprimé qu'une seule fois.
-                // Les coupures sont positionnées dans les espaces entre les boîtes afin d'éviter
-                // de couper un nœud en deux et surtout d'éviter tout doublon sur les pages voisines.
-                const treeScale=0.30;
-                const sourcePageW=Math.max(1,Math.floor(pageContentW/treeScale));
-                const sourcePageH=Math.max(1,Math.floor(pageContentH/treeScale));
-                const totalW=svgW,totalH=svgH;
+                // Échelle calculée pour que l'arbre entier tienne toujours sur une seule page,
+                // quelle que soit sa taille (fini le découpage en plusieurs feuilles).
+                const treeScale=Math.min(pageContentW/svgW,pageContentH/svgH);
+                let raster=Math.min(3,Math.max(1,2/treeScale/3));
+                const maxDim=4000; // évite un canvas démesuré (mémoire/poids du PDF) sur un très grand arbre
+                raster=Math.min(raster, maxDim/Math.max(svgW,svgH));
+                const canvas=document.createElement('canvas');
+                canvas.width=Math.max(1,Math.round(svgW*raster));
+                canvas.height=Math.max(1,Math.round(svgH*raster));
+                const ctx=canvas.getContext('2d');
+                ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.drawImage(treeImage,0,0,svgW,svgH,0,0,canvas.width,canvas.height);
+                const dataUrl=canvas.toDataURL('image/png');
+                const drawW=svgW*treeScale;
+                const drawH=svgH*treeScale;
+                const drawX=LM+(pageContentW-drawW)/2;
+                const drawY=LT+(pageContentH-drawH)/2;
+                drawSstPdfHeaderBar(doc,'ARBRE DES CAUSES',{margin:LM,height:24,titleSize:10});
+                doc.addImage(dataUrl,'PNG',drawX,drawY,drawW,drawH,undefined,'FAST');
+                doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
+                doc.text(`${nodes.length} nœud(s) dans l'analyse`,LW-LM,202,{align:'right'});
 
-                const nodeRects=nodes.map(n=>{
-                    const p=lay.positions[n.id];
-                    const h=lay.boxHeights[n.id];
-                    const bw=lay.boxWidth;
-                    return {
-                        left:svgPad+p.x-bw/2, right:svgPad+p.x+bw/2,
-                        top:svgPad+p.y-h/2, bottom:svgPad+p.y+h/2
-                    };
-                });
-
-                function safeStarts(total,pageSize,axis){
-                    const rectStart=axis==='x'?'left':'top';
-                    const rectEnd=axis==='x'?'right':'bottom';
-                    const starts=[0];
-                    let pos=0;
-                    while(pos+pageSize<total-0.01){
-                        const maxCut=Math.min(total,pos+pageSize);
-                        const candidates=[maxCut];
-                        nodeRects.forEach(r=>{
-                            candidates.push(r[rectStart],r[rectEnd]);
-                        });
-                        const safeCandidates=candidates
-                            .filter(c=>c>pos+1 && c<=maxCut+0.001)
-                            .filter(c=>nodeRects.every(r=>!(r[rectStart] < c-0.001 && r[rectEnd] > c+0.001)))
-                            .sort((a,b)=>b-a);
-                        const cut=safeCandidates.length?safeCandidates[0]:maxCut;
-                        if(cut<=pos+1) break;
-                        starts.push(cut);
-                        pos=cut;
-                    }
-                    return starts;
-                }
-
-                const colStarts=safeStarts(totalW,sourcePageW,'x');
-                const rowStarts=safeStarts(totalH,sourcePageH,'y');
-                const treePages=colStarts.length*rowStarts.length;
-
-                let pageNo=0;
-                for(let ry=0;ry<rowStarts.length;ry++){
-                    for(let cx=0;cx<colStarts.length;cx++){
-                        if(pageNo>0) doc.addPage('a4','landscape');
-                        pageNo++;
-                        drawSstPdfHeaderBar(doc,`ARBRE DES CAUSES - FEUILLE ${pageNo}/${treePages}`,{margin:LM,height:24,titleSize:10});
-                        const sx=colStarts[cx];
-                        const sy=rowStarts[ry];
-                        const sw=Math.min(sourcePageW,totalW-sx);
-                        const sh=Math.min(sourcePageH,totalH-sy);
-                        const canvas=document.createElement('canvas');
-                        const raster=1.5;
-                        canvas.width=Math.max(1,Math.round(sw*raster));
-                        canvas.height=Math.max(1,Math.round(sh*raster));
-                        const ctx=canvas.getContext('2d');
-                        ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
-                        ctx.drawImage(treeImage,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
-                        const dataUrl=canvas.toDataURL('image/png');
-                        const drawW=Math.min(pageContentW,sw*treeScale);
-                        const drawH=Math.min(pageContentH,sh*treeScale);
-                        const drawX=LM+(pageContentW-drawW)/2;
-                        const drawY=LT+(pageContentH-drawH)/2;
-                        doc.addImage(dataUrl,'PNG',drawX,drawY,drawW,drawH,undefined,'FAST');
-                        doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
-                        doc.text(`${pageNo}/${treePages} - ${nodes.length} nœud(s) dans l'analyse`,LW-LM,202,{align:'right'});
-                    }
-                }
-
-                // La représentation graphique paginée ci-dessus constitue l'arbre complet du rapport.
+                // La représentation graphique ci-dessus constitue l'arbre complet du rapport.
                 // La liste textuelle séparée a été supprimée pour éviter un doublon dans le PDF.
 
                 doc.addPage('a4','portrait');
