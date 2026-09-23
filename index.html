@@ -6461,6 +6461,7 @@
             grid.innerHTML = '';
 
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            let sessionsChanged = false;
 
             for (let i = 0; i < startingDay; i++) {
                 grid.innerHTML += `<div class="bg-slate-100 h-24 rounded p-1 opacity-40"></div>`;
@@ -6475,12 +6476,18 @@
                         <div class="font-bold text-xs text-slate-700 text-right pr-1">${day}</div>`;
 
                 daySessions.forEach(s => {
+                    const beforeState = JSON.stringify(s.participants || []);
                     const parts = sstNormalizeSessionParticipants(s);
                     let count = parts.length;
                     const past = sstIsPastSession(s);
                     const pending = past ? parts.filter(p => !p.validated).length : 0;
                     const closed = past && count > 0 && pending === 0;
-                    if(past) s.cloturee = closed;
+                    if(past && s.cloturee !== closed) {
+                        s.cloturee = closed;
+                        s.clotureeAt = closed ? (s.clotureeAt || new Date().toISOString().split('T')[0]) : '';
+                        sessionsChanged = true;
+                    }
+                    if(beforeState !== JSON.stringify(s.participants || [])) sessionsChanged = true;
                     const sessionClass = closed
                         ? 'bg-green-100 border-green-300 text-green-900'
                         : (pending ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-blue-100 border-blue-300 text-blue-900');
@@ -6494,6 +6501,15 @@
 
                 dayHtml += `</div>`;
                 grid.innerHTML += dayHtml;
+            }
+
+            // Le statut de clôture est une donnée de la session, pas seulement un affichage.
+            // On le persiste ici afin que le planning conserve immédiatement la clôture.
+            if(sessionsChanged) {
+                localStorage.setItem('training_sessions', JSON.stringify(sessions));
+                if(window.SSTCloud?.isCloudTenant?.()) {
+                    sstV247CommitKeys('training_sessions').catch(err => console.warn('Synchronisation cloud du statut de session impossible :', err));
+                }
             }
         }
 
