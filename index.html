@@ -4331,6 +4331,7 @@
         // --- NAVIGATION DIRECTE VERS UNE ANALYSE AT (depuis le PAPRIPACT) ---
         async function scrollToAtAnalysis(analysisRef) {
             switchTab('at');
+            ['filter-at-service','filter-at-gravite','filter-at-year'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
             try { await loadAt(); } catch(err) { console.warn('Chargement Analyse AT avant navigation impossible :',err); }
             const ref=String(analysisRef??'');
             const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
