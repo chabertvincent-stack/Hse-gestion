@@ -43,18 +43,15 @@
             animation: highlight-fade 9s ease-out;
             scroll-margin-top: 90px;
         }
-        @keyframes at-row-highlight-fade {
-            0% { background-color: #fef9c3 !important; }
-            18% { background-color: #fef9c3 !important; }
-            100% { background-color: transparent !important; }
-        }
         .at-row-highlight {
-            animation: at-row-highlight-fade 3.2s ease-out forwards;
             scroll-margin-top: 130px;
         }
-        .at-row-highlight > td {
-            -webkit-animation: at-row-highlight-fade 3.2s ease-out forwards;
-            animation: at-row-highlight-fade 3.2s ease-out forwards;
+        .at-row-highlight-cell {
+            background-color: #fef9c3 !important;
+            transition: background-color 2.6s ease-out !important;
+        }
+        .at-row-highlight-cell.at-row-highlight-fading {
+            background-color: transparent !important;
         }
         #at-tree-svg svg { display:block; max-width:none; }
         #label-modal-qrcode { width:194px; height:194px; margin:0 auto; display:flex; align-items:center; justify-content:center; background:#fff; box-sizing:border-box; overflow:hidden; }
@@ -4343,24 +4340,31 @@
             const highlightRow=(row)=>{
                 if(!row) return false;
                 row.scrollIntoView({behavior:'smooth',block:'center'});
-                row.classList.remove('at-row-highlight');
-                void row.offsetWidth;
                 row.classList.add('at-row-highlight');
+                const cells=Array.from(row.querySelectorAll('td'));
+                cells.forEach(cell=>{
+                    cell.classList.remove('at-row-highlight-fading');
+                    cell.classList.add('at-row-highlight-cell');
+                });
+                requestAnimationFrame(()=>requestAnimationFrame(()=>{
+                    cells.forEach(cell=>cell.classList.add('at-row-highlight-fading'));
+                }));
+                setTimeout(()=>{
+                    if(document.contains(row)){
+                        row.classList.remove('at-row-highlight');
+                        cells.forEach(cell=>{
+                            cell.classList.remove('at-row-highlight-cell','at-row-highlight-fading');
+                            cell.style.removeProperty('background-color');
+                            cell.style.removeProperty('transition');
+                        });
+                    }
+                }, 2900);
                 return true;
             };
             for(let attempt=0; attempt<30; attempt++){
                 const row=findRow();
                 if(row){
                     highlightRow(row);
-                    [450, 1000, 1800, 2800].forEach(delay=>setTimeout(()=>{
-                        const current=findRow();
-                        if(current){
-                            current.scrollIntoView({behavior:'smooth',block:'center'});
-                            current.classList.remove('at-row-highlight');
-                            void current.offsetWidth;
-                            current.classList.add('at-row-highlight');
-                        }
-                    }, delay));
                     return true;
                 }
                 await new Promise(resolve=>setTimeout(resolve,80));
