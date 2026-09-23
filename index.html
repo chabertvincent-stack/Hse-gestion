@@ -4838,13 +4838,30 @@
         function renderFicheStatsHtml(stats,barColorClass){return `<div class="flex justify-between items-center bg-slate-50 p-3 rounded border"><span class="text-sm font-semibold text-slate-700">Total</span><span class="bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded text-sm">${stats.total}</span></div>`;}
 
         // --- GESTION DES UNITES DE TRAVAIL & ARBORESCENCE ---
+        function normalizeUnitesTravail(unites) {
+            const arr = Array.isArray(unites) ? unites : [];
+            const names = new Set(arr.map(u => String(u?.nom || '').trim()).filter(Boolean));
+            // Une unité dont le parent n'existe plus devient automatiquement une unité principale.
+            return arr.map(u => {
+                const nom = String(u?.nom || '').trim();
+                const parent = String(u?.parent || '').trim();
+                return { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
+            }).filter(u => u.nom);
+        }
+
         function loadUnites() {
-            let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+            localStorage.setItem('unites_travail', JSON.stringify(unites));
             const parentSelect = document.getElementById('ut-parent');
             if (parentSelect) {
+                const currentEdit = document.getElementById('ut-edit-index')?.value;
+                const currentIndex = currentEdit !== '' && currentEdit != null ? parseInt(currentEdit, 10) : -1;
                 parentSelect.innerHTML = '<option value="">-- Aucune (Unité principale) --</option>';
-                unites.forEach((u) => {
-                    parentSelect.innerHTML += `<option value="${u.nom}">${u.nom}</option>`;
+                // Seules les unités principales peuvent être choisies comme unité parente.
+                unites.forEach((u, idx) => {
+                    if (!u.parent && idx !== currentIndex) {
+                        parentSelect.innerHTML += `<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`;
+                    }
                 });
             }
             const listeDiv = document.getElementById('liste-unites');
@@ -4925,14 +4942,16 @@
         }
 
         function editUnite(index) {
-            let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
             let u = unites[index];
             if (!u) return;
             document.getElementById('ut-nom').value = u.nom;
-            document.getElementById('ut-parent').value = u.parent || '';
             document.getElementById('ut-edit-index').value = index;
             document.getElementById('ut-submit-btn').innerText = "Modifier l'unité";
             document.getElementById('ut-cancel-btn').classList.remove('hidden');
+            // Recharger la liste des parents après avoir posé l'index d'édition.
+            loadUnites();
+            document.getElementById('ut-parent').value = u.parent || '';
         }
 
         function resetUniteForm() {
@@ -4943,12 +4962,27 @@
             document.getElementById('ut-cancel-btn').classList.add('hidden');
         }
 
-        function deleteUnite(index) {
-            if (!confirm("Supprimer cette unité ?")) return;
-            let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+        async function deleteUnite(index) {
+            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+            const unite = unites[index];
+            if (!unite) return;
+            const enfants = unites.filter(u => u.parent === unite.nom);
+            let message = `Supprimer l'unité « ${unite.nom} » ?`;
+            if (enfants.length) {
+                message += `\n\nCette unité possède ${enfants.length} sous-unité(s). Elles seront conservées et deviendront des unités principales.`;
+            }
+            if (!confirm(message)) return;
             unites.splice(index, 1);
+            // Ne jamais laisser de sous-unité orpheline après suppression de son parent.
+            unites = unites.map(u => u.parent === unite.nom ? { ...u, parent: '' } : u);
             localStorage.setItem('unites_travail', JSON.stringify(unites));
             loadUnites();
+            try {
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('unites_travail');
+            } catch(err) {
+                console.warn('Synchronisation cloud des unités impossible après suppression :', err);
+            }
+            refreshUnitDependentSelects();
         }
 
         function refreshUnitDependentSelects() {
