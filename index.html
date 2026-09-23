@@ -11440,12 +11440,16 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         function installAtEnqueteTypeHandler(){
-            const root=document.getElementById('at-enquete-types');
-            if(!root || root.dataset.handlerInstalled==='1') return;
-            root.dataset.handlerInstalled='1';
-            root.addEventListener('change',function(e){
-                const input=e.target.closest('input[data-at-type-btn]');
+            // Gestionnaire délégué au document : le conteneur des cases est
+            // reconstruit à chaque sélection, donc un listener attaché directement
+            // au conteneur pouvait devenir inactif après le premier rendu.
+            if(window.__sstAtEnqueteTypeHandlerInstalled) return;
+            window.__sstAtEnqueteTypeHandlerInstalled=true;
+            document.addEventListener('change',function(e){
+                const input=e.target && e.target.closest ? e.target.closest('input[data-at-type-btn]') : null;
                 if(!input) return;
+                const root=document.getElementById('at-enquete-types');
+                if(!root || !root.contains(input)) return;
                 const k=input.getAttribute('data-at-type-btn');
                 const current=window.__sstAtEnqueteTypes instanceof Set ? new Set(window.__sstAtEnqueteTypes) : new Set();
                 if(input.checked) current.add(k); else current.delete(k);
