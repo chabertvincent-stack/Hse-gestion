@@ -2397,7 +2397,7 @@
 
                             <section class="border rounded-xl p-4 bg-indigo-50 border-indigo-200">
                                 <div class="flex items-center gap-2 mb-2"><span class="text-lg">4️⃣</span><h4 class="text-sm font-bold text-slate-800">Enquête AT — recueil guidé des faits</h4></div>
-                                <p class="text-[11px] text-slate-600 mb-4">Sélectionnez les situations concernées. Les blocs spécialisés apparaissent uniquement lorsqu'ils sont utiles. Répondre à partir de faits observés, d'entretiens, de documents et de mesures, sans chercher immédiatement un responsable.</p>
+                                <p class="text-[11px] text-slate-600 mb-4">Sélectionnez les situations concernées. Les blocs utiles apparaissent ensuite et peuvent être développés ou repliés.</p>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4" id="at-enquete-types"></div>
                                 <div id="at-enquete-common" class="space-y-4"></div>
                                 <div id="at-enquete-special" class="space-y-4 mt-4"></div>
@@ -11413,13 +11413,29 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             isole:['Travail isolé prévu ?','Travail isolé habituel ?','Moyen de communication disponible ?','Moyen de communication fonctionnel ?','Procédure de surveillance ?','Dispositif d’alerte ?','Délai avant découverte de l’accident ?'],
             coactivite:['Entreprise extérieure ?','Activités simultanées ?','Coordination réalisée ?','Consignes transmises ?','Plan de prévention concerné ?','Risque lié à l’activité d’une autre entreprise ?','Communication suffisante ?','Zone de travail définie ?']
         };
-        function atQuestionHtml(group,key,q,i){ const id=`at-enq-${group}-${key}-${i}`; return `<div class="border rounded-lg p-3 bg-white"><label class="block text-xs font-semibold text-slate-700 mb-2">${escapeHtml(q)}</label><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="${id}-rep" data-at-enq="rep" data-key="${id}" class="w-full p-2 border rounded text-sm bg-white"><option value="">Non renseigné</option><option value="Oui">Oui</option><option value="Non">Non</option><option value="N/A">N/A</option></select><input id="${id}-obs" data-at-enq="obs" data-key="${id}" class="md:col-span-2 w-full p-2 border rounded text-sm" placeholder="Précision / fait observé / source…"></div></div>`; }
-        function atBlockHtml(group,title,questions){ return `<div class="border rounded-xl p-3 bg-slate-50"><div class="font-bold text-sm text-slate-800 mb-3">${escapeHtml(title)}</div><div class="space-y-2">${questions.map((q,i)=>atQuestionHtml(group,group,q,i)).join('')}</div></div>`; }
+        function atIsOpenQuestion(q){
+            const t=String(q||'').trim().toLowerCase();
+            return /^(que |qu[’\']|où |quel |quelle |quels |quelles |comment |pourquoi |combien |depuis |entre |poids |hauteur |distance |délai |ancienneté |expérience |charge |fréquence |quel produit|quel objet|quel véhicule|quelle machine|quel matériel)/i.test(t);
+        }
+        function atQuestionHtml(group,key,q,i){
+            const id=`at-enq-${group}-${key}-${i}`;
+            if(atIsOpenQuestion(q)){
+                return `<div class="border rounded-lg p-3 bg-white"><label class="block text-xs font-semibold text-slate-700 mb-2">${escapeHtml(q)}</label><textarea id="${id}-obs" data-at-enq="obs" data-key="${id}" class="w-full p-2 border rounded text-sm h-20" placeholder="Réponse / fait observé / source…"></textarea></div>`;
+            }
+            return `<div class="border rounded-lg p-3 bg-white"><label class="block text-xs font-semibold text-slate-700 mb-2">${escapeHtml(q)}</label><div class="grid grid-cols-1 md:grid-cols-3 gap-2"><select id="${id}-rep" data-at-enq="rep" data-key="${id}" class="w-full p-2 border rounded text-sm bg-white"><option value="">Non renseigné</option><option value="Oui">Oui</option><option value="Non">Non</option><option value="N/A">N/A</option></select><input id="${id}-obs" data-at-enq="obs" data-key="${id}" class="md:col-span-2 w-full p-2 border rounded text-sm" placeholder="Précision / fait observé / source…"></div></div>`;
+        }
+        function atBlockHtml(group,title,questions){
+            const bid=`at-enq-block-${group}`;
+            return `<details class="border rounded-xl bg-slate-50 overflow-hidden" open><summary class="cursor-pointer select-none list-none px-3 py-3 flex items-center justify-between gap-3 hover:bg-slate-100"><span class="font-bold text-sm text-slate-800">${escapeHtml(title)}</span><span class="text-xs text-slate-500">▼</span></summary><div id="${bid}" class="p-3 pt-1"><div class="space-y-2">${questions.map((q,i)=>atQuestionHtml(group,group,q,i)).join('')}</div></div></details>`;
+        }
+        function toggleAtEnqueteType(k){
+            const data=collectAtEnquete(); const set=new Set(data.types||[]); if(set.has(k)) set.delete(k); else set.add(k); data.types=Array.from(set); renderAtEnquete(data);
+        }
         function renderAtEnquete(existing={}){
             const root=document.getElementById('at-enquete-types'); const common=document.getElementById('at-enquete-common'); const special=document.getElementById('at-enquete-special');
             if(!root||!common||!special) return;
             const data=existing.enqueteAT||{}; const selected=new Set(data.types||[]);
-            root.innerHTML=AT_ENQUETE_TYPES.map(([k,t])=>`<label class="flex items-center gap-2 p-2 rounded-lg border bg-white text-xs font-medium cursor-pointer"><input type="checkbox" data-at-type="${k}" ${selected.has(k)?'checked':''} onchange="renderAtEnquete(collectAtEnquete())">${escapeHtml(t)}</label>`).join('');
+            root.innerHTML=AT_ENQUETE_TYPES.map(([k,t])=>`<button type="button" data-at-type-btn="${k}" onclick="toggleAtEnqueteType('${k}')" class="w-full text-left flex items-center gap-2 p-2 rounded-lg border text-xs font-medium transition ${selected.has(k)?'bg-indigo-100 border-indigo-400 text-indigo-800 ring-1 ring-indigo-300':'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}"><span class="inline-flex items-center justify-center w-4 h-4 rounded border text-[10px] ${selected.has(k)?'bg-indigo-600 border-indigo-600 text-white':'bg-white border-slate-300 text-transparent'}">✓</span>${escapeHtml(t)}</button>`).join('');
             common.innerHTML=AT_ENQUETE_COMMON.map(([k,t,qs])=>atBlockHtml(k,t,qs)).join('');
             special.innerHTML=AT_ENQUETE_TYPES.filter(([k])=>selected.has(k)).map(([k,t])=>atBlockHtml(k,t,AT_ENQUETE_SPECIAL[k]||[])).join('');
             const why=data.why||{}; document.getElementById('at-enquete-why-wrap').innerHTML=`<div class="border rounded-xl p-3 bg-white"><label class="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" id="at-enq-ecart" ${why.enabled?'checked':''} onchange="renderAtWhy()"> Une consigne, procédure, matériel ou situation réelle était différente / anormale</label><div id="at-enq-why" class="mt-3"></div></div>`;
@@ -11429,12 +11445,17 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
         function renderAtWhy(dataOverride){ const wrap=document.getElementById('at-enq-why'); if(!wrap)return; const enabled=document.getElementById('at-enq-ecart')?.checked; if(!enabled){wrap.innerHTML='';return;} const d=dataOverride?.why||{}; const qs=['Pourquoi la situation réelle a-t-elle conduit à faire autrement que prévu ?','Pourquoi le matériel prévu n’a-t-il pas été utilisé ?','Pourquoi une protection n’était-elle pas utilisée ?','Pourquoi la tâche réelle était-elle différente de la tâche prévue ?','Autre élément expliquant l’écart']; wrap.innerHTML=`<div class="space-y-2">${qs.map((q,i)=>`<div><label class="block text-xs font-semibold text-slate-600 mb-1">${escapeHtml(q)}</label><textarea id="at-enq-why-${i}" class="w-full p-2 border rounded text-sm h-16" placeholder="Faits / explication…">${escapeHtml(d.answers?.[i]||'')}</textarea></div>`).join('')}</div>`; }
         function collectAtEnquete(existing={}){
-            const types=Array.from(document.querySelectorAll('[data-at-type]:checked')).map(x=>x.getAttribute('data-at-type'));
-            const answers={}; document.querySelectorAll('[data-at-enq="rep"]').forEach(el=>answers[el.dataset.key]={rep:el.value,obs:document.getElementById(el.id.replace('-rep','-obs'))?.value||''});
+            const typeButtons=Array.from(document.querySelectorAll('[data-at-type-btn]'));
+            const types=typeButtons.filter(x=>x.classList.contains('bg-indigo-100')).map(x=>x.getAttribute('data-at-type-btn'));
+            const answers={};
+            document.querySelectorAll('[data-at-enq="obs"]').forEach(el=>{
+                const rep=document.getElementById(el.id.replace('-obs','-rep'));
+                answers[el.dataset.key]={rep:rep?.value||'',obs:el.value||''};
+            });
             const chrono=[0,1,2,3].map(i=>document.getElementById(`at-enq-chrono-${i}`)?.value||'');
             const preuves=Array.from(document.querySelectorAll('[data-at-proof]:checked')).map(x=>x.getAttribute('data-at-proof'));
             const whyEnabled=!!document.getElementById('at-enq-ecart')?.checked; const whyAnswers=[0,1,2,3,4].map(i=>document.getElementById(`at-enq-why-${i}`)?.value||'');
-            return {types,answers,chrono,preuves,preuvesComment:document.getElementById('at-enq-preuves-comment')?.value||'',why:{enabled:whyEnabled,answers:whyAnswers}};
+            return {types,answers,chrono,preuves,preuvesComment:document.getElementById('at-enquete-preuves-comment')?.value||'',why:{enabled:whyEnabled,answers:whyAnswers}};
         }
         function applyAtEnqueteValues(data={}){
             const answers=data.answers||{}; Object.keys(answers).forEach(k=>{const rep=document.querySelector(`[data-key="${k}"][data-at-enq="rep"]`); const obs=document.getElementById(k+'-obs'); if(rep)rep.value=answers[k]?.rep||''; if(obs)obs.value=answers[k]?.obs||'';});
@@ -11656,6 +11677,50 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 doc.setFont('helvetica','normal');doc.setFontSize(9);
                 const facts=doc.splitTextToSize(a.deriveFaits||a.circonstances||'Non renseigné',C);doc.text(facts,M,y);y+=facts.length*4.5+8;
                 if(y>260){doc.addPage();header('RAPPORT D\'ANALYSE - SUITE');y=34;}
+
+                // ===== ENQUÊTE AT : questions et réponses =====
+                const enquete=a.enqueteAT||{};
+                const answerMap=enquete.answers||{};
+                const typeLabels=Object.fromEntries(AT_ENQUETE_TYPES.map(([k,t])=>[k,t]));
+                const printEnqueteTitle=(title)=>{
+                    if(y>268){doc.addPage();header('ENQUÊTE AT - SUITE');y=34;}
+                    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(15,23,42);doc.text(title,M,y);y+=6;
+                };
+                const printQuestion=(q,answer)=>{
+                    const rep=answer?.rep||''; const obs=answer?.obs||'';
+                    const val=obs || rep || 'Non renseigné';
+                    const lines=doc.splitTextToSize(String(val),C-58);
+                    const qLines=doc.splitTextToSize(String(q),C-58);
+                    const blockH=Math.max(qLines.length*3.6,8)+Math.max(lines.length*3.8,4)+5;
+                    if(y+blockH>282){doc.addPage();header('ENQUÊTE AT - SUITE');y=34;}
+                    doc.setFont('helvetica','bold');doc.setFontSize(7.8);doc.text(qLines,M,y); y+=qLines.length*3.6;
+                    doc.setFont('helvetica','normal');doc.setFontSize(7.8);doc.setTextColor(51,65,85);doc.text(`Réponse : ${val}`,M+5,y); y+=lines.length*3.8+4; doc.setTextColor(15,23,42);
+                };
+                printEnqueteTitle('ENQUÊTE AT — RECUEIL GUIDÉ DES FAITS');
+                doc.setFont('helvetica','normal');doc.setFontSize(8);
+                const selectedTypes=(enquete.types||[]).map(k=>typeLabels[k]).filter(Boolean);
+                doc.text(`Situations sélectionnées : ${selectedTypes.length?selectedTypes.join(', '):'Aucune'}`,M,y); y+=7;
+                AT_ENQUETE_COMMON.forEach(([k,title,questions])=>{
+                    printEnqueteTitle(title);
+                    questions.forEach((q,i)=>{ const id=`at-enq-${k}-${k}-${i}`; printQuestion(q,answerMap[id]); });
+                    y+=2;
+                });
+                AT_ENQUETE_TYPES.filter(([k])=>(enquete.types||[]).includes(k)).forEach(([k,title])=>{
+                    printEnqueteTitle(title);
+                    (AT_ENQUETE_SPECIAL[k]||[]).forEach((q,i)=>{ const id=`at-enq-${k}-${k}-${i}`; printQuestion(q,answerMap[id]); });
+                    y+=2;
+                });
+                if(enquete.why?.enabled){
+                    printEnqueteTitle('Approfondissement des écarts');
+                    const whyQs=['Pourquoi la situation réelle a-t-elle conduit à faire autrement que prévu ?','Pourquoi le matériel prévu n’a-t-il pas été utilisé ?','Pourquoi une protection n’était-elle pas utilisée ?','Pourquoi la tâche réelle était-elle différente de la tâche prévue ?','Autre élément expliquant l’écart'];
+                    whyQs.forEach((q,i)=>printQuestion(q,{obs:enquete.why.answers?.[i]||''}));
+                }
+                printEnqueteTitle('Chronologie');
+                ['Avant l’accident','Juste avant','Événement accidentel','Après l’accident'].forEach((t,i)=>printQuestion(t,{obs:enquete.chrono?.[i]||''}));
+                printEnqueteTitle('Documents / preuves disponibles');
+                const preuves=enquete.preuves||[];
+                printQuestion('Éléments disponibles',{obs:preuves.length?preuves.join(', '):'Aucun'});
+                if(enquete.preuvesComment) printQuestion('Précisions / références',{obs:enquete.preuvesComment});
 
                 // ===== ARBRE DES CAUSES : rendu complet, puis découpé en feuilles avec chevauchement =====
                 doc.addPage('a4','landscape');
