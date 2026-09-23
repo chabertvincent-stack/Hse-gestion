@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.83</title>
+    <title>Application SST & RH - Gestion V2.84</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -43,22 +43,18 @@
             animation: highlight-fade 9s ease-out;
             scroll-margin-top: 90px;
         }
-        @keyframes at-row-highlight-pulse {
-            0%, 100% { background-color: #fef08a !important; box-shadow: inset 0 0 0 3px #f59e0b; }
-            50% { background-color: #fff7ed !important; box-shadow: inset 0 0 0 2px #f59e0b; }
-        }
-        @keyframes at-cell-highlight-pulse {
-            0%, 100% { background-color: #fef08a !important; box-shadow: inset 0 0 0 2px #f59e0b; }
-            50% { background-color: #fff7ed !important; box-shadow: inset 0 0 0 1px #f59e0b; }
+        @keyframes at-row-highlight-fade {
+            0% { background-color: #fef9c3 !important; }
+            18% { background-color: #fef9c3 !important; }
+            100% { background-color: transparent !important; }
         }
         .at-row-highlight {
-            animation: at-row-highlight-pulse 1s ease-in-out 8;
+            animation: at-row-highlight-fade 3.2s ease-out forwards;
             scroll-margin-top: 130px;
         }
         .at-row-highlight > td {
-            background-color: #fef08a !important;
-            -webkit-animation: at-cell-highlight-pulse 1s ease-in-out 8;
-            animation: at-cell-highlight-pulse 1s ease-in-out 8;
+            -webkit-animation: at-row-highlight-fade 3.2s ease-out forwards;
+            animation: at-row-highlight-fade 3.2s ease-out forwards;
         }
         #at-tree-svg svg { display:block; max-width:none; }
         #label-modal-qrcode { width:194px; height:194px; margin:0 auto; display:flex; align-items:center; justify-content:center; background:#fff; box-sizing:border-box; overflow:hidden; }
@@ -145,7 +141,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.83</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.84</div>
         </aside>
 
         <!-- Main Content -->
@@ -1388,6 +1384,26 @@
                                 <button onclick="showFaForm()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-semibold">+ Ajouter une fiche d'amélioration</button>
                             </div>
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-lg mb-6 border">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Unité du rédacteur</label>
+                                <select id="filter-fa-redacteur-unite" onchange="renderFichesAmeliorationLocal()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les unités</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Unité concernée</label>
+                                <select id="filter-fa-secteur" onchange="renderFichesAmeliorationLocal()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les unités</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Année</label>
+                                <select id="filter-fa-year" onchange="renderFichesAmeliorationLocal()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les années</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="liste-ameliorations" class="space-y-4"></div>
                     </div>
 
@@ -1453,6 +1469,26 @@
                                 <button onclick="showSuForm()" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 text-sm font-semibold">+ Signaler une situation d'urgence</button>
                             </div>
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-lg mb-6 border">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Unité du rédacteur</label>
+                                <select id="filter-su-redacteur-unite" onchange="loadSituationsUrgence()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les unités</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Unité / atelier concerné</label>
+                                <select id="filter-su-secteur" onchange="loadSituationsUrgence()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les unités</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Année</label>
+                                <select id="filter-su-year" onchange="loadSituationsUrgence()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les années</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="liste-urgences" class="space-y-4"></div>
                     </div>
 
@@ -1515,7 +1551,7 @@
                             <button onclick="openAtModal()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Nouvelle analyse AT</button>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border">
                             <div>
                                 <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par Unité</label>
                                 <select id="filter-at-service" onchange="loadAt()" class="p-2 border rounded w-full text-sm">
@@ -1529,6 +1565,12 @@
                                     <option value="Sans arrêt">Sans arrêt</option>
                                     <option value="Avec arrêt">Avec arrêt</option>
                                     <option value="Grave / Invalidité">Grave / Invalidité</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par année</label>
+                                <select id="filter-at-year" onchange="loadAt()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les années</option>
                                 </select>
                             </div>
                         </div>
@@ -1562,6 +1604,20 @@
                             <div class="flex flex-wrap gap-2 shrink-0">
                                 <button onclick="openTourneeModelesManager()" class="bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-50 text-sm font-semibold">⚙️ Modèles de tournée</button>
                                 <button onclick="showTourneeForm()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">+ Nouvelle tournée</button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg mb-6 border">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par année</label>
+                                <select id="filter-tournee-year" onchange="loadTourneesHse()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les années</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">Filtrer par unité de travail</label>
+                                <select id="filter-tournee-unite" onchange="loadTourneesHse()" class="p-2 border rounded w-full text-sm">
+                                    <option value="">Toutes les unités</option>
+                                </select>
                             </div>
                         </div>
                         <div id="liste-tournees" class="space-y-4"></div>
@@ -3301,7 +3357,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.83';
+        const SST_APP_VERSION = '2.84';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -9247,19 +9303,54 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('fa-generated-code-badge').innerText = `Code : ${code}`;
         }
 
+        function sstPopulateFilterOptions(selectId, values, emptyLabel) {
+            const sel=document.getElementById(selectId);
+            if(!sel) return;
+            const current=sel.value;
+            const unique=[...new Set((values||[]).map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+            sel.innerHTML=`<option value="">${escapeHtml(emptyLabel)}</option>`+unique.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+            if(unique.includes(current)) sel.value=current;
+        }
+
+        function sstDateYear(dateValue){
+            const m=String(dateValue||'').match(/^(\d{4})/);
+            if(m) return m[1];
+            const d=new Date(dateValue);
+            return Number.isNaN(d.getTime()) ? '' : String(d.getFullYear());
+        }
+
+        function populateFaFilters(fiches){
+            sstPopulateFilterOptions('filter-fa-redacteur-unite', fiches.map(f=>f.unite), 'Toutes les unités');
+            sstPopulateFilterOptions('filter-fa-secteur', fiches.map(f=>f.secteur), 'Toutes les unités');
+            sstPopulateFilterOptions('filter-fa-year', fiches.map(f=>sstDateYear(f.date)), 'Toutes les années');
+        }
+
         function renderFichesAmeliorationLocal() {
             let fiches = JSON.parse(localStorage.getItem('fiches_amelioration') || '[]');
             let actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
             const container = document.getElementById('liste-ameliorations');
             if(!container) return;
             container.innerHTML = '';
+            populateFaFilters(fiches);
+            const filterRedacteurUnite=document.getElementById('filter-fa-redacteur-unite')?.value||'';
+            const filterSecteur=document.getElementById('filter-fa-secteur')?.value||'';
+            const filterYear=document.getElementById('filter-fa-year')?.value||'';
 
             if(fiches.length === 0) {
                 container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune fiche d'amélioration enregistrée.</div>`;
                 return;
             }
 
-            fiches.forEach((f, idx) => {
+            const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
+                (!filterRedacteurUnite || String(f.unite||'')===filterRedacteurUnite) &&
+                (!filterSecteur || String(f.secteur||'')===filterSecteur) &&
+                (!filterYear || sstDateYear(f.date)===filterYear)
+            );
+            if(!filteredFiches.length){
+                container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune fiche ne correspond aux filtres sélectionnés.</div>`;
+                return;
+            }
+            filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
                 let linkedActionIdx = findPapripactActionForSource(actionsPap, 'FA', displayCode);
                 let faPapBadgeHtml = "";
@@ -9514,19 +9605,38 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('su-generated-code-badge').innerText = `Code : ${code}`;
         }
 
+        function populateSuFilters(fiches){
+            sstPopulateFilterOptions('filter-su-redacteur-unite', fiches.map(f=>f.uniteRedacteur), 'Toutes les unités');
+            sstPopulateFilterOptions('filter-su-secteur', fiches.map(f=>f.unite), 'Toutes les unités');
+            sstPopulateFilterOptions('filter-su-year', fiches.map(f=>sstDateYear(f.date)), 'Toutes les années');
+        }
+
         function loadSituationsUrgence() {
             let fiches = JSON.parse(localStorage.getItem('situations_urgence') || '[]');
             let actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
             const container = document.getElementById('liste-urgences');
             if(!container) return;
             container.innerHTML = '';
+            populateSuFilters(fiches);
+            const filterRedacteurUnite=document.getElementById('filter-su-redacteur-unite')?.value||'';
+            const filterSecteur=document.getElementById('filter-su-secteur')?.value||'';
+            const filterYear=document.getElementById('filter-su-year')?.value||'';
 
             if(fiches.length === 0) {
                 container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation d'urgence ou presqu'accident enregistré.</div>`;
                 return;
             }
 
-            fiches.forEach((f, idx) => {
+            const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
+                (!filterRedacteurUnite || String(f.uniteRedacteur||'')===filterRedacteurUnite) &&
+                (!filterSecteur || String(f.unite||'')===filterSecteur) &&
+                (!filterYear || sstDateYear(f.date)===filterYear)
+            );
+            if(!filteredFiches.length){
+                container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`;
+                return;
+            }
+            filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
 
                 // Recherche de l'action PAPRIPACT liée à cette SU
@@ -10886,8 +10996,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 }
                 return;
             }
-            const filterService=document.getElementById('filter-at-service')?.value||''; const filterGravite=document.getElementById('filter-at-gravite')?.value||'';
-            analyses.filter(a=>(!filterService||a.service===filterService)&&(!filterGravite||a.gravite===filterGravite)).forEach((a,idx)=>{
+            sstPopulateFilterOptions('filter-at-year', analyses.map(a=>sstDateYear(a.date)), 'Toutes les années');
+            const filterService=document.getElementById('filter-at-service')?.value||''; const filterGravite=document.getElementById('filter-at-gravite')?.value||''; const filterYear=document.getElementById('filter-at-year')?.value||'';
+            analyses.filter(a=>(!filterService||a.service===filterService)&&(!filterGravite||a.gravite===filterGravite)&&(!filterYear||sstDateYear(a.date)===filterYear)).forEach((a,idx)=>{
                 const status=a.statut||'À réaliser'; const cls=status==='Réalisée'?'bg-green-100 text-green-800 border-green-200':status==='En cours'?'bg-blue-100 text-blue-800 border-blue-200':'bg-amber-100 text-amber-800 border-amber-200';
                 const atReference = ensureAtAnalysisReference(a, analyses);
                 const atRowKey = String(a?._cloudId || a?.id || a?.reference || a?.sourceAtRef || idx);
@@ -11724,13 +11835,25 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     : 'bg-amber-50 text-amber-700 border-amber-200';
         }
 
+        function populateTourneeFilters(tournees){
+            sstPopulateFilterOptions('filter-tournee-year', tournees.map(t=>sstDateYear(t.date)), 'Toutes les années');
+            sstPopulateFilterOptions('filter-tournee-unite', tournees.map(t=>t.secteur), 'Toutes les unités');
+        }
+
         function loadTourneesHse() {
             const tournees = JSON.parse(localStorage.getItem('tournees_hse') || '[]');
             const actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
             const container = document.getElementById('liste-tournees');
             if(!container) return;
-            if(tournees.length === 0) {
-                container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune tournée enregistrée pour le moment.</div>`;
+            populateTourneeFilters(tournees);
+            const filterYear=document.getElementById('filter-tournee-year')?.value||'';
+            const filterUnite=document.getElementById('filter-tournee-unite')?.value||'';
+            const filtered=tournees.map((t,idx)=>({t,idx})).filter(({t})=>
+                (!filterYear || sstDateYear(t.date)===filterYear) &&
+                (!filterUnite || String(t.secteur||'')===filterUnite)
+            );
+            if(!filtered.length) {
+                container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune tournée ne correspond aux filtres sélectionnés.</div>`;
                 return;
             }
 
@@ -11740,30 +11863,36 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     ? 'bg-amber-100 text-amber-800 border-amber-300'
                     : 'bg-slate-100 text-slate-700 border-slate-300';
 
-            let html = '';
-            tournees.slice().reverse().forEach(t => {
-                const idx = tournees.indexOf(t);
-                const checklist = t.checklist || [];
-                const nbKo = checklist.filter(c => c.reponse === 'KO').length;
-                const nbOk = checklist.filter(c => c.reponse === 'OK').length;
-                const nbSo = checklist.filter(c => c.reponse === 'SO').length;
-                const nbTraite = checklist.filter(c => c.reponse).length;
-                const nbTotal = checklist.length;
-                const relatedActions = actionsPap.filter(a => a.origine === 'Tournée HSE' && (
-                    (a.tourneeReference && a.tourneeReference === t.reference) ||
-                    (!a.tourneeReference && a.tourneeIndex === idx)
-                ));
-                html += `
-                    <details id="tournee-details-${idx}" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group">
+            // Regroupement par unité de travail : chaque unité est repliable pour garder la liste lisible.
+            const groups=new Map();
+            filtered.forEach(item=>{ const key=String(item.t?.secteur||'Secteur non défini'); if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(item); });
+            let html='';
+            [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],'fr')).forEach(([secteur,items])=>{
+                html += `<details class="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                    <summary class="list-none cursor-pointer px-4 py-3 hover:bg-slate-100 touch-manipulation">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="font-bold text-slate-800 text-sm">🏢 ${escapeHtml(secteur)}</div>
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="px-2 py-1 rounded bg-white border border-slate-200 text-slate-600 font-semibold">${items.length} tournée${items.length>1?'s':''}</span>
+                                <span class="px-2 py-1 rounded bg-slate-100 text-slate-500 font-semibold">▼ Développer / réduire</span>
+                            </div>
+                        </div>
+                    </summary>
+                    <div class="p-3 space-y-3">`;
+                items.slice().sort((a,b)=>String(b.t.date||'').localeCompare(String(a.t.date||''))).forEach(({t,idx})=>{
+                    const checklist=t.checklist||[];
+                    const nbKo=checklist.filter(c=>c.reponse==='KO').length; const nbOk=checklist.filter(c=>c.reponse==='OK').length; const nbSo=checklist.filter(c=>c.reponse==='SO').length; const nbTraite=checklist.filter(c=>c.reponse).length; const nbTotal=checklist.length;
+                    const relatedActions=actionsPap.filter(a=>a.origine==='Tournée HSE' && ((a.tourneeReference&&a.tourneeReference===t.reference)||(!a.tourneeReference&&a.tourneeIndex===idx)));
+                    html += `<details id="tournee-details-${idx}" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group">
                         <summary class="list-none cursor-pointer px-4 md:px-5 py-4 hover:bg-slate-50 touch-manipulation">
                             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="bg-blue-100 text-blue-800 font-extrabold text-xs px-2.5 py-1 rounded border border-blue-200">${escapeHtml(t.reference || '')}</span>
-                                        <span class="px-2.5 py-1 rounded text-[11px] font-semibold border ${statusClass(t.statut)}">${escapeHtml(t.statut || 'En cours')}</span>
-                                        <span class="font-bold text-slate-800 text-base truncate">🏢 ${escapeHtml(t.secteur || 'Secteur non défini')}</span>
+                                        <span class="bg-blue-100 text-blue-800 font-extrabold text-xs px-2.5 py-1 rounded border border-blue-200">${escapeHtml(t.reference||'')}</span>
+                                        <span class="px-2.5 py-1 rounded text-[11px] font-semibold border ${statusClass(t.statut)}">${escapeHtml(t.statut||'En cours')}</span>
+                                        <span class="font-bold text-slate-800 text-base truncate">🏢 ${escapeHtml(t.secteur||'Secteur non défini')}</span>
                                     </div>
-                                    <div class="text-xs text-slate-500 mt-1">${escapeHtml(t.date || '')} ${t.heure ? 'à ' + escapeHtml(t.heure) : ''} · Intervenant(s) : ${escapeHtml(t.technicien || 'N/C')}${t.modeleNom ? ' · Modèle : ' + escapeHtml(t.modeleNom) : ''}</div>
+                                    <div class="text-xs text-slate-500 mt-1">${escapeHtml(t.date||'')} ${t.heure?'à '+escapeHtml(t.heure):''} · Intervenant(s) : ${escapeHtml(t.technicien||'N/C')}${t.modeleNom?' · Modèle : '+escapeHtml(t.modeleNom):''}</div>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 text-xs shrink-0">
                                     <span class="px-2 py-1 rounded bg-slate-100 text-slate-700 font-semibold">${nbTraite}/${nbTotal} contrôlés</span>
@@ -11781,24 +11910,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                 <button onclick="generateTourneePdf(${idx})" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold px-3 py-2 rounded-lg text-xs">📄 PDF</button>
                                 <button onclick="deleteTournee(${idx})" class="text-red-500 hover:underline text-xs font-semibold px-2 py-2">Supprimer</button>
                             </div>
-                            ${relatedActions.length ? `
-                                <div class="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3">
-                                    <div class="text-xs font-bold uppercase tracking-wide text-indigo-700 mb-2">Actions PAPRIPACT de la tournée</div>
-                                    <div class="space-y-2">
-                                        ${relatedActions.map((a) => {
-                                            const aidx = actionsPap.indexOf(a);
-                                            const linkedItem = checklist.find(c => c.id === a.tourneeItemId);
-                                            return `<button type="button" onclick='scrollToPapripactAction(${JSON.stringify(String(a._cloudId||a.id||a.numero||""))})' class="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-indigo-100 hover:border-indigo-400 rounded-lg p-2.5 transition">
-                                                <span class="text-xs font-semibold text-slate-700"><span class="text-indigo-700">${escapeHtml(a.action || 'Action')}</span>${linkedItem ? `<span class="block text-[10px] text-slate-400 mt-0.5">📍 ${escapeHtml(linkedItem.libelle)}</span>` : ''}</span>
-                                                <span class="px-2 py-1 rounded border text-[10px] font-bold shrink-0 ${actionStatusClass(a.statut)}">${escapeHtml(a.statut || 'À traiter')}</span>
-                                            </button>`;
-                                        }).join('')}
-                                    </div>
-                                </div>` : `<div class="text-xs text-slate-400 italic">Aucune action PAPRIPACT liée à cette tournée.</div>`}
+                            ${relatedActions.length ? `<div class="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3"><div class="text-xs font-bold uppercase tracking-wide text-indigo-700 mb-2">Actions PAPRIPACT de la tournée</div><div class="space-y-2">${relatedActions.map(a=>{const linkedItem=checklist.find(c=>c.id===a.tourneeItemId); return `<button type="button" onclick='scrollToPapripactAction(${JSON.stringify(String(a._cloudId||a.id||a.numero||''))})' class="w-full text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-indigo-100 hover:border-indigo-400 rounded-lg p-2.5 transition"><span class="text-xs font-semibold text-slate-700"><span class="text-indigo-700">${escapeHtml(a.action||'Action')}</span>${linkedItem?`<span class="block text-[10px] text-slate-400 mt-0.5">📍 ${escapeHtml(linkedItem.libelle)}</span>`:''}</span><span class="px-2 py-1 rounded border text-[10px] font-bold shrink-0 ${actionStatusClass(a.statut)}">${escapeHtml(a.statut||'À traiter')}</span></button>`;}).join('')}</div></div>` : `<div class="text-xs text-slate-400 italic">Aucune action PAPRIPACT liée à cette tournée.</div>`}
                         </div>
                     </details>`;
+                });
+                html += `</div></details>`;
             });
-            container.innerHTML = html;
+            container.innerHTML=html;
         }
 
         function showTourneeForm(idx = null) {
