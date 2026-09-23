@@ -719,6 +719,8 @@
                             </div>
                         </div>
 
+                        <div id="part-modal-session-closure" class="pt-4 border-t"></div>
+
                         <div class="flex justify-end pt-4 border-t gap-2">
                             <button onclick="deleteSessionFromParticipantsModal()" class="bg-red-500 text-white px-4 py-2 rounded text-sm font-semibold hover:bg-red-600 mr-auto">Supprimer la session</button>
                             <button onclick="closeParticipantsModal()" class="bg-slate-700 text-white px-4 py-2 rounded text-sm hover:bg-slate-800">Fermer</button>
@@ -6366,6 +6368,13 @@
         }
 
         // --- STATISTIQUES RECAPITULATIVES DANS CALENDRIER/SESSIONS ---
+        function toggleCalendarNeed(id, button) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const hidden = el.classList.toggle('hidden');
+            if(button) button.innerText = hidden ? '▶ Afficher les salariés' : '▼ Réduire les salariés';
+        }
+
         function loadCalendarRHStats() {
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
             let salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
@@ -6373,31 +6382,21 @@
             if(!summaryContainer) return;
 
             let stats = [];
-
             catalogue.forEach(cat => {
-                let expired = 0;
-                let warning = 0;
-
+                const expiredPeople = [];
+                const warningPeople = [];
                 salaries.forEach(sal => {
                     let f = (sal.formations || []).find(x => x.intitule === cat.nom);
-                    if(f) {
-                        let st = getDateStatus(f.dateFin);
-                        if(st === 'EXPIRED') expired++;
-                        if(st === 'WARNING') warning++;
-                    }
+                    if(!f) return;
+                    let st = getDateStatus(f.dateFin);
+                    if(st === 'EXPIRED') expiredPeople.push({nom: sal.nom || 'Sans nom', dateFin: f.dateFin || 'N/C'});
+                    if(st === 'WARNING') warningPeople.push({nom: sal.nom || 'Sans nom', dateFin: f.dateFin || 'N/C'});
                 });
-
-                if(expired > 0 || warning > 0) {
-                    stats.push({
-                        nom: cat.nom,
-                        expired,
-                        warning,
-                        totalNeed: expired + warning
-                    });
+                if(expiredPeople.length || warningPeople.length) {
+                    stats.push({ nom: cat.nom, expiredPeople, warningPeople, totalNeed: expiredPeople.length + warningPeople.length });
                 }
             });
-
-            stats.sort((a, b) => b.totalNeed - a.totalNeed);
+            stats.sort((a,b) => b.totalNeed - a.totalNeed);
 
             if(stats.length === 0) {
                 summaryContainer.innerHTML = `<div class="col-span-full p-4 bg-green-50 border border-green-200 text-green-800 text-sm font-semibold rounded-lg text-center">✅ Toutes les formations sont parfaitement à jour. Aucune échéance critique.</div>`;
@@ -6405,28 +6404,29 @@
             }
 
             let html = '';
-            stats.forEach(st => {
+            stats.forEach((st, idx) => {
+                const detailsId = `calendar-need-details-${idx}`;
+                const safeFormation = escapeHtml(st.nom);
                 html += `
-                    <div class="border rounded-lg p-3 bg-slate-50 space-y-2 flex flex-col justify-between">
-                        <div>
-                            <h4 class="font-bold text-slate-800 text-xs border-b pb-1 truncate" title="${st.nom}">${st.nom}</h4>
-                            <div class="mt-2 space-y-1 text-xs">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-red-600 font-bold">🔴 Déjà expirées :</span>
-                                    <span class="bg-red-100 text-red-800 font-extrabold px-2 py-0.5 rounded">${st.expired}</span>
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-amber-600 font-bold">🟠 Échéance proche :</span>
-                                    <span class="bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded">${st.warning}</span>
-                                </div>
+                    <div class="border rounded-lg p-3 bg-slate-50 space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <h4 class="font-bold text-slate-800 text-xs truncate" title="${safeFormation}">${safeFormation}</h4>
+                                <div class="text-[10px] text-slate-500 mt-0.5">${st.totalNeed} salarié(s) à surveiller</div>
                             </div>
+                            <button type="button" onclick="toggleCalendarNeed('${detailsId}', this)" class="shrink-0 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold px-2 py-1 rounded text-[10px]">▶ Afficher les salariés</button>
                         </div>
-                        <button onclick="openSessionModalWithFormation('${st.nom.replace(/'/g, "\\'")}')" class="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-1.5 rounded transition">
-                            📅 Programmer session
-                        </button>
+                        <div class="flex gap-2 text-[10px]">
+                            ${st.expiredPeople.length ? `<span class="bg-red-100 text-red-800 px-2 py-0.5 rounded font-bold">🔴 ${st.expiredPeople.length} expirée(s)</span>` : ''}
+                            ${st.warningPeople.length ? `<span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">🟠 ${st.warningPeople.length} proche(s)</span>` : ''}
+                        </div>
+                        <div id="${detailsId}" class="hidden border-t pt-2 space-y-1 text-[10px]">
+                            ${st.expiredPeople.map(p => `<div class="flex justify-between gap-2 bg-red-50 border border-red-100 rounded px-2 py-1"><span class="font-semibold text-slate-800">${escapeHtml(p.nom)}</span><span class="text-red-700 font-bold">Échue : ${escapeHtml(formatDateFr(p.dateFin))}</span></div>`).join('')}
+                            ${st.warningPeople.map(p => `<div class="flex justify-between gap-2 bg-amber-50 border border-amber-100 rounded px-2 py-1"><span class="font-semibold text-slate-800">${escapeHtml(p.nom)}</span><span class="text-amber-700 font-bold">Échéance : ${escapeHtml(formatDateFr(p.dateFin))}</span></div>`).join('')}
+                        </div>
+                        <button onclick="openSessionModalWithFormation('${String(st.nom).replace(/\\/g,'\\\\').replace(/'/g, "\\'")}')" class="w-full mt-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-1.5 rounded transition">📅 Programmer session</button>
                     </div>`;
             });
-
             summaryContainer.innerHTML = html;
         }
 
@@ -6445,68 +6445,37 @@
         function renderCalendar() {
             let year = currentCalendarDate.getFullYear();
             let month = currentCalendarDate.getMonth();
-
             const monthNames = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
             document.getElementById('calendar-month-year-label').innerText = `${monthNames[month]} ${year}`;
-
             let firstDay = new Date(year, month, 1);
             let lastDay = new Date(year, month + 1, 0);
-
             let startingDay = firstDay.getDay() - 1;
-            if (startingDay === -1) startingDay = 6;
-
+            if(startingDay === -1) startingDay = 6;
             let totalDays = lastDay.getDate();
             let grid = document.getElementById('calendar-grid');
-            if (!grid) return;
+            if(!grid) return;
             grid.innerHTML = '';
-
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let sessionsChanged = false;
-
-            for (let i = 0; i < startingDay; i++) {
-                grid.innerHTML += `<div class="bg-slate-100 h-24 rounded p-1 opacity-40"></div>`;
-            }
-
-            for (let day = 1; day <= totalDays; day++) {
-                let dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            for(let i=0;i<startingDay;i++) grid.innerHTML += `<div class="bg-slate-100 h-24 rounded p-1 opacity-40"></div>`;
+            for(let day=1;day<=totalDays;day++) {
+                let dStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 let daySessions = sessions.filter(s => s.date === dStr);
-
-                let dayHtml = `
-                    <div onclick="openSessionModal('${dStr}')" class="bg-white h-24 rounded p-1 border hover:border-blue-500 cursor-pointer overflow-y-auto space-y-1 transition">
-                        <div class="font-bold text-xs text-slate-700 text-right pr-1">${day}</div>`;
-
+                let dayHtml = `<div onclick="openSessionModal('${dStr}')" class="bg-white h-24 rounded p-1 border hover:border-blue-500 cursor-pointer overflow-y-auto space-y-1 transition"><div class="font-bold text-xs text-slate-700 text-right pr-1">${day}</div>`;
                 daySessions.forEach(s => {
-                    const beforeState = JSON.stringify(s.participants || []);
                     const parts = sstNormalizeSessionParticipants(s);
-                    let count = parts.length;
+                    const count = parts.length;
                     const past = sstIsPastSession(s);
-                    const previousClosed = !!s.cloturee;
-                    const closed = sstRecalculateSessionClosure(s);
-                    const pending = past ? parts.filter(p => !p.validated).length : 0;
-                    if(previousClosed !== closed) sessionsChanged = true;
-                    if(beforeState !== JSON.stringify(s.participants || [])) sessionsChanged = true;
-                    const sessionClass = closed
-                        ? 'bg-green-100 border-green-300 text-green-900'
-                        : (pending ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-blue-100 border-blue-300 text-blue-900');
-                    const countClass = closed ? 'text-green-700' : (pending ? 'text-amber-700' : 'text-blue-700');
-                    dayHtml += `
-                        <div onclick="event.stopPropagation(); openParticipantsModal(${s.id})" class="${sessionClass} border rounded p-1 text-[10px] leading-tight hover:opacity-90">
-                            <div class="font-bold truncate">${closed ? '✅ ' : ''}${escapeHtml(s.formationNom)}</div>
-                            <div class="${countClass}">${count} inscrit(s)${closed ? ' · ✅ Session validée' : (pending ? ` · ⚠️ ${pending} à valider` : '')}</div>
-                        </div>`;
+                    const allValidated = count > 0 && parts.every(p => p.validated === true);
+                    const closed = !!s.cloturee;
+                    const unresolved = parts.filter(p => !p.validated).length;
+                    const isGreen = past && closed && allValidated;
+                    const sessionClass = isGreen ? 'bg-green-100 border-green-300 text-green-900' : (past ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-blue-100 border-blue-300 text-blue-900');
+                    const countClass = isGreen ? 'text-green-700' : (past ? 'text-amber-700' : 'text-blue-700');
+                    const statusText = isGreen ? ' · ✅ Session clôturée' : (past ? (closed ? ` · ⚠️ Clôturée · ${unresolved} non validé(s)` : ` · ⚠️ À clôturer`) : '');
+                    dayHtml += `<div onclick="event.stopPropagation(); openParticipantsModal(${s.id})" class="${sessionClass} border rounded p-1 text-[10px] leading-tight hover:opacity-90"><div class="font-bold truncate">${isGreen ? '✅ ' : ''}${escapeHtml(s.formationNom)}</div><div class="${countClass}">${count} inscrit(s)${statusText}</div></div>`;
                 });
-
                 dayHtml += `</div>`;
                 grid.innerHTML += dayHtml;
-            }
-
-            // Le statut de clôture est une donnée de la session, pas seulement un affichage.
-            // On le persiste ici afin que le planning conserve immédiatement la clôture.
-            if(sessionsChanged) {
-                localStorage.setItem('training_sessions', JSON.stringify(sessions));
-                if(window.SSTCloud?.isCloudTenant?.()) {
-                    sstV247CommitKeys('training_sessions').catch(err => console.warn('Synchronisation cloud du statut de session impossible :', err));
-                }
             }
         }
 
@@ -6526,7 +6495,7 @@
 
             if(sessionId) {
                 let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-                let s = sessions.find(x => x.id === sessionId);
+                let s = sessions.find(x => String(x.id) === String(sessionId));
                 if(s) {
                     formSelect.value = s.formationNom || '';
                     document.getElementById('session-modal-organisme').value = s.organisme || '';
@@ -6595,21 +6564,7 @@
             loadCalendarRHStats();
         }
 
-        function openParticipantsModal(sessionId) {
-            let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let s = sessions.find(x => x.id == sessionId);
-            if(!s) return;
 
-            document.getElementById('part-modal-session-id').value = sessionId;
-            document.getElementById('part-modal-title').innerText = `Session : ${s.formationNom}`;
-            sstNormalizeSessionParticipants(s);
-            document.getElementById('part-modal-subtitle').innerText = `Date : ${formatDateFr(s.date)} ${s.organisme ? '| Org : ' + s.organisme : ''}${sstIsPastSession(s) ? ' · Session passée : clôture RH' : ''}`;
-
-            renderParticipantsList(s);
-            populateSalarieSelectForSession(s);
-
-            document.getElementById('session-participants-modal').classList.remove('hidden');
-        }
 
         function closeParticipantsModal() {
             document.getElementById('session-participants-modal').classList.add('hidden');
@@ -6640,20 +6595,6 @@
             return !isNaN(d.getTime()) && d < today;
         }
 
-        function sstRecalculateSessionClosure(sessionObj) {
-            if(!sessionObj) return false;
-            const parts = sstNormalizeSessionParticipants(sessionObj);
-            const past = sstIsPastSession(sessionObj);
-            // Une session passée est clôturée uniquement lorsque tous les inscrits
-            // sont définitivement validés. Une session sans inscrit reste ouverte.
-            const closed = past && parts.length > 0 && parts.every(p => p.validated === true);
-            sessionObj.cloturee = closed;
-            sessionObj.clotureeAt = closed
-                ? (sessionObj.clotureeAt || new Date().toISOString().split('T')[0])
-                : '';
-            return closed;
-        }
-
         function sstGetUpcomingSessionsForFormation(formationNom, excludeId) {
             const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
             const today = new Date();
@@ -6664,73 +6605,54 @@
                 .sort((a,b) => String(a.date).localeCompare(String(b.date)));
         }
 
+        function renderSessionClosureControls(sessionObj) {
+            const box = document.getElementById('part-modal-session-closure');
+            if(!box) return;
+            const parts = sstNormalizeSessionParticipants(sessionObj);
+            const past = sstIsPastSession(sessionObj);
+            if(!past) {
+                box.innerHTML = `<div class="text-[11px] text-slate-500 bg-slate-50 border rounded p-2">ℹ️ La session pourra être clôturée après sa date de réalisation.</div>`;
+                return;
+            }
+            const validatedCount = parts.filter(p => p.validated).length;
+            const unresolvedCount = parts.filter(p => !p.validated).length;
+            const canClose = parts.length > 0 && parts.every(p => p.validated || p.absent);
+            const green = !!sessionObj.cloturee && unresolvedCount === 0;
+            if(green) {
+                box.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800"><div class="font-bold">✅ Session clôturée et validée</div><div class="mt-1">${validatedCount}/${parts.length} salarié(s) validé(s). Date de clôture : ${escapeHtml(formatDateFr(sessionObj.clotureeAt || sessionObj.date))}</div></div>`;
+            } else {
+                box.innerHTML = `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3"><div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2"><div class="text-xs text-amber-800"><div class="font-bold">⚠️ Session passée à vérifier</div><div class="mt-1">${validatedCount}/${parts.length} salarié(s) validé(s) · ${unresolvedCount} non validé(s)</div></div><button type="button" onclick="cloturerSessionFormation()" class="${canClose ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-300 cursor-not-allowed'} text-white px-3 py-2 rounded text-xs font-bold" ${canClose ? '' : 'disabled'}>🔒 Clôturer la session</button></div><div class="text-[10px] text-amber-700 mt-2">Une absence peut rester non validée : elle doit simplement être identifiée et, si nécessaire, réinscrite à une prochaine session.</div></div>`;
+            }
+        }
+
         function renderParticipantsList(sessionObj) {
             const listDiv = document.getElementById('part-modal-enrolled-list');
-            if(!listDiv) return;
             listDiv.innerHTML = '';
-
             const parts = sstNormalizeSessionParticipants(sessionObj);
             const past = sstIsPastSession(sessionObj);
             const upcoming = sstGetUpcomingSessionsForFormation(sessionObj.formationNom, sessionObj.id);
-            const pendingCount = past ? parts.filter(p => !p.validated).length : 0;
-            const closed = past && parts.length > 0 && pendingCount === 0;
-            if(past) sessionObj.cloturee = closed;
-
             if(parts.length === 0) {
                 listDiv.innerHTML = `<p class="text-xs text-slate-400 italic">Aucun salarié inscrit pour le moment.</p>`;
+                renderSessionClosureControls(sessionObj);
                 return;
             }
-
             parts.forEach((p, idx) => {
                 const validated = !!p.validated;
                 const prepared = !!(p.present && p.attestation) && !validated;
-                const status = validated
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 text-[10px] font-bold">✅ Formation validée</span>`
-                    : (prepared
-                        ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold">☑ Prêt à valider</span>`
-                        : (past
-                            ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold">⏳ À clôturer</span>`
-                            : `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">Inscrit</span>`));
-
-                let pastActions = '';
+                const absent = !!p.absent && !validated;
+                const status = validated ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 text-[10px] font-bold">✅ Formation validée</span>` : (absent ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 text-[10px] font-bold">↪ Absence / à reprogrammer</span>` : (prepared ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold">☑ Prêt à valider</span>` : (past ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold">⏳ À traiter</span>` : `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">Inscrit</span>`)));
+                let actions = '';
                 if(past && !validated) {
-                    const options = upcoming.length
-                        ? upcoming.map(s => `<option value="${s.id}">${formatDateFr(s.date)}${s.organisme ? ' · ' + escapeHtml(s.organisme) : ''}</option>`).join('')
-                        : `<option value="">Aucune future session disponible</option>`;
-                    pastActions = `
-                        <div class="mt-2 flex flex-col gap-2">
-                            <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-                                <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
-                                    <input type="checkbox" ${prepared ? 'checked' : ''} onchange="prepareSessionParticipantValidation(${idx}, this.checked)" class="w-4 h-4 rounded border-slate-300 text-green-600">
-                                    <span>Présent + attestation reçue</span>
-                                </label>
-                                ${prepared ? `<button type="button" onclick="validateSessionParticipant(${idx})" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[10px] font-bold shadow-sm">✅ Valider</button>` : ''}
-                                <div class="flex items-center gap-1 ml-auto">
-                                    <select id="session-reinscription-${idx}" class="p-1.5 border rounded text-[10px] bg-white" ${upcoming.length ? '' : 'disabled'}>
-                                        ${options}
-                                    </select>
-                                    <button type="button" onclick="reinscrireParticipant(${idx})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-semibold" ${upcoming.length ? '' : 'disabled'}>↪ Réinscrire</button>
-                                </div>
-                            </div>
-                            ${prepared ? `<div class="text-[10px] text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">☑ Vérification préparée. Cliquez sur <strong>Valider</strong> pour enregistrer définitivement la présence et l’attestation.</div>` : ''}
-                        </div>`;
+                    const options = upcoming.length ? upcoming.map(x => `<option value="${x.id}">${formatDateFr(x.date)}${x.organisme ? ' · ' + escapeHtml(x.organisme) : ''}</option>`).join('') : `<option value="">Aucune future session disponible</option>`;
+                    actions = `<div class="mt-2 flex flex-col gap-2"><div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center"><label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer"><input type="checkbox" ${prepared ? 'checked' : ''} onchange="prepareSessionParticipantValidation(${idx}, this.checked)" class="w-4 h-4 rounded border-slate-300 text-green-600"><span>Présent + attestation reçue</span></label>${prepared ? `<button type="button" onclick="validateSessionParticipant(${idx})" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[10px] font-bold shadow-sm">✅ Valider</button>` : ''}<div class="flex items-center gap-1 ml-auto"><select id="session-reinscription-${idx}" class="p-1.5 border rounded text-[10px] bg-white" ${upcoming.length ? '' : 'disabled'}>${options}</select><button type="button" onclick="reinscrireParticipant(${idx})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-semibold" ${upcoming.length ? '' : 'disabled'}>↪ Réinscrire</button></div></div>${prepared ? `<div class="text-[10px] text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">☑ Vérification préparée. Cliquez sur <strong>Valider</strong> pour enregistrer définitivement la présence et l’attestation.</div>` : ''}</div>`;
                 } else if(past && validated) {
-                    pastActions = `<div class="mt-1 text-[10px] text-green-700">Validée le ${escapeHtml(formatDateFr(p.validatedAt || sessionObj.date))} · date formation enregistrée : ${escapeHtml(formatDateFr(sessionObj.date))}</div>`;
+                    actions = `<div class="mt-1 text-[10px] text-green-700">Validée le ${escapeHtml(formatDateFr(p.validatedAt || sessionObj.date))} · date formation enregistrée : ${escapeHtml(formatDateFr(sessionObj.date))}</div>`;
+                } else if(past && absent) {
+                    actions = `<div class="mt-1 text-[10px] text-orange-700">Aucune nouvelle date de formation enregistrée. Réinscription recommandée.</div>`;
                 }
-
-                listDiv.innerHTML += `
-                    <div class="bg-slate-50 p-3 border rounded text-xs">
-                        <div class="flex items-center justify-between gap-2">
-                            <div class="min-w-0"><span class="font-bold text-slate-800">${escapeHtml(p.nom)}</span></div>
-                            <div class="flex items-center gap-2 shrink-0">${status}<button onclick="removeParticipantFromSession(${idx})" class="text-red-500 hover:underline font-semibold">Désinscrire</button></div>
-                        </div>
-                        ${pastActions}
-                    </div>`;
+                listDiv.innerHTML += `<div class="bg-slate-50 p-3 border rounded text-xs"><div class="flex items-center justify-between gap-2"><div class="min-w-0"><span class="font-bold text-slate-800">${escapeHtml(p.nom)}</span><div class="mt-1">${status}</div></div><button onclick="removeParticipantFromSession(${idx})" class="text-red-500 hover:underline font-semibold shrink-0">Désinscrire</button></div>${actions}</div>`;
             });
-
-            if(closed) {
-                listDiv.innerHTML += `<div class="mt-3 rounded-lg border border-green-200 bg-green-50 text-green-800 px-3 py-2 text-xs font-semibold">✅ Tous les participants sont validés. La session est clôturée.</div>`;
-            }
+            renderSessionClosureControls(sessionObj);
         }
 
         function prepareSessionParticipantValidation(participantIdx, checked) {
@@ -6740,28 +6662,14 @@
             if(!s) return;
             sstNormalizeSessionParticipants(s);
             const p = s.participants[participantIdx];
-            if(!p) return;
-
-            if(!sstIsPastSession(s)) {
-                alert('La validation d’une session n’est disponible qu’une fois la date de formation passée.');
-                renderParticipantsList(s);
-                return;
-            }
-
+            if(!p || !sstIsPastSession(s) || p.validated) return;
             p.present = !!checked;
             p.attestation = !!checked;
-            if(!checked) {
-                p.validated = false;
-                p.validatedAt = '';
-            }
-
+            if(checked) p.absent = false;
+            else p.validatedAt = '';
             localStorage.setItem('training_sessions', JSON.stringify(sessions));
             renderParticipantsList(s);
-        }
-
-        async function persistTrainingSessions() {
-            localStorage.setItem('training_sessions', JSON.stringify(JSON.parse(localStorage.getItem('training_sessions') || '[]')));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+            renderCalendar();
         }
 
         async function validateSessionParticipant(participantIdx) {
@@ -6771,192 +6679,110 @@
             if(!s) return;
             sstNormalizeSessionParticipants(s);
             const p = s.participants[participantIdx];
-            if(!p) return;
-
-            if(!sstIsPastSession(s)) {
-                alert('La validation d’une session n’est disponible qu’une fois la date de formation passée.');
-                renderParticipantsList(s);
-                return;
-            }
-
-            if(!(p.present && p.attestation)) {
-                alert('Cochez d’abord « Présent + attestation reçue ».');
-                return;
-            }
-
-            if(!confirm(`Confirmer la validation de ${p.nom} ?\n\nCette action enregistrera définitivement la présence, l’attestation reçue et la date de formation.`)) {
-                return;
-            }
-
-            p.validated = true;
-            p.absent = false;
-            p.validatedAt = new Date().toISOString().split('T')[0];
-
+            if(!p || !sstIsPastSession(s)) return;
+            if(!(p.present && p.attestation)) { alert('Cochez d’abord « Présent + attestation reçue ».'); return; }
+            if(!confirm(`Confirmer la validation de ${p.nom} ?\n\nLa présence, la réussite et l’attestation seront enregistrées, et la date de formation sera mise à jour.`)) return;
+            p.validated = true; p.absent = false; p.validatedAt = new Date().toISOString().split('T')[0];
             const salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             const sal = salaries.find(x => (x.nom || '') === p.nom);
             if(sal) {
                 if(!Array.isArray(sal.formations)) sal.formations = [];
                 const existing = sal.formations.find(f => f.intitule === s.formationNom);
-                if(!existing) {
-                    sal.formations.push({
-                        intitule: s.formationNom,
-                        datePassage: s.date,
-                        dateFin: calculateExpirationDate(s.formationNom, s.date)
-                    });
-                } else if(!existing.datePassage || String(s.date) >= String(existing.datePassage)) {
-                    existing.datePassage = s.date;
-                    existing.dateFin = calculateExpirationDate(s.formationNom, s.date);
-                }
+                if(!existing) sal.formations.push({intitule:s.formationNom, datePassage:s.date, dateFin:calculateExpirationDate(s.formationNom,s.date)});
+                else if(!existing.datePassage || String(s.date) >= String(existing.datePassage)) { existing.datePassage=s.date; existing.dateFin=calculateExpirationDate(s.formationNom,s.date); }
                 localStorage.setItem('salaries_formations', JSON.stringify(salaries));
-                try {
-                    if(window.SSTCloud?.isCloudTenant?.()) {
-                        await sstV247CommitKeys('salaries_formations');
-                        await publishSalariePublicQrIfNeeded(sal);
-                    }
-                } catch(err) {
-                    console.warn('Synchronisation cloud du salarié impossible :', err);
-                }
+                try { if(window.SSTCloud?.isCloudTenant?.()) { await sstV247CommitKeys('salaries_formations'); await publishSalariePublicQrIfNeeded(sal); } } catch(err) { console.warn('Synchronisation cloud du salarié impossible :',err); }
             } else {
-                alert(`Le salarié « ${p.nom} » n’existe plus dans la gestion RH. La présence a été enregistrée, mais la formation n’a pas pu être reportée.`);
+                alert(`Le salarié « ${p.nom} » n’existe plus dans la gestion RH. La présence est enregistrée, mais la formation n’a pas pu être reportée.`);
             }
-
-            // Recalcule immédiatement la clôture globale de la session :
-            // dès que tous les inscrits sont validés, la session passe au vert.
-            const sessionClosed = sstRecalculateSessionClosure(s);
-            await persistTrainingSessions().catch(err => console.warn('Synchronisation cloud des sessions impossible :', err));
-
-            // Le rafraîchissement visuel est volontairement exécuté même si la
-            // synchronisation cloud rencontre un problème.
-            renderParticipantsList(s);
-            renderCalendar();
-            loadCalendarRHStats();
+            localStorage.setItem('training_sessions', JSON.stringify(sessions));
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions'); } catch(err) { console.warn('Synchronisation cloud de la session impossible :',err); }
+            renderParticipantsList(s); renderCalendar(); loadCalendarRHStats();
             if(typeof loadFormations === 'function') loadFormations();
             if(typeof loadHseAutorisationsPanel === 'function') loadHseAutorisationsPanel();
         }
 
-        async function reinscrireParticipant(participantIdx) {
+        async function cloturerSessionFormation() {
             const sessionId = document.getElementById('part-modal-session-id').value;
-            const select = document.getElementById(`session-reinscription-${participantIdx}`);
-            const targetId = select?.value;
-            if(!targetId) { alert('Aucune future session sélectionnée.'); return; }
-
             const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            const source = sessions.find(x => String(x.id) === String(sessionId));
-            const target = sessions.find(x => String(x.id) === String(targetId));
-            if(!source || !target) return;
-            sstNormalizeSessionParticipants(source);
-            sstNormalizeSessionParticipants(target);
-            const participant = source.participants[participantIdx];
-            if(!participant) return;
-
-            if(!target.participants.some(p => (typeof p === 'string' ? p : p?.nom) === participant.nom)) {
-                target.participants.push({ nom: participant.nom, validated: false, present: false, attestation: false, absent: false });
-            }
-            participant.absent = true;
-            participant.validated = false;
-            participant.present = false;
-            participant.attestation = false;
-
+            const s = sessions.find(x => String(x.id) === String(sessionId));
+            if(!s) return;
+            sstNormalizeSessionParticipants(s);
+            if(!sstIsPastSession(s)) { alert('La session ne peut être clôturée qu’après sa date de réalisation.'); return; }
+            if(!s.participants.length) { alert('Inscrivez au moins un salarié avant de clôturer la session.'); return; }
+            const unresolved = s.participants.filter(p => !p.validated && !p.absent);
+            if(unresolved.length) { alert(`Impossible de clôturer la session : ${unresolved.length} salarié(s) n’ont pas encore été traités.\n\nValidez les personnes présentes et identifiez les absents / personnes à reprogrammer.`); return; }
+            const notValidated = s.participants.filter(p => !p.validated).length;
+            const message = notValidated ? `La session sera clôturée avec ${notValidated} salarié(s) non validé(s).\n\nIls resteront non validés dans la matrice et pourront être réinscrits à une prochaine session. La session restera orange dans le planning.\n\nConfirmer la clôture ?` : 'Tous les salariés sont validés. La session passera en vert dans le planning.\n\nConfirmer la clôture de la session ?';
+            if(!confirm(message)) return;
+            s.cloturee = true; s.clotureeAt = new Date().toISOString().split('T')[0];
             localStorage.setItem('training_sessions', JSON.stringify(sessions));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions'); } catch(err) { console.warn('Synchronisation cloud de la clôture impossible :',err); }
+            renderParticipantsList(s); renderCalendar(); loadCalendarRHStats();
+        }
 
-            alert(`${participant.nom} a été réinscrit à la session du ${formatDateFr(target.date)}.`);
-            renderParticipantsList(source);
-            renderCalendar();
-            loadCalendarRHStats();
+        async function persistTrainingSessions() {
+            localStorage.setItem('training_sessions', JSON.stringify(JSON.parse(localStorage.getItem('training_sessions') || '[]')));
+            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+        }
+
+        function openParticipantsModal(sessionId) {
+            let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            let s = sessions.find(x => String(x.id) === String(sessionId));
+            if(!s) return;
+            sstNormalizeSessionParticipants(s);
+            document.getElementById('part-modal-session-id').value = sessionId;
+            document.getElementById('part-modal-title').innerText = `Session : ${s.formationNom}`;
+            document.getElementById('part-modal-subtitle').innerText = `Date : ${formatDateFr(s.date)}${s.organisme ? ' | Org : ' + s.organisme : ''}${sstIsPastSession(s) ? ' · Session passée : contrôle RH' : ''}`;
+            renderParticipantsList(s);
+            populateSalarieSelectForSession(s);
+            document.getElementById('session-participants-modal').classList.remove('hidden');
         }
 
         function populateSalarieSelectForSession(sessionObj) {
             let salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             const sel = document.getElementById('part-modal-salarie-select');
             if(!sel) return;
-
             let enrolled = sstNormalizeSessionParticipants(sessionObj).map(p => p.nom);
             let targetFormation = sessionObj.formationNom;
-            let priorityGroup = [];
-            let otherGroup = [];
-
+            let priorityGroup = [], otherGroup = [];
             salaries.forEach(sal => {
                 if(enrolled.includes(sal.nom)) return;
                 let f = (sal.formations || []).find(x => x.intitule === targetFormation);
-                if(f) {
-                    let st = getDateStatus(f.dateFin);
-                    if(st === 'EXPIRED' || st === 'WARNING') {
-                        priorityGroup.push({ nom: sal.nom, statut: st, dateFin: f.dateFin || 'N/C' });
-                        return;
-                    }
-                }
+                if(f) { let st=getDateStatus(f.dateFin); if(st==='EXPIRED'||st==='WARNING'){ priorityGroup.push({nom:sal.nom,statut:st,dateFin:f.dateFin||'N/C'}); return; } }
                 otherGroup.push(sal.nom);
             });
-
-            let html = '<option value="">-- Choisir un salarié --</option>';
-            if(priorityGroup.length > 0) {
-                html += `<optgroup label="⚠️ À RECYCLER (Expiré ou proche)">`;
-                priorityGroup.forEach(item => {
-                    let labelStatus = item.statut === 'EXPIRED' ? '🔴 Expiré' : '🟠 Proche';
-                    html += `<option value="${escapeHtml(item.nom)}">${escapeHtml(item.nom)} [${labelStatus} - ${escapeHtml(item.dateFin)}]</option>`;
-                });
-                html += `</optgroup>`;
-            }
-            if(otherGroup.length > 0) {
-                html += `<optgroup label="➕ Autres salariés (Optionnel)">`;
-                otherGroup.forEach(nom => { html += `<option value="${escapeHtml(nom)}">${escapeHtml(nom)}</option>`; });
-                html += `</optgroup>`;
-            }
-            sel.innerHTML = html;
+            let html='<option value="">-- Choisir un salarié --</option>';
+            if(priorityGroup.length){ html+='<optgroup label="⚠️ À RECYCLER (Expiré ou proche)">'; priorityGroup.forEach(item=>{ const ls=item.statut==='EXPIRED'?'🔴 Expiré':'🟠 Proche'; html+=`<option value="${escapeHtml(item.nom)}">${escapeHtml(item.nom)} [${ls} - ${escapeHtml(item.dateFin)}]</option>`; }); html+='</optgroup>'; }
+            if(otherGroup.length){ html+='<optgroup label="➕ Autres salariés (Optionnel)">'; otherGroup.forEach(nom=>{ html+=`<option value="${escapeHtml(nom)}">${escapeHtml(nom)}</option>`; }); html+='</optgroup>'; }
+            sel.innerHTML=html;
         }
 
         async function addParticipantToSession() {
-            let sessionId = document.getElementById('part-modal-session-id').value;
-            let salNom = document.getElementById('part-modal-salarie-select').value;
-            if(!salNom) { alert("Veuillez sélectionner un salarié."); return; }
-
-            let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let s = sessions.find(x => String(x.id) === String(sessionId));
-            if(s) {
-                sstNormalizeSessionParticipants(s);
-                if(!s.participants.some(p => p.nom === salNom)) {
-                    s.participants.push({ nom: salNom, validated: false, present: false, attestation: false, absent: false });
-                    s.cloturee = false;
-                    s.clotureeAt = '';
-                    localStorage.setItem('training_sessions', JSON.stringify(sessions));
-                    if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
-                    renderParticipantsList(s);
-                    populateSalarieSelectForSession(s);
-                    renderCalendar();
-                    loadCalendarRHStats();
-                }
-            }
+            let sessionId=document.getElementById('part-modal-session-id').value; let salNom=document.getElementById('part-modal-salarie-select').value;
+            if(!salNom){alert('Veuillez sélectionner un salarié.');return;}
+            let sessions=JSON.parse(localStorage.getItem('training_sessions')||'[]'); let s=sessions.find(x=>String(x.id)===String(sessionId));
+            if(s){ sstNormalizeSessionParticipants(s); if(!s.participants.some(p=>p.nom===salNom)){ s.participants.push({nom:salNom,validated:false,present:false,attestation:false,absent:false}); s.cloturee=false; s.clotureeAt=''; localStorage.setItem('training_sessions',JSON.stringify(sessions)); try{if(window.SSTCloud?.isCloudTenant?.())await sstV247CommitKeys('training_sessions');}catch(err){console.warn('Synchronisation cloud de la session impossible :',err);} renderParticipantsList(s); populateSalarieSelectForSession(s); renderCalendar(); loadCalendarRHStats(); } }
         }
 
         async function removeParticipantFromSession(idx) {
-            let sessionId = document.getElementById('part-modal-session-id').value;
-            let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let s = sessions.find(x => String(x.id) === String(sessionId));
-            if(s && s.participants) {
-                sstNormalizeSessionParticipants(s);
-                s.participants.splice(idx, 1);
-                s.cloturee = sstIsPastSession(s) && s.participants.length > 0 && s.participants.every(p => p.validated);
-                s.clotureeAt = s.cloturee ? (s.clotureeAt || new Date().toISOString().split('T')[0]) : '';
-                localStorage.setItem('training_sessions', JSON.stringify(sessions));
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
-                renderParticipantsList(s);
-                populateSalarieSelectForSession(s);
-                renderCalendar();
-                loadCalendarRHStats();
-            }
+            let sessionId=document.getElementById('part-modal-session-id').value; let sessions=JSON.parse(localStorage.getItem('training_sessions')||'[]'); let s=sessions.find(x=>String(x.id)===String(sessionId));
+            if(s&&s.participants){ sstNormalizeSessionParticipants(s); s.participants.splice(idx,1); if(!s.participants.length || !s.participants.every(p=>p.validated)) {s.cloturee=false;s.clotureeAt='';} localStorage.setItem('training_sessions',JSON.stringify(sessions)); try{if(window.SSTCloud?.isCloudTenant?.())await sstV247CommitKeys('training_sessions');}catch(err){} renderParticipantsList(s);populateSalarieSelectForSession(s);renderCalendar();loadCalendarRHStats(); }
+        }
+
+        async function reinscrireParticipant(participantIdx) {
+            const sessionId=document.getElementById('part-modal-session-id').value; const select=document.getElementById(`session-reinscription-${participantIdx}`); const targetId=select?.value;
+            if(!targetId){alert('Aucune future session sélectionnée.');return;}
+            const sessions=JSON.parse(localStorage.getItem('training_sessions')||'[]'); const source=sessions.find(x=>String(x.id)===String(sessionId)); const target=sessions.find(x=>String(x.id)===String(targetId));
+            if(!source||!target)return; sstNormalizeSessionParticipants(source); sstNormalizeSessionParticipants(target); const participant=source.participants[participantIdx]; if(!participant)return;
+            if(!target.participants.some(p=>p.nom===participant.nom)) target.participants.push({nom:participant.nom,validated:false,present:false,attestation:false,absent:false});
+            participant.absent=true; participant.validated=false; participant.present=false; participant.attestation=false; participant.validatedAt=''; source.cloturee=false; source.clotureeAt='';
+            localStorage.setItem('training_sessions',JSON.stringify(sessions)); try{if(window.SSTCloud?.isCloudTenant?.())await sstV247CommitKeys('training_sessions');}catch(err){}
+            alert(`${participant.nom} a été réinscrit à la session du ${formatDateFr(target.date)}.`); renderParticipantsList(source); renderCalendar(); loadCalendarRHStats();
         }
 
         async function deleteSessionFromParticipantsModal() {
-            let sessionId = document.getElementById('part-modal-session-id').value;
-            if(!confirm("Supprimer cette session ?")) return;
-            let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            sessions = sessions.filter(s => String(s.id) !== String(sessionId));
-            localStorage.setItem('training_sessions', JSON.stringify(sessions));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
-            closeParticipantsModal();
-            renderCalendar();
-            loadCalendarRHStats();
+            let sessionId=document.getElementById('part-modal-session-id').value; if(!confirm('Supprimer cette session ?'))return; let sessions=JSON.parse(localStorage.getItem('training_sessions')||'[]'); sessions=sessions.filter(s=>String(s.id)!==String(sessionId)); localStorage.setItem('training_sessions',JSON.stringify(sessions)); try{if(window.SSTCloud?.isCloudTenant?.())await sstV247CommitKeys('training_sessions');}catch(err){} closeParticipantsModal();renderCalendar();loadCalendarRHStats();
         }
 
         // --- HSE AUTORISATIONS PANEL ---
