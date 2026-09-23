@@ -6480,13 +6480,10 @@
                     const parts = sstNormalizeSessionParticipants(s);
                     let count = parts.length;
                     const past = sstIsPastSession(s);
+                    const previousClosed = !!s.cloturee;
+                    const closed = sstRecalculateSessionClosure(s);
                     const pending = past ? parts.filter(p => !p.validated).length : 0;
-                    const closed = past && count > 0 && pending === 0;
-                    if(past && s.cloturee !== closed) {
-                        s.cloturee = closed;
-                        s.clotureeAt = closed ? (s.clotureeAt || new Date().toISOString().split('T')[0]) : '';
-                        sessionsChanged = true;
-                    }
+                    if(previousClosed !== closed) sessionsChanged = true;
                     if(beforeState !== JSON.stringify(s.participants || [])) sessionsChanged = true;
                     const sessionClass = closed
                         ? 'bg-green-100 border-green-300 text-green-900'
@@ -6641,6 +6638,20 @@
             today.setHours(0,0,0,0);
             const d = new Date(sessionObj.date + 'T00:00:00');
             return !isNaN(d.getTime()) && d < today;
+        }
+
+        function sstRecalculateSessionClosure(sessionObj) {
+            if(!sessionObj) return false;
+            const parts = sstNormalizeSessionParticipants(sessionObj);
+            const past = sstIsPastSession(sessionObj);
+            // Une session passée est clôturée uniquement lorsque tous les inscrits
+            // sont définitivement validés. Une session sans inscrit reste ouverte.
+            const closed = past && parts.length > 0 && parts.every(p => p.validated === true);
+            sessionObj.cloturee = closed;
+            sessionObj.clotureeAt = closed
+                ? (sessionObj.clotureeAt || new Date().toISOString().split('T')[0])
+                : '';
+            return closed;
         }
 
         function sstGetUpcomingSessionsForFormation(formationNom, excludeId) {
@@ -6809,11 +6820,13 @@
                 alert(`Le salarié « ${p.nom} » n’existe plus dans la gestion RH. La présence a été enregistrée, mais la formation n’a pas pu être reportée.`);
             }
 
-            const pendingAfter = s.participants.filter(x => !x.validated).length;
-            s.cloturee = s.participants.length > 0 && pendingAfter === 0;
-            s.clotureeAt = s.cloturee ? new Date().toISOString().split('T')[0] : '';
+            // Recalcule immédiatement la clôture globale de la session :
+            // dès que tous les inscrits sont validés, la session passe au vert.
+            const sessionClosed = sstRecalculateSessionClosure(s);
+            await persistTrainingSessions().catch(err => console.warn('Synchronisation cloud des sessions impossible :', err));
 
-            await persistTrainingSessions();
+            // Le rafraîchissement visuel est volontairement exécuté même si la
+            // synchronisation cloud rencontre un problème.
             renderParticipantsList(s);
             renderCalendar();
             loadCalendarRHStats();
