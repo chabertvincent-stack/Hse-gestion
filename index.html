@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.84</title>
+    <title>Application SST & RH - Gestion V2.85</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -62,6 +62,18 @@
         #label-modal-qrcode table { margin:0 auto !important; }
         details > summary { list-style:none; }
         details > summary::-webkit-details-marker { display:none; }
+        /* Navigation tactile des tableaux TF/TG sur smartphone */
+        .at-mobile-scroll {
+            width:100%;
+            max-width:100%;
+            overflow-x:auto;
+            overflow-y:hidden;
+            -webkit-overflow-scrolling:touch;
+            touch-action:pan-x;
+            overscroll-behavior-x:contain;
+        }
+        .at-mobile-minwidth-months { min-width:620px; }
+        .at-mobile-minwidth-units { min-width:710px; }
         #app-shell.commercial-locked { display:none !important; }
         body.commercial-locked { overflow:hidden !important; }
     </style>
@@ -138,7 +150,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.84</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.85</div>
         </aside>
 
         <!-- Main Content -->
@@ -3361,7 +3373,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.84';
+        const SST_APP_VERSION = '2.85';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -6382,56 +6394,85 @@
             let stats = [];
 
             catalogue.forEach(cat => {
-                let expired = 0;
-                let warning = 0;
+                const expiredEmployees = [];
+                const warningEmployees = [];
 
                 salaries.forEach(sal => {
                     let f = (sal.formations || []).find(x => x.intitule === cat.nom);
-                    if(f) {
-                        let st = getDateStatus(f.dateFin);
-                        if(st === 'EXPIRED') expired++;
-                        if(st === 'WARNING') warning++;
-                    }
+                    if(!f) return;
+                    let st = getDateStatus(f.dateFin);
+                    const nom = sal.nom || sal.nomPrenom || sal.name || 'Salarié sans nom';
+                    if(st === 'EXPIRED') expiredEmployees.push(nom);
+                    if(st === 'WARNING') warningEmployees.push(nom);
                 });
 
-                if(expired > 0 || warning > 0) {
+                expiredEmployees.sort((a,b) => a.localeCompare(b, 'fr'));
+                warningEmployees.sort((a,b) => a.localeCompare(b, 'fr'));
+
+                if(expiredEmployees.length > 0 || warningEmployees.length > 0) {
                     stats.push({
                         nom: cat.nom,
-                        expired,
-                        warning,
-                        totalNeed: expired + warning
+                        expired: expiredEmployees.length,
+                        warning: warningEmployees.length,
+                        expiredEmployees,
+                        warningEmployees,
+                        totalNeed: expiredEmployees.length + warningEmployees.length
                     });
                 }
             });
 
-            stats.sort((a, b) => b.totalNeed - a.totalNeed);
+            stats.sort((a, b) => b.totalNeed - a.totalNeed || a.nom.localeCompare(b.nom, 'fr'));
 
             if(stats.length === 0) {
                 summaryContainer.innerHTML = `<div class="col-span-full p-4 bg-green-50 border border-green-200 text-green-800 text-sm font-semibold rounded-lg text-center">✅ Toutes les formations sont parfaitement à jour. Aucune échéance critique.</div>`;
                 return;
             }
 
+            const employeeList = (names, emptyText) => names.length
+                ? `<ul class="mt-2 space-y-1">${names.map(n => `<li class="flex items-start gap-2"><span class="text-slate-400">•</span><span>${escapeHtml(n)}</span></li>`).join('')}</ul>`
+                : `<div class="mt-2 text-slate-400 italic">${emptyText}</div>`;
+
             let html = '';
-            stats.forEach(st => {
+            stats.forEach((st, idx) => {
+                const detailsId = `calendar-rh-detail-${idx}`;
+                const escapedFormation = String(st.nom).replace(/'/g, "\\'");
                 html += `
-                    <div class="border rounded-lg p-3 bg-slate-50 space-y-2 flex flex-col justify-between">
-                        <div>
-                            <h4 class="font-bold text-slate-800 text-xs border-b pb-1 truncate" title="${st.nom}">${st.nom}</h4>
-                            <div class="mt-2 space-y-1 text-xs">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-red-600 font-bold">🔴 Déjà expirées :</span>
-                                    <span class="bg-red-100 text-red-800 font-extrabold px-2 py-0.5 rounded">${st.expired}</span>
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-amber-600 font-bold">🟠 Échéance proche :</span>
-                                    <span class="bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded">${st.warning}</span>
+                    <details class="border rounded-lg bg-slate-50 overflow-hidden group md:col-span-1">
+                        <summary class="list-none cursor-pointer select-none p-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-slate-400 transition-transform duration-200 group-open:rotate-90">▶</span>
+                                        <h4 class="font-bold text-slate-800 text-sm truncate" title="${escapeHtml(st.nom)}">${escapeHtml(st.nom)}</h4>
+                                    </div>
+                                    <div class="mt-2 space-y-1 text-xs">
+                                        <div class="flex justify-between items-center gap-3">
+                                            <span class="text-red-600 font-bold">🔴 Déjà expirées :</span>
+                                            <span class="bg-red-100 text-red-800 font-extrabold px-2 py-0.5 rounded">${st.expired}</span>
+                                        </div>
+                                        <div class="flex justify-between items-center gap-3">
+                                            <span class="text-amber-600 font-bold">🟠 Échéance proche :</span>
+                                            <span class="bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded">${st.warning}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-[11px] text-blue-600 font-semibold mt-2">Cliquer pour voir les salariés concernés</div>
                                 </div>
                             </div>
+                        </summary>
+                        <div id="${detailsId}" class="px-3 pb-3 pt-1 border-t border-slate-200 space-y-3 text-xs text-slate-700">
+                            <div class="bg-red-50 border border-red-100 rounded-lg p-2.5">
+                                <div class="font-bold text-red-700">🔴 Salariés dont la formation est expirée (${st.expired})</div>
+                                ${employeeList(st.expiredEmployees, 'Aucun salarié expiré.')}
+                            </div>
+                            <div class="bg-amber-50 border border-amber-100 rounded-lg p-2.5">
+                                <div class="font-bold text-amber-700">🟠 Salariés avec échéance proche (${st.warning})</div>
+                                ${employeeList(st.warningEmployees, 'Aucun salarié avec échéance proche.')}
+                            </div>
+                            <button type="button" onclick="event.preventDefault(); event.stopPropagation(); openSessionModalWithFormation('${escapedFormation}')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2 rounded transition">
+                                📅 Programmer une session
+                            </button>
                         </div>
-                        <button onclick="openSessionModalWithFormation('${st.nom.replace(/'/g, "\\'")}')" class="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-1.5 rounded transition">
-                            📅 Programmer session
-                        </button>
-                    </div>`;
+                    </details>`;
             });
 
             summaryContainer.innerHTML = html;
@@ -10366,8 +10407,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }) : [];
 
             container.innerHTML = `
-                <div class="border rounded-lg overflow-hidden bg-white">
-                    <div class="grid grid-cols-[minmax(105px,1.2fr)_minmax(130px,1fr)_90px_100px_90px_90px] bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wide">
+                <div class="border rounded-lg bg-white overflow-hidden">
+                    <div class="at-mobile-scroll">
+                        <div class="at-mobile-minwidth-months">
+                            <div class="grid grid-cols-[minmax(105px,1.2fr)_minmax(130px,1fr)_90px_100px_90px_90px] bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wide">
                         <div class="p-2.5">Mois</div>
                         <div class="p-2.5">Heures travaillées</div>
                         <div class="p-2.5 text-center">AT avec arrêt</div>
@@ -10386,19 +10429,23 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <div class="p-2.5 text-center font-bold text-indigo-700">${r.tf === null ? 'N/C' : r.tf.toFixed(2)}</div>
                             <div class="p-2.5 text-center font-bold text-violet-700">${r.tg === null ? 'N/C' : r.tg.toFixed(2)}</div>
                         </div>`).join('')}
-                    <div class="grid grid-cols-[minmax(105px,1.2fr)_minmax(130px,1fr)_90px_100px_90px_90px] border-t-2 border-slate-300 bg-slate-100 font-bold text-sm items-center">
-                        <div class="p-2.5 text-slate-800">Total ${escapeHtml(year)}</div>
+                            <div class="grid grid-cols-[minmax(105px,1.2fr)_minmax(130px,1fr)_90px_100px_90px_90px] border-t-2 border-slate-300 bg-slate-100 font-bold text-sm items-center">
+                                <div class="p-2.5 text-slate-800">Total ${escapeHtml(year)}</div>
                         <div class="p-2.5 text-slate-800">${totalHours.toLocaleString('fr-FR', {maximumFractionDigits:2})} h</div>
                         <div class="p-2.5 text-center text-red-700">${totalAvecArret}</div>
                         <div class="p-2.5 text-center text-blue-700">${totalJours}</div>
                         <div class="p-2.5 text-center text-indigo-700">${annualTf === null ? 'N/C' : annualTf.toFixed(2)}</div>
-                        <div class="p-2.5 text-center text-violet-700">${annualTg === null ? 'N/C' : annualTg.toFixed(2)}</div>
+                                <div class="p-2.5 text-center text-violet-700">${annualTg === null ? 'N/C' : annualTg.toFixed(2)}</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 ${!unite && unitSummaryRows.length ? `
                     <div class="mt-4 border rounded-lg overflow-hidden bg-white">
                         <div class="px-3 py-2.5 bg-slate-800 text-white text-sm font-bold">📊 TF / TG annuel par unité de travail</div>
-                        <div class="grid grid-cols-[minmax(180px,1.5fr)_120px_100px_110px_100px_100px] bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wide">
+                        <div class="at-mobile-scroll">
+                            <div class="at-mobile-minwidth-units">
+                                <div class="grid grid-cols-[minmax(180px,1.5fr)_120px_100px_110px_100px_100px] bg-slate-100 text-slate-600 text-[11px] font-bold uppercase tracking-wide">
                             <div class="p-2.5">Unité de travail</div><div class="p-2.5 text-center">Heures</div><div class="p-2.5 text-center">AT avec arrêt</div><div class="p-2.5 text-center">Jours perdus</div><div class="p-2.5 text-center">TF</div><div class="p-2.5 text-center">TG</div>
                         </div>
                         ${unitSummaryRows.map((r, idx) => `
@@ -10410,6 +10457,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                 <div class="p-2.5 text-center font-bold text-indigo-700">${r.tf === null ? 'N/C' : r.tf.toFixed(2)}</div>
                                 <div class="p-2.5 text-center font-bold text-violet-700">${r.tg === null ? 'N/C' : r.tg.toFixed(2)}</div>
                             </div>`).join('')}
+                                </div>
+                            </div>
+                        </div>
                     </div>` : ''}`;
 
             if(note) {
