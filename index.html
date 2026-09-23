@@ -11462,7 +11462,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function renderAtEnquete(existing={}){
             const root=document.getElementById('at-enquete-types'); const common=document.getElementById('at-enquete-common'); const special=document.getElementById('at-enquete-special');
             if(!root||!common||!special) return;
-            const data=existing.enqueteAT||{}; const selected=new Set(data.types||[]);
+            // Accepte soit une analyse complète ({ enqueteAT: {...} }), soit directement
+            // les données de l'enquête ({ types, answers, ... }) envoyées après une sélection.
+            const data=(existing && existing.enqueteAT) ? existing.enqueteAT : (existing || {});
+            const selected=new Set(data.types||[]);
             window.__sstAtEnqueteTypes=new Set(selected);
             root.innerHTML=AT_ENQUETE_TYPES.map(([k,t])=>`<label class="w-full flex items-center gap-2 p-2 rounded-lg border text-xs font-medium transition cursor-pointer ${selected.has(k)?'bg-indigo-100 border-indigo-400 text-indigo-800 ring-1 ring-indigo-300':'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}"><input type="checkbox" data-at-type-btn="${k}" ${selected.has(k)?'checked':''} class="h-4 w-4 accent-indigo-600 shrink-0"><span>${escapeHtml(t)}</span></label>`).join('');
             installAtEnqueteTypeHandler();
