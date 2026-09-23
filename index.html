@@ -4329,45 +4329,56 @@
         }
 
         // --- NAVIGATION DIRECTE VERS UNE ANALYSE AT (depuis le PAPRIPACT) ---
+        // loadAt() affiche d'abord le cache local puis, pour un tenant cloud, se
+        // re-synchronise et se RE-RENDU intégralement en arrière-plan une fois la
+        // réponse Firestore reçue (tbody.innerHTML est reconstruit). Si on se contentait
+        // de surligner la ligne une seule fois juste après la navigation, ce second rendu
+        // asynchrone remplaçait la ligne surlignée par une ligne neuve sans surbrillance,
+        // quelques centaines de ms plus tard : la surbrillance semblait alors "ne jamais
+        // fonctionner". On mémorise donc la cible à surligner et on la ré-applique à
+        // chaque (re)rendu de la table Analyse AT tant qu'elle reste valide (cf. loadAt()).
+        let sstAtHighlightPending = null; // { key, expiresAt }
+        function sstApplyAtHighlightIfPending() {
+            if(!sstAtHighlightPending) return false;
+            if(Date.now() > sstAtHighlightPending.expiresAt){ sstAtHighlightPending = null; return false; }
+            const key = sstAtHighlightPending.key;
+            const row = Array.from(document.querySelectorAll('[data-at-analysis-key]')).find(el=>String(el.dataset.atAnalysisKey||'')===key);
+            if(!row) return false;
+            row.scrollIntoView({behavior:'smooth',block:'center'});
+            row.classList.add('at-row-highlight');
+            const cells=Array.from(row.querySelectorAll('td'));
+            cells.forEach(cell=>{
+                cell.classList.remove('at-row-highlight-fading');
+                cell.classList.add('at-row-highlight-cell');
+            });
+            requestAnimationFrame(()=>requestAnimationFrame(()=>{
+                cells.forEach(cell=>cell.classList.add('at-row-highlight-fading'));
+            }));
+            setTimeout(()=>{
+                if(document.contains(row)){
+                    row.classList.remove('at-row-highlight');
+                    cells.forEach(cell=>{
+                        cell.classList.remove('at-row-highlight-cell','at-row-highlight-fading');
+                        cell.style.removeProperty('background-color');
+                        cell.style.removeProperty('transition');
+                    });
+                }
+            }, 2900);
+            return true;
+        }
         async function scrollToAtAnalysis(analysisRef) {
             switchTab('at');
             ['filter-at-service','filter-at-gravite','filter-at-year'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-            try { await loadAt(); } catch(err) { console.warn('Chargement Analyse AT avant navigation impossible :',err); }
             const ref=String(analysisRef??'');
-            const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
-            const idx=analyses.findIndex(a=>[a?._cloudId,a?.id,a?.reference,a?.sourceAtRef].some(v=>v!==undefined&&v!==null&&String(v)===ref));
-            const key=idx>=0 ? String(analyses[idx]?._cloudId||analyses[idx]?.id||analyses[idx]?.reference||analyses[idx]?.sourceAtRef||idx) : ref;
-            const findRow=()=>Array.from(document.querySelectorAll('[data-at-analysis-key]')).find(el=>String(el.dataset.atAnalysisKey||'')===key) || (idx>=0?document.getElementById(`at-row-${idx}`):null);
-            const highlightRow=(row)=>{
-                if(!row) return false;
-                row.scrollIntoView({behavior:'smooth',block:'center'});
-                row.classList.add('at-row-highlight');
-                const cells=Array.from(row.querySelectorAll('td'));
-                cells.forEach(cell=>{
-                    cell.classList.remove('at-row-highlight-fading');
-                    cell.classList.add('at-row-highlight-cell');
-                });
-                requestAnimationFrame(()=>requestAnimationFrame(()=>{
-                    cells.forEach(cell=>cell.classList.add('at-row-highlight-fading'));
-                }));
-                setTimeout(()=>{
-                    if(document.contains(row)){
-                        row.classList.remove('at-row-highlight');
-                        cells.forEach(cell=>{
-                            cell.classList.remove('at-row-highlight-cell','at-row-highlight-fading');
-                            cell.style.removeProperty('background-color');
-                            cell.style.removeProperty('transition');
-                        });
-                    }
-                }, 2900);
-                return true;
-            };
+            const analysesBefore=JSON.parse(localStorage.getItem('at_analyses')||'[]');
+            const idxBefore=analysesBefore.findIndex(a=>[a?._cloudId,a?.id,a?.reference,a?.sourceAtRef].some(v=>v!==undefined&&v!==null&&String(v)===ref));
+            const key=idxBefore>=0 ? String(analysesBefore[idxBefore]?._cloudId||analysesBefore[idxBefore]?.id||analysesBefore[idxBefore]?.reference||analysesBefore[idxBefore]?.sourceAtRef||idxBefore) : ref;
+            // Valide 12s : largement de quoi couvrir un aller-retour Firestore qui
+            // déclenche un second rendu de la table après la navigation.
+            sstAtHighlightPending = { key, expiresAt: Date.now() + 12000 };
+            try { await loadAt(); } catch(err) { console.warn('Chargement Analyse AT avant navigation impossible :',err); }
             for(let attempt=0; attempt<30; attempt++){
-                const row=findRow();
-                if(row){
-                    highlightRow(row);
-                    return true;
-                }
+                if(sstApplyAtHighlightIfPending()) return true;
                 await new Promise(resolve=>setTimeout(resolve,80));
             }
             return false;
@@ -11011,6 +11022,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const actionHtml=papActions.length ? `<details class="mt-2 text-left"><summary class="cursor-pointer text-[11px] font-bold text-indigo-700 hover:text-indigo-900">📋 ${papActions.length} action${papActions.length>1?'s':''} PAPRIPACT</summary><div class="mt-2 space-y-1.5">${papActions.map(ac=>{const stable=JSON.stringify(String(ac._cloudId||ac.id||ac.numero||''));const st=ac.statut||'À traiter';const scls=st==='Clôturée'?'bg-green-50 text-green-700 border-green-200':st==='En cours'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200';return `<button type="button" onclick='scrollToPapripactAction(${stable})' class="w-full text-left border rounded-lg bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 px-2.5 py-2 transition"><div class="font-semibold text-xs text-slate-700">N° ${escapeHtml(ac.numero||'?')} — ${escapeHtml(ac.action||'Action')}</div><div class="flex justify-between gap-2 mt-1"><span class="text-[10px] text-slate-500">${escapeHtml(ac.responsable||'À définir')} · ${escapeHtml(ac.delai||'N/C')}</span><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${scls}">${escapeHtml(st)}</span></div></button>`;}).join('')}</div></details>` : `<div class="mt-2 text-[10px] text-slate-400 italic">Aucune action PAPRIPACT liée.</div>`;
                 tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
             });
+
+            // Ré-applique une éventuelle surbrillance en attente (navigation depuis le
+            // PAPRIPACT) : nécessaire ici car ce rendu peut être celui déclenché par la
+            // synchronisation cloud ci-dessous, qui a lieu APRÈS le premier surlignage.
+            sstApplyAtHighlightIfPending();
 
             if(isCloudAtTenant() && !skipCloud) {
                 Promise.resolve().then(async()=>{
