@@ -2408,8 +2408,8 @@
 
                             <section class="border rounded-xl p-4 bg-slate-50">
                                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
-                                    <div><div class="flex items-center gap-2"><span class="text-lg">5️⃣</span><h4 class="text-sm font-bold text-slate-800">Arbre des causes</h4></div><p class="text-[11px] text-slate-500 mt-1">Ajoutez les causes et reliez-les au fait qu'elles expliquent. Le schéma se construit automatiquement.</p></div>
-                                    <div class="flex gap-2 flex-wrap"><button type="button" onclick="generateAtCauseTreeProposal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-semibold">✨ Générer une proposition depuis l’enquête</button><input id="at-tree-new-text" type="text" placeholder="Nouvelle cause / fait" class="p-2 border rounded text-xs w-52 bg-white"><select id="at-tree-new-type" class="p-2 border rounded text-xs bg-white"><option value="Cause">Cause</option><option value="Fait">Fait</option><option value="Humain">Facteur humain</option><option value="Technique">Facteur technique</option><option value="Organisation">Facteur organisationnel</option></select><button type="button" onclick="addAtTreeNode()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-semibold">+ Ajouter</button></div>
+                                    <div><div class="flex items-center gap-2"><span class="text-lg">5️⃣</span><h4 class="text-sm font-bold text-slate-800">Arbre des causes</h4></div><p class="text-[11px] text-slate-500 mt-1">Construisez l'arbre à partir des faits retenus. Le moteur propose uniquement les éléments jugés utiles à l'analyse.</p></div>
+                                    <div class="flex gap-2 flex-wrap"><button type="button" onclick="analyzeAtFactsAndProposeTree()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-semibold">🔎 Analyser les faits</button><input id="at-tree-new-text" type="text" placeholder="Nouvelle cause / fait" class="p-2 border rounded text-xs w-52 bg-white"><select id="at-tree-new-type" class="p-2 border rounded text-xs bg-white"><option value="Cause">Cause</option><option value="Fait">Fait</option><option value="Humain">Facteur humain</option><option value="Technique">Facteur technique</option><option value="Organisation">Facteur organisationnel</option></select><button type="button" onclick="addAtTreeNode()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-semibold">+ Ajouter</button></div>
                                 </div>
                                 <div class="bg-white border rounded-xl p-2 overflow-x-auto"><div id="at-tree-svg" class="min-h-[260px]"></div></div>
                                 <div id="at-tree-nodes-editor" class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
@@ -11095,80 +11095,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             renderAtCauseTreeEditor();
         }
 
-        // Génère une première proposition à partir des faits réellement renseignés
-        // dans l'enquête. Il s'agit d'une aide à l'analyse : les liens causaux restent
-        // à valider/modifier par l'utilisateur dans l'éditeur de l'arbre.
-        function generateAtCauseTreeProposal(){
-            const enquete=collectAtEnquete();
-            const answers=enquete.answers||{};
-            const defs={};
-            AT_ENQUETE_COMMON.forEach(([group,title,qs])=>{
-                qs.forEach((q,i)=>{ defs[`at-enq-${group}-${group}-${i}`]={group,title,q}; });
-            });
-            AT_ENQUETE_TYPES.forEach(([group,title])=>{
-                (AT_ENQUETE_SPECIAL[group]||[]).forEach((q,i)=>{ defs[`at-enq-${group}-${group}-${i}`]={group,title,q}; });
-            });
-
-            const selectedTitles=new Map(AT_ENQUETE_TYPES);
-            const rootText=(document.getElementById('at-deroule-faits')?.value||'').trim() || 'Événement accidentel';
-            const nodes=[{id:'root',text:rootText,type:'Fait',parentId:null}];
-            const categoryNodes={};
-            const groupType={
-                description:'Fait', situation:'Fait', victime:'Humain', organisation:'Organisation',
-                environnement:'Technique', tache:'Cause', materiel:'Technique', consignes:'Organisation',
-                temoins:'Fait', chute_plain_pied:'Technique', chute_hauteur:'Technique', machine:'Technique',
-                manutention:'Humain', electrique:'Technique', chimique:'Technique', coupure:'Technique',
-                heurt:'Technique', circulation:'Technique', exterieur:'Technique', isole:'Organisation', coactivite:'Organisation'
-            };
-
-            const orderedGroups=['description','situation','victime','organisation','environnement','tache','materiel','consignes','temoins',...(enquete.types||[])];
-            const seenGroups=new Set();
-            orderedGroups.forEach(group=>{
-                if(seenGroups.has(group)) return;
-                seenGroups.add(group);
-                const hasAnswer=Object.keys(answers).some(k=>k.startsWith(`at-enq-${group}-${group}-`) && ((answers[k]?.obs||'').trim() || (answers[k]?.rep||'').trim()));
-                if(!hasAnswer) return;
-                const title=(AT_ENQUETE_COMMON.find(x=>x[0]===group)||[group,selectedTitles.get(group)||group])[1];
-                const id='cat_'+group;
-                categoryNodes[group]=id;
-                nodes.push({id,text:title,type:groupType[group]||'Cause',parentId:'root'});
-            });
-
-            Object.entries(answers).forEach(([key,val])=>{
-                const def=defs[key];
-                if(!def) return;
-                const rep=String(val?.rep||'').trim();
-                const obs=String(val?.obs||'').trim();
-                if(!rep && !obs) return;
-                const fact=obs ? `${def.q} — ${obs}` : `${def.q} : ${rep}`;
-                // On écarte les réponses N/A pour ne pas polluer la proposition.
-                if(rep==='N/A' && !obs) return;
-                const id='q_'+key.replace(/[^a-zA-Z0-9_-]/g,'_');
-                const parent=categoryNodes[def.group]||'root';
-                nodes.push({id,text:fact,type:groupType[def.group]||'Cause',parentId:parent});
-            });
-
-            const chronoLabels=['Avant l’accident','Juste avant','Événement accidentel','Après l’accident'];
-            (enquete.chrono||[]).forEach((v,i)=>{
-                const text=String(v||'').trim(); if(!text) return;
-                nodes.push({id:'chrono_'+i,text:`${chronoLabels[i]} : ${text}`,type:i===2?'Fait':'Cause',parentId:'root'});
-            });
-
-            if(enquete.why?.enabled){
-                (enquete.why.answers||[]).forEach((v,i)=>{
-                    const text=String(v||'').trim(); if(!text) return;
-                    nodes.push({id:'why_'+i,text:`Approfondissement : ${text}`,type:'Organisation',parentId:categoryNodes.organisation||'root'});
-                });
-            }
-
-            if(nodes.length===1){
-                alert('Aucune réponse exploitable n’a encore été renseignée dans l’enquête AT.');
-                return;
-            }
-            setAtTreeNodes(nodes);
-            alert('Une proposition d’arbre a été générée à partir des réponses renseignées. Vérifiez et ajustez les liens causaux avant de valider l’analyse.');
-        }
-
         function wrapAtSvgText(text, maxChars) {
             const words = String(text || '').trim().split(/\s+/).filter(Boolean);
             if(!words.length) return [''];
@@ -11310,6 +11236,138 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     <option value="">Aucun parent (racine)</option>${nodes.filter(x=>x.id!==n.id).map(x=>`<option value="${x.id}" ${n.parentId===x.id?'selected':''}>${escapeHtml(x.text.substring(0,70))}</option>`).join('')}
                 </select>
             </div>`).join('');
+        }
+
+        // --- AT : moteur local de tri des faits / proposition d'arbre ---
+        // Objectif : ne pas transformer toutes les réponses en nœuds. Le moteur
+        // recherche des faits potentiellement causaux, élimine les informations
+        // administratives et propose un arbre court que l'utilisateur valide/modifie.
+        const AT_CAUSAL_TERMS = [
+            'pas de','aucun','aucune','absence','non disponible','indisponible','non adapté','inadapté','inadaptée',
+            'défectueux','défectueuse','défaut','anomalie','dégradé','dégradée','glissant','humide','obstacle','encombre',
+            'insuffisant','insuffisante','insuffisants','insuffisantes','inhabituel','inhabituelle','exceptionnel','exceptionnelle',
+            'différent','différente','écart','non respect','non-respect','non utilisé','non utilisée','non portée','non porté',
+            'neutralisé','neutralisée','non conforme','non respectée','non respecté','manque','manquante','manquant','problème',
+            'urgence','pression','délai','surcharge','fatigue','mauvaise','mauvais','erreur','oubli','improvis','sans protection',
+            'sans balisage','sans consignation','sans signalisation','absence de protection','maintenance','panne','rupture'
+        ];
+        const AT_ADMIN_TERMS = [
+            'nom','prénom','date','heure','adresse','témoin','témoins','salarié','victime','ancienneté',
+            'formation sst','habilité','habilitation valide','statut','signature','référence','source','document','preuve'
+        ];
+        const AT_CAUSAL_CATEGORIES = [
+            {type:'Organisation', terms:['organisation','planning','planification','effectif','effectifs','délai','pression','consigne','procédure','mode opératoire','coordination','communication','coactivité','stockage','rangement','préparation','maintenance']},
+            {type:'Technique', terms:['machine','matériel','équipement','protection','garde-corps','échelle','escabeau','plateforme','outil','véhicule','engin','sol','éclairage','ventilation','consignation','électrique','défaut','panne','maintenance']},
+            {type:'Humain', terms:['geste','posture','fatigue','erreur','oubli','attention','précipitation','formation','expérience','habitude','respect','utilisé','porté','portée','choix']},
+            {type:'Cause', terms:['environnement','météo','pluie','vent','chaleur','froid','bruit','visibilité','humidité','obstacle','encombrement','circulation']}
+        ];
+        function atNormalizeFactText(v){
+            return String(v||'').replace(/\s+/g,' ').replace(/^[-•–—:]+/,'').trim();
+        }
+        function atFactWords(v){
+            return atNormalizeFactText(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w=>w.length>3);
+        }
+        function atFactCategory(text, question=''){
+            const t=(String(text)+' '+String(question)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+            let best='Cause',score=-1;
+            AT_CAUSAL_CATEGORIES.forEach(c=>{const n=c.terms.reduce((n,x)=>n+(t.includes(x)?1:0),0);if(n>score){score=n;best=c.type;}});
+            return best;
+        }
+        function atIsAdministrativeFact(question,text){
+            const q=String(question||'').toLowerCase();
+            const t=String(text||'').toLowerCase();
+            if(t.length<8) return true;
+            if(/^(ancienneté|expérience)\b/i.test(q) && !AT_CAUSAL_TERMS.some(x=>t.includes(x))) return true;
+            if(AT_ADMIN_TERMS.some(x=>q===x || q.startsWith(x+' ?'))) return true;
+            if(/^(victime entendue|témoins entendus|encadrement entendu|maintenance \/ personne compétente entendue)\b/i.test(q)) return true;
+            return false;
+        }
+        function atCandidateScore(question, answer, source=''){
+            const q=String(question||'').toLowerCase(); const a=String(answer||'').toLowerCase();
+            if(atIsAdministrativeFact(q,a)) return -999;
+            let score=0;
+            if(source==='why') score+=8;
+            if(source==='chrono') score+=7;
+            if(source==='circ') score+=6;
+            if(source==='obs') score+=2;
+            if(AT_CAUSAL_TERMS.some(x=>a.includes(x))) score+=6;
+            if(AT_CAUSAL_TERMS.some(x=>q.includes(x))) score+=2;
+            if(/pourquoi|différence|écart|anormal|inhabituel|défaut|protection|procédure|consigne/i.test(q)) score+=3;
+            if(a.length>=25) score+=2;
+            if(a.length>=70) score+=1;
+            if(/^(oui|non|n\/a|na)$/i.test(a)) score-=4;
+            return score;
+        }
+        function atAddCandidate(list, text, question, source, key){
+            const value=atNormalizeFactText(text); if(!value) return;
+            const score=atCandidateScore(question,value,source); if(score<3) return;
+            const words=new Set(atFactWords(value));
+            const existing=list.find(x=>{
+                const ew=new Set(atFactWords(x.text));
+                let common=0; words.forEach(w=>{if(ew.has(w)) common++;});
+                return value.toLowerCase()===x.text.toLowerCase() || (common>=3 && common/Math.max(1,Math.min(words.size,ew.size))>=0.55);
+            });
+            if(existing){ existing.score=Math.max(existing.score,score); if(source==='why'||source==='chrono') existing.priority=true; return; }
+            list.push({text:value,question:String(question||''),source,key,score,category:atFactCategory(value,question),priority:source==='why'||source==='chrono'});
+        }
+        function buildAtFactCandidates(){
+            const data=collectAtEnquete(); const list=[];
+            const analysisFacts=document.getElementById('at-deroule-faits')?.value||'';
+            if(analysisFacts) atAddCandidate(list,analysisFacts,'Déroulé précis des faits','circ','circ');
+            (data.chrono||[]).forEach((v,i)=>{ if(v) atAddCandidate(list,v,['Avant l’accident','Juste avant','Événement accidentel','Après l’accident'][i],'chrono','chrono-'+i); });
+            Object.keys(data.answers||{}).forEach(k=>{
+                const a=data.answers[k]||{}; const el=document.querySelector(`[data-key="${k}"][data-at-enq="obs"]`);
+                const q=el?.closest('.border')?.querySelector('label')?.textContent || k;
+                const rep=String(a.rep||'').trim(); const obs=String(a.obs||'').trim();
+                if(obs) atAddCandidate(list,obs,q,'obs',k);
+                if(rep==='Non' && !obs) atAddCandidate(list,'Élément non satisfait : '+q,q,'obs',k);
+            });
+            (data.why?.answers||[]).forEach((v,i)=>{if(v) atAddCandidate(list,v,['Pourquoi la situation réelle a-t-elle conduit à faire autrement que prévu ?','Pourquoi le matériel prévu n’a-t-il pas été utilisé ?','Pourquoi une protection n’était-elle pas utilisée ?','Pourquoi la tâche réelle était-elle différente de la tâche prévue ?','Autre élément expliquant l’écart'][i],'why','why-'+i);});
+            return list.sort((a,b)=>(b.priority?1:0)-(a.priority?1:0)||b.score-a.score).slice(0,14);
+        }
+        function atEscapeHtmlText(v){ return escapeHtml(String(v||'')); }
+        function renderAtFactProposal(candidates){
+            let wrap=document.getElementById('at-fact-proposal');
+            if(!wrap){
+                const tree=document.getElementById('at-tree-svg')?.parentElement?.parentElement;
+                if(!tree) return;
+                wrap=document.createElement('div'); wrap.id='at-fact-proposal'; wrap.className='mt-3 border border-indigo-200 rounded-xl bg-indigo-50 p-3'; tree.parentElement.insertBefore(wrap,tree);
+            }
+            if(!candidates.length){ wrap.innerHTML='<div class="text-xs text-slate-600">Aucun fait suffisamment renseigné n’a été retenu automatiquement. Complétez la chronologie, les écarts et les précisions de l’enquête.</div>'; return; }
+            wrap.innerHTML=`<div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3"><div><div class="text-sm font-bold text-indigo-900">🔎 Faits retenus pour l’analyse</div><div class="text-[11px] text-indigo-700 mt-1">Le moteur écarte les informations administratives et privilégie les écarts, anomalies, chronologie et réponses explicatives.</div></div><span class="text-[10px] font-bold bg-white border border-indigo-200 rounded-full px-2 py-1 text-indigo-700">${candidates.length} élément(s)</span></div><div class="grid grid-cols-1 md:grid-cols-2 gap-2">${candidates.map((c,i)=>`<label class="flex gap-2 items-start border border-indigo-100 bg-white rounded-lg p-2 cursor-pointer"><input type="checkbox" data-at-proposal-index="${i}" checked class="mt-0.5 h-4 w-4 accent-indigo-600"><span class="min-w-0"><span class="block text-xs font-semibold text-slate-800">${atEscapeHtmlText(c.text)}</span><span class="block text-[10px] text-slate-500 mt-0.5">${atEscapeHtmlText(c.category)} · ${atEscapeHtmlText(c.source==='why'?'Approfondissement « Pourquoi ?':c.source==='chrono'?'Chronologie':c.source==='circ'?'Déroulé des faits':'Réponse d’enquête')}</span></span></label>`).join('')}</div><div class="flex flex-wrap justify-end gap-2 mt-3"><button type="button" onclick="clearAtFactProposal()" class="bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded text-xs font-semibold">Annuler</button><button type="button" onclick="buildAtTreeFromProposal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-semibold">🌳 Construire l’arbre avec la sélection</button></div>`;
+            window.__sstAtFactCandidates=candidates;
+        }
+        function analyzeAtFactsAndProposeTree(){
+            const candidates=buildAtFactCandidates();
+            renderAtFactProposal(candidates);
+            document.getElementById('at-fact-proposal')?.scrollIntoView({behavior:'smooth',block:'nearest'});
+        }
+        function clearAtFactProposal(){ document.getElementById('at-fact-proposal')?.remove(); window.__sstAtFactCandidates=[]; }
+        function buildAtTreeFromProposal(){
+            const all=window.__sstAtFactCandidates||[]; const selected=all.filter((c,i)=>document.querySelector(`[data-at-proposal-index="${i}"]`)?.checked);
+            if(!selected.length){ alert('Sélectionnez au moins un fait.'); return; }
+            const root={id:'root',text:'Événement accidentel',type:'Fait',parentId:null};
+            // On cherche d'abord les faits les plus proches de l'événement : chronologie
+            // et déroulé, puis on rattache les facteurs contributifs sous le fait le plus pertinent.
+            const immediate=selected.filter(c=>c.source==='chrono' || c.source==='circ').slice(0,2);
+            const others=selected.filter(c=>!immediate.includes(c));
+            const nodes=[root];
+            const used=new Set();
+            const makeNode=(c,parentId)=>{ const id='atp_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); nodes.push({id,text:c.text,type:c.category,parentId}); used.add(c); return id; };
+            let anchors=[];
+            immediate.forEach(c=>anchors.push(makeNode(c,'root')));
+            if(!anchors.length) anchors.push('root');
+            others.sort((a,b)=>b.score-a.score).forEach((c,idx)=>{
+                // Une cause organisationnelle est proposée en amont, les autres facteurs
+                // sont rattachés au fait immédiat le plus pertinent. Les liens restent
+                // volontairement modifiables par l'utilisateur.
+                let parent=anchors[0];
+                if(c.category==='Organisation' && anchors.length>1) parent=anchors[anchors.length-1];
+                makeNode(c,parent);
+            });
+            setAtTreeNodes(nodes);
+            clearAtFactProposal();
+            alert(`Proposition construite avec ${nodes.length-1} fait(s)/cause(s). Vérifiez les liens causaux avant d’enregistrer l’analyse.`);
         }
 
         function addAtTreeNode() {
