@@ -2409,7 +2409,7 @@
                             <section class="border rounded-xl p-4 bg-slate-50">
                                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
                                     <div><div class="flex items-center gap-2"><span class="text-lg">5️⃣</span><h4 class="text-sm font-bold text-slate-800">Arbre des causes</h4></div><p class="text-[11px] text-slate-500 mt-1">Ajoutez les causes et reliez-les au fait qu'elles expliquent. Le schéma se construit automatiquement.</p></div>
-                                    <div class="flex gap-2"><input id="at-tree-new-text" type="text" placeholder="Nouvelle cause / fait" class="p-2 border rounded text-xs w-52 bg-white"><select id="at-tree-new-type" class="p-2 border rounded text-xs bg-white"><option value="Cause">Cause</option><option value="Fait">Fait</option><option value="Humain">Facteur humain</option><option value="Technique">Facteur technique</option><option value="Organisation">Facteur organisationnel</option></select><button type="button" onclick="addAtTreeNode()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-semibold">+ Ajouter</button></div>
+                                    <div class="flex gap-2 flex-wrap"><button type="button" onclick="generateAtCauseTreeProposal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-semibold">✨ Générer une proposition depuis l’enquête</button><input id="at-tree-new-text" type="text" placeholder="Nouvelle cause / fait" class="p-2 border rounded text-xs w-52 bg-white"><select id="at-tree-new-type" class="p-2 border rounded text-xs bg-white"><option value="Cause">Cause</option><option value="Fait">Fait</option><option value="Humain">Facteur humain</option><option value="Technique">Facteur technique</option><option value="Organisation">Facteur organisationnel</option></select><button type="button" onclick="addAtTreeNode()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-semibold">+ Ajouter</button></div>
                                 </div>
                                 <div class="bg-white border rounded-xl p-2 overflow-x-auto"><div id="at-tree-svg" class="min-h-[260px]"></div></div>
                                 <div id="at-tree-nodes-editor" class="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
@@ -11093,6 +11093,80 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function setAtTreeNodes(nodes) {
             window.currentAtTreeNodes = Array.isArray(nodes) && nodes.length ? nodes : getDefaultAtTree();
             renderAtCauseTreeEditor();
+        }
+
+        // Génère une première proposition à partir des faits réellement renseignés
+        // dans l'enquête. Il s'agit d'une aide à l'analyse : les liens causaux restent
+        // à valider/modifier par l'utilisateur dans l'éditeur de l'arbre.
+        function generateAtCauseTreeProposal(){
+            const enquete=collectAtEnquete();
+            const answers=enquete.answers||{};
+            const defs={};
+            AT_ENQUETE_COMMON.forEach(([group,title,qs])=>{
+                qs.forEach((q,i)=>{ defs[`at-enq-${group}-${group}-${i}`]={group,title,q}; });
+            });
+            AT_ENQUETE_TYPES.forEach(([group,title])=>{
+                (AT_ENQUETE_SPECIAL[group]||[]).forEach((q,i)=>{ defs[`at-enq-${group}-${group}-${i}`]={group,title,q}; });
+            });
+
+            const selectedTitles=new Map(AT_ENQUETE_TYPES);
+            const rootText=(document.getElementById('at-deroule-faits')?.value||'').trim() || 'Événement accidentel';
+            const nodes=[{id:'root',text:rootText,type:'Fait',parentId:null}];
+            const categoryNodes={};
+            const groupType={
+                description:'Fait', situation:'Fait', victime:'Humain', organisation:'Organisation',
+                environnement:'Technique', tache:'Cause', materiel:'Technique', consignes:'Organisation',
+                temoins:'Fait', chute_plain_pied:'Technique', chute_hauteur:'Technique', machine:'Technique',
+                manutention:'Humain', electrique:'Technique', chimique:'Technique', coupure:'Technique',
+                heurt:'Technique', circulation:'Technique', exterieur:'Technique', isole:'Organisation', coactivite:'Organisation'
+            };
+
+            const orderedGroups=['description','situation','victime','organisation','environnement','tache','materiel','consignes','temoins',...(enquete.types||[])];
+            const seenGroups=new Set();
+            orderedGroups.forEach(group=>{
+                if(seenGroups.has(group)) return;
+                seenGroups.add(group);
+                const hasAnswer=Object.keys(answers).some(k=>k.startsWith(`at-enq-${group}-${group}-`) && ((answers[k]?.obs||'').trim() || (answers[k]?.rep||'').trim()));
+                if(!hasAnswer) return;
+                const title=(AT_ENQUETE_COMMON.find(x=>x[0]===group)||[group,selectedTitles.get(group)||group])[1];
+                const id='cat_'+group;
+                categoryNodes[group]=id;
+                nodes.push({id,text:title,type:groupType[group]||'Cause',parentId:'root'});
+            });
+
+            Object.entries(answers).forEach(([key,val])=>{
+                const def=defs[key];
+                if(!def) return;
+                const rep=String(val?.rep||'').trim();
+                const obs=String(val?.obs||'').trim();
+                if(!rep && !obs) return;
+                const fact=obs ? `${def.q} — ${obs}` : `${def.q} : ${rep}`;
+                // On écarte les réponses N/A pour ne pas polluer la proposition.
+                if(rep==='N/A' && !obs) return;
+                const id='q_'+key.replace(/[^a-zA-Z0-9_-]/g,'_');
+                const parent=categoryNodes[def.group]||'root';
+                nodes.push({id,text:fact,type:groupType[def.group]||'Cause',parentId:parent});
+            });
+
+            const chronoLabels=['Avant l’accident','Juste avant','Événement accidentel','Après l’accident'];
+            (enquete.chrono||[]).forEach((v,i)=>{
+                const text=String(v||'').trim(); if(!text) return;
+                nodes.push({id:'chrono_'+i,text:`${chronoLabels[i]} : ${text}`,type:i===2?'Fait':'Cause',parentId:'root'});
+            });
+
+            if(enquete.why?.enabled){
+                (enquete.why.answers||[]).forEach((v,i)=>{
+                    const text=String(v||'').trim(); if(!text) return;
+                    nodes.push({id:'why_'+i,text:`Approfondissement : ${text}`,type:'Organisation',parentId:categoryNodes.organisation||'root'});
+                });
+            }
+
+            if(nodes.length===1){
+                alert('Aucune réponse exploitable n’a encore été renseignée dans l’enquête AT.');
+                return;
+            }
+            setAtTreeNodes(nodes);
+            alert('Une proposition d’arbre a été générée à partir des réponses renseignées. Vérifiez et ajustez les liens causaux avant de valider l’analyse.');
         }
 
         function wrapAtSvgText(text, maxChars) {
