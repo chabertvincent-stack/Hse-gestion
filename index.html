@@ -4838,18 +4838,47 @@
         function renderFicheStatsHtml(stats,barColorClass){return `<div class="flex justify-between items-center bg-slate-50 p-3 rounded border"><span class="text-sm font-semibold text-slate-700">Total</span><span class="bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded text-sm">${stats.total}</span></div>`;}
 
         // --- GESTION DES UNITES DE TRAVAIL & ARBORESCENCE ---
+        function getDeletedUnitesTravail() {
+            try {
+                const raw = localStorage.getItem('unites_travail_supprimees');
+                const arr = raw ? JSON.parse(raw) : [];
+                return new Set(Array.isArray(arr) ? arr.map(x => String(x || '').trim()).filter(Boolean) : []);
+            } catch(e) { return new Set(); }
+        }
+
+        function saveDeletedUnitesTravail(set) {
+            localStorage.setItem('unites_travail_supprimees', JSON.stringify([...set]));
+        }
+
         function normalizeUnitesTravail(unites) {
+            const deleted = getDeletedUnitesTravail();
             const arr = Array.isArray(unites) ? unites : [];
-            const names = new Set(arr.map(u => String(u?.nom || '').trim()).filter(Boolean));
+            // Une unité explicitement supprimée ne doit pas pouvoir réapparaître via une ancienne copie cloud.
+            const filtered = arr.filter(u => {
+                const nom = String(u?.nom || '').trim();
+                return nom && !deleted.has(nom);
+            });
+            const names = new Set(filtered.map(u => String(u?.nom || '').trim()).filter(Boolean));
             // Une unité dont le parent n'existe plus devient automatiquement une unité principale.
-            return arr.map(u => {
+            return filtered.map(u => {
                 const nom = String(u?.nom || '').trim();
                 const parent = String(u?.parent || '').trim();
                 return { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
-            }).filter(u => u.nom);
+            });
         }
 
         function loadUnites() {
+            // Nettoyage initial des deux anciennes unités signalées comme supprimées par l'utilisateur.
+            // Une seule fois : ensuite le mécanisme générique des marqueurs de suppression prend le relais.
+            try {
+                if (localStorage.getItem('unites_travail_v294_cleanup') !== '1') {
+                    const deleted = getDeletedUnitesTravail();
+                    deleted.add('Teee');
+                    deleted.add('Matin');
+                    saveDeletedUnitesTravail(deleted);
+                    localStorage.setItem('unites_travail_v294_cleanup', '1');
+                }
+            } catch(e) {}
             let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
             localStorage.setItem('unites_travail', JSON.stringify(unites));
             const parentSelect = document.getElementById('ut-parent');
@@ -4922,7 +4951,11 @@
             const editIdx = editIndexInput.value !== '' ? parseInt(editIndexInput.value) : null;
 
             if (!nom) { alert("Veuillez saisir le nom de l'unité."); return; }
-            let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+            // Si un nom précédemment supprimé est recréé volontairement, on retire son marqueur de suppression.
+            const deleted = getDeletedUnitesTravail();
+            deleted.delete(nom);
+            saveDeletedUnitesTravail(deleted);
+            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
             
             if (editIdx !== null) {
                 unites[editIdx] = { nom, parent };
@@ -4972,6 +5005,10 @@
                 message += `\n\nCette unité possède ${enfants.length} sous-unité(s). Elles seront conservées et deviendront des unités principales.`;
             }
             if (!confirm(message)) return;
+            // Marqueur persistant : empêche une ancienne copie cloud de faire réapparaître l'unité supprimée.
+            const deleted = getDeletedUnitesTravail();
+            deleted.add(unite.nom);
+            saveDeletedUnitesTravail(deleted);
             unites.splice(index, 1);
             // Ne jamais laisser de sous-unité orpheline après suppression de son parent.
             unites = unites.map(u => u.parent === unite.nom ? { ...u, parent: '' } : u);
