@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.85</title>
+    <title>Application SST & RH - Gestion V2.86</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -150,7 +150,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.85</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.86</div>
         </aside>
 
         <!-- Main Content -->
@@ -1354,6 +1354,20 @@
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Date de clôture effective</label>
                                     <input type="date" id="p-date-cloture" class="w-full p-2 border rounded text-sm bg-white shadow-sm focus:ring-1 focus:ring-blue-500">
+                                </div>
+                            </div>
+                            <div class="mt-4 space-y-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Réalisation / mesures mises en œuvre</label>
+                                    <textarea id="p-realisation" class="w-full p-2 border rounded h-20 text-sm" placeholder="Décrire concrètement ce qui a été réalisé et les mesures effectivement mises en œuvre..."></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Conditions d’exécution / moyens nécessaires</label>
+                                    <textarea id="p-conditions-execution" class="w-full p-2 border rounded h-20 text-sm" placeholder="Moyens humains, techniques, organisationnels, prestataires, conditions particulières..."></textarea>
+                                </div>
+                                <div id="p-motif-report-wrap" class="hidden">
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Motif de non-réalisation / report</label>
+                                    <textarea id="p-motif-report" class="w-full p-2 border rounded h-20 text-sm" placeholder="Préciser la raison de la non-réalisation ou du report de l’action..."></textarea>
                                 </div>
                             </div>
                             <details id="papripact-advanced-fields" class="border rounded-lg p-3 bg-slate-50">
@@ -3373,7 +3387,7 @@
 
     <script>
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.85';
+        const SST_APP_VERSION = '2.86';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -9415,8 +9429,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-date-creation').value = new Date().toISOString().split('T')[0];
             document.getElementById('p-delai').value = "";
             document.getElementById('p-date-cloture').value = "";
+            document.getElementById('p-realisation').value = "";
+            document.getElementById('p-conditions-execution').value = "";
+            document.getElementById('p-motif-report').value = "";
             document.getElementById('p-cout').value = "";
             document.getElementById('p-commentaires').value = "";
+            updatePapripactReportReasonVisibility();
             document.getElementById('p-delete-btn').classList.add('hidden');
 
             togglePapripactDuerpSelect();
@@ -9444,17 +9462,29 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-date-creation').value = a.dateCreation || '';
             document.getElementById('p-delai').value = a.delai || '';
             document.getElementById('p-date-cloture').value = a.dateCloture || '';
+            document.getElementById('p-realisation').value = a.realisation || '';
+            document.getElementById('p-conditions-execution').value = a.conditionsExecution || '';
+            document.getElementById('p-motif-report').value = a.motifReport || '';
             document.getElementById('p-cout').value = a.cout || '';
             document.getElementById('p-commentaires').value = a.commentaires || '';
+            updatePapripactReportReasonVisibility();
             document.getElementById('p-delete-btn').classList.remove('hidden');
 
             togglePapripactDuerpSelect();
             document.getElementById('papripact-modal').classList.remove('hidden');
         }
 
+        function updatePapripactReportReasonVisibility() {
+            const wrap = document.getElementById('p-motif-report-wrap');
+            const statut = document.getElementById('p-statut')?.value || '';
+            if (wrap) wrap.classList.toggle('hidden', statut !== 'Reportée');
+        }
+
         function closePapripactModal() {
             document.getElementById('papripact-modal').classList.add('hidden');
         }
+
+        document.getElementById('p-statut')?.addEventListener('change', updatePapripactReportReasonVisibility);
 
         async function savePapripactAction() {
             let idx = document.getElementById('edit-papripact-index').value;
@@ -9495,6 +9525,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 dateCreation: document.getElementById('p-date-creation').value,
                 delai: document.getElementById('p-delai').value,
                 dateCloture: dateCloture,
+                realisation: document.getElementById('p-realisation').value.trim(),
+                conditionsExecution: document.getElementById('p-conditions-execution').value.trim(),
+                motifReport: document.getElementById('p-motif-report').value.trim(),
                 cout: document.getElementById('p-cout').value.trim(),
                 commentaires: document.getElementById('p-commentaires').value.trim()
             };
