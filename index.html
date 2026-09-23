@@ -6475,11 +6475,13 @@
                         <div class="font-bold text-xs text-slate-700 text-right pr-1">${day}</div>`;
 
                 daySessions.forEach(s => {
-                    let count = (s.participants || []).length;
+                    const parts = sstNormalizeSessionParticipants(s);
+                    let count = parts.length;
+                    let pending = sstIsPastSession(s) ? parts.filter(p => !p.validated).length : 0;
                     dayHtml += `
-                        <div onclick="event.stopPropagation(); openParticipantsModal(${s.id})" class="bg-blue-100 border border-blue-300 text-blue-900 rounded p-1 text-[10px] leading-tight hover:bg-blue-200">
-                            <div class="font-bold truncate">${s.formationNom}</div>
-                            <div class="text-blue-700">${count} inscrit(s)</div>
+                        <div onclick="event.stopPropagation(); openParticipantsModal(${s.id})" class="${pending ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-blue-100 border-blue-300 text-blue-900'} border rounded p-1 text-[10px] leading-tight hover:bg-blue-200">
+                            <div class="font-bold truncate">${escapeHtml(s.formationNom)}</div>
+                            <div class="${pending ? 'text-amber-700' : 'text-blue-700'}">${count} inscrit(s)${pending ? ` · ⚠️ ${pending} à valider` : ''}</div>
                         </div>`;
                 });
 
@@ -6580,7 +6582,8 @@
 
             document.getElementById('part-modal-session-id').value = sessionId;
             document.getElementById('part-modal-title').innerText = `Session : ${s.formationNom}`;
-            document.getElementById('part-modal-subtitle').innerText = `Date : ${s.date} ${s.organisme ? '| Org : ' + s.organisme : ''}`;
+            sstNormalizeSessionParticipants(s);
+            document.getElementById('part-modal-subtitle').innerText = `Date : ${formatDateFr(s.date)} ${s.organisme ? '| Org : ' + s.organisme : ''}${sstIsPastSession(s) ? ' · Session passée : clôture RH' : ''}`;
 
             renderParticipantsList(s);
             populateSalarieSelectForSession(s);
@@ -6592,23 +6595,200 @@
             document.getElementById('session-participants-modal').classList.add('hidden');
         }
 
+        function sstNormalizeSessionParticipants(sessionObj) {
+            const raw = Array.isArray(sessionObj.participants) ? sessionObj.participants : [];
+            // Compatibilité avec les anciennes sessions qui stockaient simplement des noms.
+            sessionObj.participants = raw.map(p => {
+                if(typeof p === 'string') return { nom: p, validated: false, present: false, attestation: false };
+                return {
+                    nom: p?.nom || p?.name || '',
+                    validated: !!p?.validated,
+                    present: !!p?.present,
+                    attestation: !!p?.attestation,
+                    validatedAt: p?.validatedAt || '',
+                    absent: !!p?.absent
+                };
+            }).filter(p => p.nom);
+            return sessionObj.participants;
+        }
+
+        function sstIsPastSession(sessionObj) {
+            if(!sessionObj?.date) return false;
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const d = new Date(sessionObj.date + 'T00:00:00');
+            return !isNaN(d.getTime()) && d < today;
+        }
+
+        function sstGetUpcomingSessionsForFormation(formationNom, excludeId) {
+            const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            return sessions
+                .filter(s => String(s.id) !== String(excludeId) && s.formationNom === formationNom && s.date)
+                .filter(s => new Date(s.date + 'T00:00:00') >= today)
+                .sort((a,b) => String(a.date).localeCompare(String(b.date)));
+        }
+
         function renderParticipantsList(sessionObj) {
             const listDiv = document.getElementById('part-modal-enrolled-list');
+            if(!listDiv) return;
             listDiv.innerHTML = '';
 
-            let parts = sessionObj.participants || [];
+            const parts = sstNormalizeSessionParticipants(sessionObj);
+            const past = sstIsPastSession(sessionObj);
+            const upcoming = sstGetUpcomingSessionsForFormation(sessionObj.formationNom, sessionObj.id);
+
             if(parts.length === 0) {
                 listDiv.innerHTML = `<p class="text-xs text-slate-400 italic">Aucun salarié inscrit pour le moment.</p>`;
                 return;
             }
 
-            parts.forEach((pNom, idx) => {
+            parts.forEach((p, idx) => {
+                const validated = !!p.validated;
+                const status = validated
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 text-[10px] font-bold">✅ Formation validée</span>`
+                    : (past
+                        ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold">⏳ À clôturer</span>`
+                        : `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">Inscrit</span>`);
+
+                let pastActions = '';
+                if(past && !validated) {
+                    const options = upcoming.length
+                        ? upcoming.map(s => `<option value="${s.id}">${formatDateFr(s.date)}${s.organisme ? ' · ' + escapeHtml(s.organisme) : ''}</option>`).join('')
+                        : `<option value="">Aucune future session disponible</option>`;
+                    pastActions = `
+                        <div class="mt-2 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                            <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                                <input type="checkbox" ${p.present && p.attestation ? 'checked' : ''} onchange="validateSessionParticipant(${idx}, this.checked)" class="w-4 h-4 rounded border-slate-300 text-green-600">
+                                <span>Présent + attestation reçue</span>
+                            </label>
+                            <div class="flex items-center gap-1 ml-auto">
+                                <select id="session-reinscription-${idx}" class="p-1.5 border rounded text-[10px] bg-white" ${upcoming.length ? '' : 'disabled'}>
+                                    ${options}
+                                </select>
+                                <button type="button" onclick="reinscrireParticipant(${idx})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-semibold" ${upcoming.length ? '' : 'disabled'}>↪ Réinscrire</button>
+                            </div>
+                        </div>`;
+                } else if(past && validated) {
+                    pastActions = `<div class="mt-1 text-[10px] text-green-700">Validée le ${escapeHtml(formatDateFr(p.validatedAt || sessionObj.date))} · date formation enregistrée : ${escapeHtml(formatDateFr(sessionObj.date))}</div>`;
+                }
+
                 listDiv.innerHTML += `
-                    <div class="flex items-center justify-between bg-slate-50 p-2 border rounded text-xs">
-                        <span class="font-bold text-slate-800">${pNom}</span>
-                        <button onclick="removeParticipantFromSession(${idx})" class="text-red-500 hover:underline font-semibold">Désinscrire</button>
+                    <div class="bg-slate-50 p-3 border rounded text-xs">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="min-w-0"><span class="font-bold text-slate-800">${escapeHtml(p.nom)}</span></div>
+                            <div class="flex items-center gap-2 shrink-0">${status}<button onclick="removeParticipantFromSession(${idx})" class="text-red-500 hover:underline font-semibold">Désinscrire</button></div>
+                        </div>
+                        ${pastActions}
                     </div>`;
             });
+        }
+
+        async function persistTrainingSessions() {
+            localStorage.setItem('training_sessions', JSON.stringify(JSON.parse(localStorage.getItem('training_sessions') || '[]')));
+            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+        }
+
+        async function validateSessionParticipant(participantIdx, checked) {
+            const sessionId = document.getElementById('part-modal-session-id').value;
+            const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            const s = sessions.find(x => String(x.id) === String(sessionId));
+            if(!s) return;
+            sstNormalizeSessionParticipants(s);
+            const p = s.participants[participantIdx];
+            if(!p) return;
+
+            if(!sstIsPastSession(s)) {
+                alert('La validation d’une session n’est disponible qu’une fois la date de formation passée.');
+                renderParticipantsList(s);
+                return;
+            }
+
+            if(!checked) {
+                p.validated = false;
+                p.present = false;
+                p.attestation = false;
+                p.validatedAt = '';
+                await persistTrainingSessions();
+                renderParticipantsList(s);
+                renderCalendar();
+                return;
+            }
+
+            p.present = true;
+            p.attestation = true;
+            p.validated = true;
+            p.absent = false;
+            p.validatedAt = new Date().toISOString().split('T')[0];
+
+            const salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
+            const sal = salaries.find(x => (x.nom || '') === p.nom);
+            if(sal) {
+                if(!Array.isArray(sal.formations)) sal.formations = [];
+                const existing = sal.formations.find(f => f.intitule === s.formationNom);
+                // Une validation ne doit jamais faire régresser une date de formation déjà plus récente.
+                if(!existing) {
+                    sal.formations.push({
+                        intitule: s.formationNom,
+                        datePassage: s.date,
+                        dateFin: calculateExpirationDate(s.formationNom, s.date)
+                    });
+                } else if(!existing.datePassage || String(s.date) >= String(existing.datePassage)) {
+                    existing.datePassage = s.date;
+                    existing.dateFin = calculateExpirationDate(s.formationNom, s.date);
+                }
+                localStorage.setItem('salaries_formations', JSON.stringify(salaries));
+                try {
+                    if(window.SSTCloud?.isCloudTenant?.()) {
+                        await sstV247CommitKeys('salaries_formations');
+                        await publishSalariePublicQrIfNeeded(sal);
+                    }
+                } catch(err) {
+                    console.warn('Synchronisation cloud du salarié impossible :', err);
+                }
+            } else {
+                alert(`Le salarié « ${p.nom} » n’existe plus dans la gestion RH. La présence a été enregistrée, mais la formation n’a pas pu être reportée.`);
+            }
+
+            await persistTrainingSessions();
+            renderParticipantsList(s);
+            renderCalendar();
+            loadCalendarRHStats();
+            if(typeof loadFormations === 'function') loadFormations();
+            if(typeof loadHseAutorisationsPanel === 'function') loadHseAutorisationsPanel();
+        }
+
+        async function reinscrireParticipant(participantIdx) {
+            const sessionId = document.getElementById('part-modal-session-id').value;
+            const select = document.getElementById(`session-reinscription-${participantIdx}`);
+            const targetId = select?.value;
+            if(!targetId) { alert('Aucune future session sélectionnée.'); return; }
+
+            const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            const source = sessions.find(x => String(x.id) === String(sessionId));
+            const target = sessions.find(x => String(x.id) === String(targetId));
+            if(!source || !target) return;
+            sstNormalizeSessionParticipants(source);
+            sstNormalizeSessionParticipants(target);
+            const participant = source.participants[participantIdx];
+            if(!participant) return;
+
+            if(!target.participants.some(p => (typeof p === 'string' ? p : p?.nom) === participant.nom)) {
+                target.participants.push({ nom: participant.nom, validated: false, present: false, attestation: false, absent: false });
+            }
+            participant.absent = true;
+            participant.validated = false;
+            participant.present = false;
+            participant.attestation = false;
+
+            localStorage.setItem('training_sessions', JSON.stringify(sessions));
+            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+
+            alert(`${participant.nom} a été réinscrit à la session du ${formatDateFr(target.date)}.`);
+            renderParticipantsList(source);
+            renderCalendar();
+            loadCalendarRHStats();
         }
 
         function populateSalarieSelectForSession(sessionObj) {
@@ -6616,24 +6796,18 @@
             const sel = document.getElementById('part-modal-salarie-select');
             if(!sel) return;
 
-            let enrolled = sessionObj.participants || [];
+            let enrolled = sstNormalizeSessionParticipants(sessionObj).map(p => p.nom);
             let targetFormation = sessionObj.formationNom;
-
             let priorityGroup = [];
             let otherGroup = [];
 
             salaries.forEach(sal => {
                 if(enrolled.includes(sal.nom)) return;
-
                 let f = (sal.formations || []).find(x => x.intitule === targetFormation);
                 if(f) {
                     let st = getDateStatus(f.dateFin);
                     if(st === 'EXPIRED' || st === 'WARNING') {
-                        priorityGroup.push({
-                            nom: sal.nom,
-                            statut: st,
-                            dateFin: f.dateFin || 'N/C'
-                        });
+                        priorityGroup.push({ nom: sal.nom, statut: st, dateFin: f.dateFin || 'N/C' });
                         return;
                     }
                 }
@@ -6641,24 +6815,19 @@
             });
 
             let html = '<option value="">-- Choisir un salarié --</option>';
-
             if(priorityGroup.length > 0) {
                 html += `<optgroup label="⚠️ À RECYCLER (Expiré ou proche)">`;
                 priorityGroup.forEach(item => {
                     let labelStatus = item.statut === 'EXPIRED' ? '🔴 Expiré' : '🟠 Proche';
-                    html += `<option value="${item.nom}">${item.nom} [${labelStatus} - ${item.dateFin}]</option>`;
+                    html += `<option value="${escapeHtml(item.nom)}">${escapeHtml(item.nom)} [${labelStatus} - ${escapeHtml(item.dateFin)}]</option>`;
                 });
                 html += `</optgroup>`;
             }
-
             if(otherGroup.length > 0) {
                 html += `<optgroup label="➕ Autres salariés (Optionnel)">`;
-                otherGroup.forEach(nom => {
-                    html += `<option value="${nom}">${nom}</option>`;
-                });
+                otherGroup.forEach(nom => { html += `<option value="${escapeHtml(nom)}">${escapeHtml(nom)}</option>`; });
                 html += `</optgroup>`;
             }
-
             sel.innerHTML = html;
         }
 
@@ -6668,11 +6837,11 @@
             if(!salNom) { alert("Veuillez sélectionner un salarié."); return; }
 
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let s = sessions.find(x => x.id == sessionId);
+            let s = sessions.find(x => String(x.id) === String(sessionId));
             if(s) {
-                if(!s.participants) s.participants = [];
-                if(!s.participants.includes(salNom)) {
-                    s.participants.push(salNom);
+                sstNormalizeSessionParticipants(s);
+                if(!s.participants.some(p => p.nom === salNom)) {
+                    s.participants.push({ nom: salNom, validated: false, present: false, attestation: false, absent: false });
                     localStorage.setItem('training_sessions', JSON.stringify(sessions));
                     if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
                     renderParticipantsList(s);
@@ -6683,13 +6852,15 @@
             }
         }
 
-        function removeParticipantFromSession(idx) {
+        async function removeParticipantFromSession(idx) {
             let sessionId = document.getElementById('part-modal-session-id').value;
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            let s = sessions.find(x => x.id == sessionId);
+            let s = sessions.find(x => String(x.id) === String(sessionId));
             if(s && s.participants) {
+                sstNormalizeSessionParticipants(s);
                 s.participants.splice(idx, 1);
                 localStorage.setItem('training_sessions', JSON.stringify(sessions));
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
                 renderParticipantsList(s);
                 populateSalarieSelectForSession(s);
                 renderCalendar();
@@ -6697,12 +6868,13 @@
             }
         }
 
-        function deleteSessionFromParticipantsModal() {
+        async function deleteSessionFromParticipantsModal() {
             let sessionId = document.getElementById('part-modal-session-id').value;
             if(!confirm("Supprimer cette session ?")) return;
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
-            sessions = sessions.filter(s => s.id != sessionId);
+            sessions = sessions.filter(s => String(s.id) !== String(sessionId));
             localStorage.setItem('training_sessions', JSON.stringify(sessions));
+            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
             closeParticipantsModal();
             renderCalendar();
             loadCalendarRHStats();
