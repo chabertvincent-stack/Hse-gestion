@@ -43,6 +43,17 @@
             animation: highlight-fade 9s ease-out;
             scroll-margin-top: 90px;
         }
+        @keyframes at-row-highlight-pulse {
+            0%, 100% { background-color: #fef08a !important; box-shadow: inset 0 0 0 3px #f59e0b; }
+            50% { background-color: #fff7ed !important; box-shadow: inset 0 0 0 2px #f59e0b; }
+        }
+        .at-row-highlight {
+            animation: at-row-highlight-pulse 1s ease-in-out 6;
+            scroll-margin-top: 130px;
+        }
+        .at-row-highlight > td {
+            background-color: transparent !important;
+        }
         #at-tree-svg svg { display:block; max-width:none; }
         #label-modal-qrcode { width:194px; height:194px; margin:0 auto; display:flex; align-items:center; justify-content:center; background:#fff; box-sizing:border-box; overflow:hidden; }
         #label-modal-qrcode > * { margin:0 auto !important; }
@@ -1552,17 +1563,10 @@
 
                     <div id="tournee-form-view" class="hidden space-y-6">
                         <div class="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-slate-200 space-y-4">
-                            <div class="sticky top-0 z-30 -mx-4 md:-mx-6 -mt-4 md:-mt-6 px-3 md:px-5 py-2.5 bg-white/98 backdrop-blur border-b border-slate-200 shadow-sm flex justify-between items-center gap-2 flex-wrap">
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <button onclick="closeTourneeForm()" class="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap">← Tournées</button>
-                                    <div class="min-w-0">
-                                        <h3 class="text-lg font-bold text-slate-800 truncate">Compte-rendu de tournée QHSE</h3>
-                                        <div id="tournee-ref-badge" class="text-xs text-blue-700 font-semibold mt-1"></div>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <button id="tournee-return-origin-btn" onclick="tourneeReturnToOrigin()" class="hidden bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap max-w-[210px] overflow-hidden text-ellipsis"></button>
-                                    <button type="button" aria-label="Fermer la tournée" onclick="closeTourneeForm()" class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 text-xl leading-none">✕</button>
+                            <div class="-mx-4 md:-mx-6 -mt-4 md:-mt-6 px-3 md:px-5 py-2.5 bg-white border-b border-slate-200 flex items-center gap-3">
+                                <div class="min-w-0">
+                                    <h3 class="text-lg font-bold text-slate-800 truncate">Compte-rendu de tournée QHSE</h3>
+                                    <div id="tournee-ref-badge" class="text-xs text-blue-700 font-semibold mt-1"></div>
                                 </div>
                             </div>
                             <input type="hidden" id="tournee-edit-index" value="">
@@ -1610,7 +1614,7 @@
                             </div>
                         </div>
 
-                        <div id="tournee-live-summary" class="bg-white border border-slate-200 rounded-xl shadow-sm p-2.5 md:p-3">
+                        <div id="tournee-live-summary" class="sticky top-0 z-30 bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-sm p-2 md:p-2.5">
                             <div class="flex flex-wrap items-center gap-1.5 md:gap-2">
                                 <span class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mr-1">Progression</span>
                                 <span id="tournee-progress-percent" class="text-xs font-extrabold text-blue-700">0 %</span>
@@ -1619,6 +1623,7 @@
                                 <span id="tournee-progress-ko" class="px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold">0 NOK</span>
                                 <span id="tournee-progress-so" class="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">0 SO</span>
                                 <span id="tournee-progress-actions" class="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">0 action</span>
+                                <button type="button" onclick="closeTourneeForm()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap">← Tournées</button>
                             </div>
                             <div class="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div id="tournee-progress-bar" class="h-full bg-blue-600 rounded-full transition-all duration-200" style="width:0%"></div>
@@ -4273,14 +4278,27 @@
             const idx=analyses.findIndex(a=>[a?._cloudId,a?.id,a?.reference,a?.sourceAtRef].some(v=>v!==undefined&&v!==null&&String(v)===ref));
             const key=idx>=0 ? String(analyses[idx]?._cloudId||analyses[idx]?.id||analyses[idx]?.reference||analyses[idx]?.sourceAtRef||idx) : ref;
             const findRow=()=>Array.from(document.querySelectorAll('[data-at-analysis-key]')).find(el=>String(el.dataset.atAnalysisKey||'')===key) || (idx>=0?document.getElementById(`at-row-${idx}`):null);
-            for(let attempt=0; attempt<25; attempt++){
+            const highlightRow=(row)=>{
+                if(!row) return false;
+                row.scrollIntoView({behavior:'smooth',block:'center'});
+                row.classList.remove('at-row-highlight');
+                void row.offsetWidth;
+                row.classList.add('at-row-highlight');
+                return true;
+            };
+            for(let attempt=0; attempt<30; attempt++){
                 const row=findRow();
                 if(row){
-                    row.scrollIntoView({behavior:'smooth',block:'center'});
-                    row.classList.remove('row-highlight');
-                    void row.offsetWidth;
-                    row.classList.add('row-highlight');
-                    setTimeout(()=>{ if(document.contains(row)){ row.classList.remove('row-highlight'); void row.offsetWidth; row.classList.add('row-highlight'); } }, 250);
+                    highlightRow(row);
+                    [450, 1000, 1800, 2800].forEach(delay=>setTimeout(()=>{
+                        const current=findRow();
+                        if(current){
+                            current.scrollIntoView({behavior:'smooth',block:'center'});
+                            current.classList.remove('at-row-highlight');
+                            void current.offsetWidth;
+                            current.classList.add('at-row-highlight');
+                        }
+                    }, delay));
                     return true;
                 }
                 await new Promise(resolve=>setTimeout(resolve,80));
