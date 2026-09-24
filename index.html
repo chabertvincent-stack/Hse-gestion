@@ -10313,6 +10313,32 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             sstPopulateFilterOptions('filter-su-year', fiches.map(f=>sstDateYear(f.date)), 'Toutes les années');
         }
 
+        // Sélection multiple des situations d'urgence, indépendante de celle des FA.
+        window.sstSuSelected = window.sstSuSelected || new Set();
+        function toggleSuSelection(idx, checked) { if(checked) window.sstSuSelected.add(Number(idx)); else window.sstSuSelected.delete(Number(idx)); loadSituationsUrgence(); }
+        function toggleAllVisibleSu(checked) {
+            const fiches=JSON.parse(localStorage.getItem('situations_urgence')||'[]');
+            const fr=document.getElementById('filter-su-redacteur-unite')?.value||'', fs=document.getElementById('filter-su-secteur')?.value||'', fy=document.getElementById('filter-su-year')?.value||'';
+            fiches.forEach((f,i)=>{ if((!fr||String(f.uniteRedacteur||'')===fr)&&(!fs||String(f.unite||'')===fs)&&(!fy||sstDateYear(f.date)===fy)){ if(checked) window.sstSuSelected.add(i); else window.sstSuSelected.delete(i); }});
+            loadSituationsUrgence();
+        }
+        async function deleteSelectedSituationsUrgence() {
+            const ids=Array.from(window.sstSuSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} situation(s) d'urgence sélectionnée(s) ?`)) return;
+            let fiches=JSON.parse(localStorage.getItem('situations_urgence')||'[]');
+            const sources=ids.map(idx=>fiches[idx]).filter(Boolean);
+            const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            const hasLinkedPap=sources.some(src=>{const code=String(src?.code||src?.reference||src?.ref||src?.id||'');return !!code&&papActions.some(a=>String(a?.origine||a?.sourceType||'')==='SU'&&(String(a.action||'').includes(code)||String(a.commentaires||'').includes(code)||String(a.sourceReference||'')===code));});
+            const deletePapLinked=hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux situations sélectionnées.\n\nOK : supprimer toutes les actions PAPRIPACT liées.\nAnnuler : conserver les actions, mais retirer les liens vers les situations supprimées.`) : false;
+            let papChanged=false;
+            for(const idx of ids){ const target=fiches[idx]; if(target){ const changed=await sstHandlePapSourceDeletion('SU',target,deletePapLinked); papChanged=papChanged||changed; fiches.splice(idx,1); }}
+            localStorage.setItem('situations_urgence',JSON.stringify(fiches)); window.sstSuSelected.clear();
+            loadSituationsUrgence(); if(!document.getElementById('tab-papripact').classList.contains('hidden')) loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('situations_urgence',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('situations_urgence',...(papChanged?['papripact_actions']:[])); }
+            catch(err){console.warn('Synchronisation suppression groupée SU impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
+        }
+
         function loadSituationsUrgence() {
             let fiches = JSON.parse(localStorage.getItem('situations_urgence') || '[]');
             let actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
@@ -10323,63 +10349,36 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const filterRedacteurUnite=document.getElementById('filter-su-redacteur-unite')?.value||'';
             const filterSecteur=document.getElementById('filter-su-secteur')?.value||'';
             const filterYear=document.getElementById('filter-su-year')?.value||'';
-
             if(fiches.length === 0) {
                 container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation d'urgence ou presqu'accident enregistré.</div>`;
                 return;
             }
-
             const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
                 (!filterRedacteurUnite || String(f.uniteRedacteur||'')===filterRedacteurUnite) &&
                 (!filterSecteur || String(f.unite||'')===filterSecteur) &&
                 (!filterYear || sstDateYear(f.date)===filterYear)
             );
-            if(!filteredFiches.length){
-                container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`;
-                return;
-            }
-            const selectedCount=(window.sstFaSelected||new Set()).size;
-            const visibleAllSelected=filteredFiches.length>0 && filteredFiches.every(({idx})=>window.sstFaSelected.has(idx));
+            if(!filteredFiches.length){ container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`; return; }
+            const selectedCount=window.sstSuSelected.size;
+            const visibleAllSelected=filteredFiches.every(({idx})=>window.sstSuSelected.has(idx));
             container.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
-                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleFa(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
-                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedFichesAmelioration()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstFaSelected.clear();renderFichesAmeliorationLocal()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleSu(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedSituationsUrgence()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstSuSelected.clear();loadSituationsUrgence()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
             </div>`;
             filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
-
-                // Recherche de l'action PAPRIPACT liée à cette SU
                 let linkedActionIdx = findPapripactActionForSource(actionsPap, 'SU', displayCode);
-                let suPapBadgeHtml = "";
-                if(linkedActionIdx !== -1) {
-                    suPapBadgeHtml = `<button onclick='scrollToPapripactAction(${JSON.stringify(getPapripactActionStableRef(actionsPap[linkedActionIdx], linkedActionIdx))})' class="bg-amber-100 hover:bg-amber-600 hover:text-white text-amber-800 font-bold text-xs px-2.5 py-0.5 rounded border border-amber-300 transition cursor-pointer" title="Accéder directement à l'action dans le PAPRIPACT">🔗 ${displayCode}</button>`;
-                } else {
-                    suPapBadgeHtml = `<span class="bg-amber-100 text-amber-800 font-bold text-xs px-2.5 py-0.5 rounded border border-amber-300">${displayCode}</span>`;
-                }
-
-                // Badge du statut de la ligne PAPRIPACT correspondante (ajouté)
+                let suPapBadgeHtml = linkedActionIdx !== -1
+                    ? `<button onclick='scrollToPapripactAction(${JSON.stringify(getPapripactActionStableRef(actionsPap[linkedActionIdx], linkedActionIdx))})' class="bg-amber-100 hover:bg-amber-600 hover:text-white text-amber-800 font-bold text-xs px-2.5 py-0.5 rounded border border-amber-300 transition cursor-pointer" title="Accéder directement à l'action dans le PAPRIPACT">🔗 ${displayCode}</button>`
+                    : `<span class="bg-amber-100 text-amber-800 font-bold text-xs px-2.5 py-0.5 rounded border border-amber-300">${displayCode}</span>`;
                 let suStatutBadgeHtml = getPapripactStatutBadgeHtml(actionsPap, linkedActionIdx);
-
                 container.innerHTML += `
                     <div id="su-item-${displayCode}" class="bg-white p-5 rounded-lg border border-amber-200 shadow-sm space-y-3 transition-colors">
-                        <div class="flex justify-between items-start border-b border-amber-100 pb-2">
-                            <div>
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    ${suPapBadgeHtml}
-                                    ${suStatutBadgeHtml}
-                                    <h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur}</h4>
-                                </div>
-                                <p class="text-xs text-slate-500 mt-1">${f.uniteRedacteur ? `Unité du rédacteur : ${f.uniteRedacteur} | ` : ''}Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <span class="text-xs text-slate-400 font-semibold">Date : ${f.date}</span>
-                                <button onclick="editSituationUrgence(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                                <button onclick="deleteSituationUrgence(${idx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
-                            </div>
-                        </div>
-                        <div class="text-xs space-y-2 text-slate-700">
-                            <div><span class="font-bold text-slate-900">Situation constatée :</span> ${f.faits}</div>
-                            <div><span class="font-bold text-amber-700">Actions correctives / préventives :</span> ${f.axes || 'Aucune action immédiate renseignée'}</div>
-                        </div>
+                        <div class="flex justify-between items-start border-b border-amber-100 pb-2"><div>
+                            <div class="flex items-center gap-2 flex-wrap"><input type="checkbox" aria-label="Sélectionner ${displayCode}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstSuSelected.has(idx)?'checked':''} onchange="toggleSuSelection(${idx},this.checked)" title="Sélectionner cette situation">${suPapBadgeHtml}${suStatutBadgeHtml}<h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur||''}</h4></div>
+                            <p class="text-xs text-slate-500 mt-1">${f.uniteRedacteur ? `Unité du rédacteur : ${f.uniteRedacteur} | ` : ''}Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p></div>
+                            <div class="flex items-center gap-3"><span class="text-xs text-slate-400 font-semibold">Date : ${f.date||''}</span><button onclick="editSituationUrgence(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button><button onclick="deleteSituationUrgence(${idx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button></div>
+                        </div><div class="text-xs space-y-2 text-slate-700"><div><span class="font-bold text-slate-900">Situation constatée :</span> ${f.faits||''}</div><div><span class="font-bold text-amber-700">Actions correctives / préventives :</span> ${f.axes || 'Aucune action immédiate renseignée'}</div></div>
                     </div>`;
             });
         }
