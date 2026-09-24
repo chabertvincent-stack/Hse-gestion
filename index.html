@@ -13732,7 +13732,18 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(sstV242SyncTimers.has(key)) clearTimeout(sstV242SyncTimers.get(key));
             const timer=setTimeout(()=>{
                 sstV242SyncTimers.delete(key);
-                sstV242SyncChain=sstV242SyncChain.then(()=>sstV242SyncKeyToCloud(key)).catch(err=>console.warn(`Synchronisation Firebase ${key} impossible :`,err));
+                // V2.109 : toutes les synchronisations automatiques réconcilient d'abord
+                // l'état local avec Firebase. Sans cela, un appareil resté ouvert avec un
+                // ancien cache pouvait réécrire des enregistrements déjà supprimés ailleurs.
+                sstV242SyncChain=sstV242SyncChain.then(async()=>{
+                    if(sstV247DirtyKeys.has(key)) await sstV299ReconcileDirtyKey(key);
+                    return sstV242SyncKeyToCloud(key);
+                }).catch(err=>{
+                    // En cas d'échec de lecture/réconciliation, ne pas pousser un cache
+                    // potentiellement périmé. La clé reste dirty et sera retentée.
+                    sstV247DirtyKeys.add(key);
+                    console.warn(`Synchronisation Firebase ${key} impossible :`,err);
+                });
             },120);
             sstV242SyncTimers.set(key,timer);
         }
