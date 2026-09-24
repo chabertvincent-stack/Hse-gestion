@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.111</title>
+    <title>Application SST & RH - Gestion V2.100</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -150,7 +150,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.111</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.100</div>
         </aside>
 
         <!-- Main Content -->
@@ -3685,13 +3685,8 @@
                     { salarie: "LEFEBVRE Marc", date: "2026-02-10", service: "Maintenance", gravite: "Sans arrêt", lesions: "Légère coupure doigt", circonstances: "Manipulation de tôle sans gants anti-coupure.", actions: "Rappel consigne port obligatoire EPI.", statut: "À réaliser", sourceAtRef: "" }
                 ]));
             }
-            // Registre AT : en espace cloud, ne jamais reconstruire le registre depuis
-            // l'ancien cache des analyses. Firebase est la source de vérité : la migration
-            // historique reste réservée au mode local/non connecté.
+            // Registre AT : migration douce des anciennes analyses AT vers le nouveau registre.
             if(!localStorage.getItem('at_registre')) {
-                if(window.SSTCloud?.isCloudTenant?.()) {
-                    localStorage.setItem('at_registre', JSON.stringify([]));
-                } else {
                 let legacyAt = JSON.parse(localStorage.getItem('at_analyses') || '[]');
                 let migratedAt = legacyAt.map((a, i) => ({
                     ref: generateAtCodeFromExisting(a.date, i, legacyAt),
@@ -3733,7 +3728,6 @@
                     commentaireEfficacite: a.commentaireEfficacite || ''
                 }));
                 localStorage.setItem('at_registre', JSON.stringify(migratedAt));
-                }
             }
             if(!localStorage.getItem('at_heures_travaillees')) {
                 localStorage.setItem('at_heures_travaillees', JSON.stringify({}));
@@ -11424,21 +11418,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 ? data.filter(item => String(item?.ref || '') !== targetRef)
                 : data.filter((item, i) => i !== idx);
             localStorage.setItem('at_registre', JSON.stringify(nextData));
-
-            // Supprimer également l'analyse strictement rattachée à cet AT : sinon
-            // l'analyse orpheline peut rester dans l'autre collection et contribuer
-            // aux anciennes migrations/réconciliations. Les analyses indépendantes
-            // (sans sourceAtRef) sont conservées.
-            let analyses = JSON.parse(localStorage.getItem('at_analyses') || '[]');
-            if(targetRef) analyses = analyses.filter(a => String(a?.sourceAtRef || '') !== targetRef);
-            localStorage.setItem('at_analyses', JSON.stringify(analyses));
             loadAtRegistre();
             try {
                 if(window.SSTCloud?.isCloudTenant?.()) {
-                    // Valider les deux collections liées avant de terminer la suppression.
-                    await sstV247CommitKeys('at_registre','at_analyses');
+                    // Attendre l'écriture cloud du registre avant de terminer la suppression.
+                    await sstV247CommitKeys('at_registre');
                 } else {
-                    await sstQueueCloudCommit('at_registre','at_analyses');
+                    await sstQueueCloudCommit('at_registre');
                 }
             } catch(err) {
                 console.warn('Synchronisation de la suppression AT impossible :', err);
