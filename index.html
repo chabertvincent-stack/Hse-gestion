@@ -282,7 +282,21 @@
                     <div id="subtab-rh-catalogue-content" class="hidden space-y-6">
                         <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                             <h3 class="text-xl font-bold text-slate-800 mb-2">Catalogue des Formations de l'Entreprise</h3>
-                            <p class="text-xs text-slate-500 mb-6">Définissez ici les formations existantes, leur période de validité et si elles nécessitent une autorisation.</p>
+                            <p class="text-xs text-slate-500 mb-4">Définissez ici les formations existantes, leur période de validité et si elles nécessitent une autorisation.</p>
+                            <div class="bg-slate-50 border rounded-lg p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div>
+                                    <h4 class="text-sm font-bold text-slate-800">Import / Export du référentiel</h4>
+                                    <p class="text-xs text-slate-500 mt-1">Une ligne = une formation. L'import passe par un aperçu avant enregistrement.</p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <button onclick="downloadCatalogueFormationsTemplate()" class="bg-slate-200 text-slate-700 px-3 py-2 rounded hover:bg-slate-300 font-semibold text-xs">📥 Modèle Excel</button>
+                                    <button onclick="exportCatalogueFormations()" class="bg-emerald-100 text-emerald-800 px-3 py-2 rounded hover:bg-emerald-200 font-semibold text-xs">💾 Exporter</button>
+                                    <label class="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 font-semibold text-xs cursor-pointer">
+                                        📤 Importer
+                                        <input type="file" id="import-catalogue-formations-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="importCatalogueFormationsFile(event)">
+                                    </label>
+                                </div>
+                            </div>
 
                             <input type="hidden" id="cat-edit-index" value="">
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border items-center">
@@ -3432,7 +3446,7 @@
         }
 
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.97';
+        const SST_APP_VERSION = '2.98';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -4984,11 +4998,16 @@
             const arr = Array.isArray(unites) ? unites : [];
             const names = new Set(arr.map(u => String(u?.nom || '').trim()).filter(Boolean));
             // Une unité dont le parent n'existe plus devient automatiquement une unité principale.
-            return arr.map(u => {
+            const normalized = arr.map(u => {
                 const nom = String(u?.nom || '').trim();
                 const parent = String(u?.parent || '').trim();
                 return { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
             }).filter(u => u.nom);
+            return normalized.sort((a,b) => {
+                const parentCmp = (a.parent || '').localeCompare((b.parent || ''), 'fr', { sensitivity:'base', numeric:true });
+                if (parentCmp !== 0) return parentCmp;
+                return a.nom.localeCompare(b.nom, 'fr', { sensitivity:'base', numeric:true });
+            });
         }
 
         function loadUnites() {
@@ -5012,11 +5031,11 @@
                 if (unites.length === 0) {
                     listeDiv.innerHTML = `<p class="text-xs text-slate-500 italic">Aucune unité de travail enregistrée.</p>`;
                 } else {
-                    let mainUnits = unites.filter(u => !u.parent);
+                    let mainUnits = unites.filter(u => !u.parent).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
                     let html = '<div class="space-y-3">';
                     
                     mainUnits.forEach(mu => {
-                        let subUnits = unites.filter(u => u.parent === mu.nom);
+                        let subUnits = unites.filter(u => u.parent === mu.nom).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
                         let muGlobalIdx = unites.indexOf(mu);
                         html += `
                             <div class="border rounded-lg bg-slate-50 p-4 space-y-2">
@@ -5137,6 +5156,9 @@
         }
 
         function updateAllUnitSelects(unites) {
+            const sortedUnites = (Array.isArray(unites) ? unites : []).slice().sort((a,b) =>
+                String(a?.nom || '').localeCompare(String(b?.nom || ''), 'fr', { sensitivity:'base', numeric:true })
+            );
             const selectIds = ['sal-service', 'filter-formation-service', 'filter-duerp-unite', 'duerp-unite', 'filter-service', 'fa-unite', 'fa-secteur-unite', 'su-unite', 'filter-at-service', 'atr-unite', 'at-service', 'rh-filter-service', 'p-unite'];
             selectIds.forEach(id => {
                 const sel = document.getElementById(id);
@@ -5144,7 +5166,7 @@
                     let currentVal = sel.value;
                     let defaultText = sel.options.length > 0 ? sel.options[0].text : '-- Sélectionner --';
                     sel.innerHTML = `<option value="">${defaultText}</option>`;
-                    unites.forEach(u => { sel.innerHTML += `<option value="${u.nom}">${u.nom}</option>`; });
+                    sortedUnites.forEach(u => { sel.innerHTML += `<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`; });
                     sel.value = currentVal;
                 }
             });
@@ -5763,8 +5785,76 @@
         }
 
         // --- CATALOGUE DES FORMATIONS ---
+        function downloadCatalogueFormationsTemplate() {
+            sstTemplateXlsx({
+                filename: 'modele_referentiel_formations.xlsx',
+                title: 'Référentiel des formations',
+                description: 'Une ligne = une formation. La validité est exprimée en mois ; 0 = illimitée. L’autorisation accepte Oui/Non.',
+                headers: ['Formation','Validite (mois)','Necessite autorisation'],
+                exampleRow: ['SST (Sauveteur Secouriste du Travail)','24','Oui'],
+                fieldHelp: [
+                    ['Formation','Intitulé de la formation. Obligatoire.'],
+                    ['Validite (mois)','Nombre de mois : 12, 24, 36, 60, etc. 0 = illimitée. Obligatoire.'],
+                    ['Necessite autorisation','Oui ou Non.']
+                ],
+                widths: [50, 22, 28]
+            });
+        }
+
+        function exportCatalogueFormations() {
+            const catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
+            const data = [['Formation','Validite (mois)','Necessite autorisation'], ...catalogue
+                .slice().sort((a,b) => String(a?.nom || '').localeCompare(String(b?.nom || ''), 'fr', {sensitivity:'base', numeric:true}))
+                .map(f => [f.nom || '', Number.isFinite(Number(f.validite)) ? Number(f.validite) : 0, f.necessiteAuth ? 'Oui' : 'Non'])];
+            sstDownloadXlsx([{ name: 'Référentiel formations', data, widths: [50, 22, 28] }], 'export_referentiel_formations.xlsx');
+        }
+
+        async function importCatalogueFormationsFile(event) {
+            const file = event.target.files[0]; if (!file) return;
+            event.target.value = '';
+            let rows;
+            try { rows = await sstParseImportFile(file); } catch (err) { alert(err.message || 'Fichier illisible.'); return; }
+            const catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
+            const seen = new Set();
+            const boolYes = ['oui','yes','true','1','x'];
+            const results = rows.map(r => {
+                const nom = String(r.formation || r.nom || r.intitule || '').trim();
+                const validiteRaw = String(r.validitemois || r.validite || r.periodicite || '').trim();
+                const authRaw = String(r.necessiteautorisation || r.necessiteauth || r.autorisation || '').trim().toLowerCase();
+                const display = [nom || '—', validiteRaw || '0', authRaw || 'Non'];
+                if (!nom) return { status:'error', message:'Intitulé de formation manquant', display };
+                const key = nom.toLocaleLowerCase('fr');
+                if (seen.has(key)) return { status:'error', message:'Doublon dans le fichier', display };
+                seen.add(key);
+                if (catalogue.some(f => String(f?.nom || '').trim().toLocaleLowerCase('fr') === key)) {
+                    return { status:'warning', message:'Déjà présente : ignorée (non modifiée)', display, data:null };
+                }
+                let validite = validiteRaw === '' ? 0 : Number(validiteRaw.replace(',', '.'));
+                if (!Number.isFinite(validite) || validite < 0 || !Number.isInteger(validite)) return { status:'error', message:'Validité invalide : nombre entier de mois attendu', display };
+                const necessiteAuth = boolYes.includes(authRaw);
+                return { status:'ok', display, data:{ nom, validite, necessiteAuth } };
+            });
+            sstOpenImportPreview({
+                title:'Aperçu — Import du référentiel des formations',
+                subtitle:`${rows.length} ligne(s) lue(s) dans « ${file.name} ». Les formations déjà présentes ne sont pas modifiées.`,
+                columns:['Formation','Validité (mois)','Autorisation'],
+                results,
+                onConfirm: async validRows => {
+                    const catalogue2 = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
+                    validRows.filter(Boolean).forEach(d => catalogue2.push(d));
+                    catalogue2.sort((a,b) => String(a?.nom || '').localeCompare(String(b?.nom || ''), 'fr', {sensitivity:'base', numeric:true}));
+                    localStorage.setItem('catalogue_formations', JSON.stringify(catalogue2));
+                    loadCatalogueFormations();
+                    if (typeof loadProfilsPostes === 'function') loadProfilsPostes();
+                    try { if (window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('catalogue_formations'); } catch (e) { console.warn(e); }
+                    alert(`${validRows.filter(Boolean).length} formation(s) importée(s).`);
+                }
+            });
+        }
+
         function loadCatalogueFormations() {
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
+            catalogue = Array.isArray(catalogue) ? catalogue.slice().sort((a,b) => String(a?.nom || '').localeCompare(String(b?.nom || ''), 'fr', {sensitivity:'base', numeric:true})) : [];
             const tbody = document.getElementById('table-catalogue-formations');
             if(!tbody) return;
             tbody.innerHTML = '';
@@ -5843,6 +5933,7 @@
         // --- PROFILS DE POSTES ---
         function loadProfilsPostesUnitesSelect() {
             let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
+            unites = normalizeUnitesTravail(unites);
             const sel = document.getElementById('poste-unite');
             if(sel) {
                 let currentVal = sel.value;
@@ -11869,7 +11960,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function deleteAtAnalyseByKey(key){ const idx=findAtAnalysisIndexByKey(key); if(idx<0){ alert('Analyse AT introuvable.'); return; } deleteAtAnalyse(idx); }
 
         function fillAtUniteSelect(selected='') {
-            const sel=document.getElementById('at-service'); if(!sel) return; const unites=JSON.parse(localStorage.getItem('unites_travail')||'[]'); sel.innerHTML='<option value="">Sélectionner une unité</option>'+unites.map(u=>`<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`).join(''); sel.value=selected||'';
+            const sel=document.getElementById('at-service'); if(!sel) return; const unites=normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail')||'[]')).slice().sort((a,b)=>a.nom.localeCompare(b.nom,'fr',{sensitivity:'base',numeric:true})); sel.innerHTML='<option value="">Sélectionner une unité</option>'+unites.map(u=>`<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`).join(''); sel.value=selected||'';
         }
 
         function openAtModal(sourceIdx=null) {
