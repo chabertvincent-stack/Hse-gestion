@@ -3397,8 +3397,14 @@
     </script>
 
     <script>
+        // Helper global pour les fonctions du script classique. La version module possède son propre scope.
+        // Sans cette fonction globale, Réglages pouvait lever : escSstAdmin is not defined.
+        function escSstAdmin(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;',"\"":'&quot;'}[ch]));
+        }
+
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.86';
+        const SST_APP_VERSION = '2.95';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -4838,47 +4844,18 @@
         function renderFicheStatsHtml(stats,barColorClass){return `<div class="flex justify-between items-center bg-slate-50 p-3 rounded border"><span class="text-sm font-semibold text-slate-700">Total</span><span class="bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded text-sm">${stats.total}</span></div>`;}
 
         // --- GESTION DES UNITES DE TRAVAIL & ARBORESCENCE ---
-        function getDeletedUnitesTravail() {
-            try {
-                const raw = localStorage.getItem('unites_travail_supprimees');
-                const arr = raw ? JSON.parse(raw) : [];
-                return new Set(Array.isArray(arr) ? arr.map(x => String(x || '').trim()).filter(Boolean) : []);
-            } catch(e) { return new Set(); }
-        }
-
-        function saveDeletedUnitesTravail(set) {
-            localStorage.setItem('unites_travail_supprimees', JSON.stringify([...set]));
-        }
-
         function normalizeUnitesTravail(unites) {
-            const deleted = getDeletedUnitesTravail();
             const arr = Array.isArray(unites) ? unites : [];
-            // Une unité explicitement supprimée ne doit pas pouvoir réapparaître via une ancienne copie cloud.
-            const filtered = arr.filter(u => {
-                const nom = String(u?.nom || '').trim();
-                return nom && !deleted.has(nom);
-            });
-            const names = new Set(filtered.map(u => String(u?.nom || '').trim()).filter(Boolean));
+            const names = new Set(arr.map(u => String(u?.nom || '').trim()).filter(Boolean));
             // Une unité dont le parent n'existe plus devient automatiquement une unité principale.
-            return filtered.map(u => {
+            return arr.map(u => {
                 const nom = String(u?.nom || '').trim();
                 const parent = String(u?.parent || '').trim();
                 return { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
-            });
+            }).filter(u => u.nom);
         }
 
         function loadUnites() {
-            // Nettoyage initial des deux anciennes unités signalées comme supprimées par l'utilisateur.
-            // Une seule fois : ensuite le mécanisme générique des marqueurs de suppression prend le relais.
-            try {
-                if (localStorage.getItem('unites_travail_v294_cleanup') !== '1') {
-                    const deleted = getDeletedUnitesTravail();
-                    deleted.add('Teee');
-                    deleted.add('Matin');
-                    saveDeletedUnitesTravail(deleted);
-                    localStorage.setItem('unites_travail_v294_cleanup', '1');
-                }
-            } catch(e) {}
             let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
             localStorage.setItem('unites_travail', JSON.stringify(unites));
             const parentSelect = document.getElementById('ut-parent');
@@ -4951,11 +4928,7 @@
             const editIdx = editIndexInput.value !== '' ? parseInt(editIndexInput.value) : null;
 
             if (!nom) { alert("Veuillez saisir le nom de l'unité."); return; }
-            // Si un nom précédemment supprimé est recréé volontairement, on retire son marqueur de suppression.
-            const deleted = getDeletedUnitesTravail();
-            deleted.delete(nom);
-            saveDeletedUnitesTravail(deleted);
-            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+            let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
             
             if (editIdx !== null) {
                 unites[editIdx] = { nom, parent };
@@ -5005,10 +4978,6 @@
                 message += `\n\nCette unité possède ${enfants.length} sous-unité(s). Elles seront conservées et deviendront des unités principales.`;
             }
             if (!confirm(message)) return;
-            // Marqueur persistant : empêche une ancienne copie cloud de faire réapparaître l'unité supprimée.
-            const deleted = getDeletedUnitesTravail();
-            deleted.add(unite.nom);
-            saveDeletedUnitesTravail(deleted);
             unites.splice(index, 1);
             // Ne jamais laisser de sous-unité orpheline après suppression de son parent.
             unites = unites.map(u => u.parent === unite.nom ? { ...u, parent: '' } : u);
@@ -5243,11 +5212,30 @@
         }
         async function sstConfirmImport() {
             if (!__sstImportState) return;
+            const confirmBtn = document.getElementById('sst-import-confirm-btn');
+            if (confirmBtn?.disabled || window.__sstImportBusy) return;
+            window.__sstImportBusy = true;
+            const oldText = confirmBtn?.textContent || '';
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.classList.add('opacity-60','cursor-not-allowed');
+                confirmBtn.textContent = '⏳ Import en cours…';
+            }
             const { onConfirm, results } = __sstImportState;
             const validRows = results.filter(r => r.status !== 'error').map(r => r.data);
-            try { await onConfirm(validRows); }
-            catch (err) { alert("L'import a échoué : " + (err?.message || 'erreur inconnue')); return; }
-            sstCloseImportModal();
+            try {
+                await onConfirm(validRows);
+                sstCloseImportModal();
+            } catch (err) {
+                alert("L'import a échoué : " + (err?.message || 'erreur inconnue'));
+            } finally {
+                window.__sstImportBusy = false;
+                if (confirmBtn && document.contains(confirmBtn)) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.classList.remove('opacity-60','cursor-not-allowed');
+                    confirmBtn.textContent = oldText || 'Confirmer l’import';
+                }
+            }
         }
 
         // --- IMPORT DES SALARIÉS ---
@@ -9877,18 +9865,18 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 localStorage.setItem('papripact_actions', JSON.stringify(actions));
             }
 
-            await loadFichesAmelioration();
+            // Rafraîchissement local immédiat : ne pas attendre Firestore pour rendre la main.
+            renderFichesAmeliorationLocal();
             if(!document.getElementById('tab-papripact').classList.contains('hidden')) {
                 loadPapripact();
             }
             loadDashboard();
 
-            try {
-                if(window.SSTCloud?.isCloudTenant?.() && targetCode) {
-                    await window.SSTCloud.deleteModuleRecord('amelioration', target?._cloudId || targetCode);
-                }
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression FA impossible :', err);
+            // Synchronisation cloud en arrière-plan. Une suppression locale ne doit pas
+            // être bloquée par un aller-retour réseau de plusieurs secondes.
+            if(window.SSTCloud?.isCloudTenant?.() && targetCode) {
+                Promise.resolve(window.SSTCloud.deleteModuleRecord('amelioration', target?._cloudId || targetCode))
+                    .catch(err => console.warn('Synchronisation cloud de la suppression FA impossible :', err));
             }
         }
 
