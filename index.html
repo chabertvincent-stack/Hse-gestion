@@ -9202,7 +9202,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         // Gestion commune des actions PAPRIPACT liées à une fiche source supprimée.
         // Si plusieurs liens sources sont présents, on retire uniquement le lien correspondant.
-        async function sstHandlePapSourceDeletion(sourceType, source) {
+        async function sstHandlePapSourceDeletion(sourceType, source, batchDeleteLinked = null) {
             let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
             const code = String(source?.code || source?.reference || source?.ref || source?.riskId || source?.id || '');
             const cloudId = String(source?._cloudId || '');
@@ -9217,7 +9217,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             };
             const linked = actions.filter(matches);
             if(!linked.length) return false;
-            const deleteLinked = confirm(`Cette entrée possède ${linked.length} action(s) liée(s) au PAPRIPACT.\n\nOK : supprimer également ces actions du PAPRIPACT.\nAnnuler : conserver les actions dans le PAPRIPACT mais supprimer leur lien vers cette entrée.`);
+            const deleteLinked = (typeof batchDeleteLinked === 'boolean') ? batchDeleteLinked : confirm(`Cette entrée possède ${linked.length} action(s) liée(s) au PAPRIPACT.\n\nOK : supprimer également ces actions du PAPRIPACT.\nAnnuler : conserver les actions dans le PAPRIPACT mais supprimer leur lien vers cette entrée.`);
             if(deleteLinked) {
                 const removeSet = new Set(linked);
                 actions = actions.filter(a=>!removeSet.has(a));
@@ -10013,10 +10013,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         async function deleteSelectedFichesAmelioration() {
             const ids=Array.from(window.sstFaSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
             if(!ids.length) return;
-            if(!confirm(`Supprimer les ${ids.length} fiche(s) d'amélioration sélectionnée(s) ?\n\nPour chaque fiche liée au PAPRIPACT, tu pourras choisir de supprimer l'action ou de la conserver sans lien.`)) return;
+            if(!confirm(`Supprimer les ${ids.length} fiche(s) d'amélioration sélectionnée(s) ?`)) return;
             let fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]');
+            const sources=ids.map(idx=>fiches[idx]).filter(Boolean);
+            const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            const hasLinkedPap=sources.some(src=>{const code=String(src?.code||src?.reference||src?.ref||src?.id||'');return !!code&&papActions.some(a=>String(a?.origine||a?.sourceType||'')==='FA'&&(String(a.action||'').includes(code)||String(a.commentaires||'').includes(code)||String(a.sourceReference||'')===code));});
+            const deletePapLinked=hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux fiches sélectionnées.\n\nOK : supprimer toutes les actions PAPRIPACT liées.\nAnnuler : conserver les actions, mais retirer les liens vers les fiches supprimées.`) : false;
             let papChanged=false;
-            for(const idx of ids){ const target=fiches[idx]; if(target){ const changed=await sstHandlePapSourceDeletion('FA',target); papChanged=papChanged||changed; fiches.splice(idx,1); }}
+            for(const idx of ids){ const target=fiches[idx]; if(target){ const changed=await sstHandlePapSourceDeletion('FA',target,deletePapLinked); papChanged=papChanged||changed; fiches.splice(idx,1); }}
             localStorage.setItem('fiches_amelioration',JSON.stringify(fiches)); window.sstFaSelected.clear();
             renderFichesAmeliorationLocal(); if(!document.getElementById('tab-papripact').classList.contains('hidden')) loadPapripactLocalOnly(); loadDashboard();
             try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('fiches_amelioration',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('fiches_amelioration',...(papChanged?['papripact_actions']:[])); }
