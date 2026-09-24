@@ -2072,6 +2072,17 @@
                             <div id="sst-cloud-full-sync-status" class="text-[11px] text-emerald-800 mt-3"></div>
                         </div>
 
+                        <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-bold text-slate-800">↩️ Sécurité — dernier point de sauvegarde</div>
+                                    <p class="text-xs text-slate-600 mt-1 leading-relaxed">Avant chaque import en masse, l’application crée automatiquement un point de sauvegarde. Vous pouvez annuler la dernière opération si nécessaire.</p>
+                                    <div id="sst-undo-status" class="text-[11px] text-amber-800 mt-2">Aucun point de sauvegarde disponible.</div>
+                                </div>
+                                <button id="sst-undo-last-btn" type="button" onclick="sstUndoLastOperation()" disabled class="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap">↩️ Annuler la dernière opération</button>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <!-- Exportation -->
                             <div class="bg-slate-50 p-5 rounded-lg border border-slate-200 flex flex-col justify-between space-y-4">
@@ -3421,7 +3432,7 @@
         }
 
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.95';
+        const SST_APP_VERSION = '2.97';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -4134,6 +4145,107 @@
             doc.setTextColor(15,23,42);
         }
 
+        // --- POINT DE SAUVEGARDE / ANNULATION DE LA DERNIERE OPERATION ---
+        const SST_BACKUP_STORAGE_KEY = 'sst_last_operation_backup';
+        const SST_BACKUP_KEYS = [
+            'unites_travail','catalogue_formations','profils_postes','salaries_formations',
+            'duerp_risques','papripact_actions','papripact_next_action_num','fiches_amelioration',
+            'situations_urgence','at_analyses','at_registre','at_heures_travaillees',
+            'training_sessions','tournees_hse','tournees_modeles'
+        ];
+
+        function sstCreateOperationBackup(label='Opération en masse') {
+            try {
+                const data = {};
+                SST_BACKUP_KEYS.forEach(key => {
+                    const fallback = key === 'papripact_next_action_num' ? '1' : '[]';
+                    data[key] = JSON.parse(localStorage.getItem(key) ?? fallback);
+                });
+                const backup = {
+                    version: 1,
+                    appVersion: SST_APP_VERSION,
+                    createdAt: new Date().toISOString(),
+                    label,
+                    data
+                };
+                localStorage.setItem(SST_BACKUP_STORAGE_KEY, JSON.stringify(backup));
+                sstRenderOperationBackupStatus();
+                return true;
+            } catch(err) {
+                console.error('Création du point de sauvegarde impossible', err);
+                return false;
+            }
+        }
+
+        function sstGetOperationBackup() {
+            try {
+                const raw = localStorage.getItem(SST_BACKUP_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch(e) { return null; }
+        }
+
+        function sstRenderOperationBackupStatus() {
+            const backup = sstGetOperationBackup();
+            const status = document.getElementById('sst-undo-status');
+            const btn = document.getElementById('sst-undo-last-btn');
+            if(!status || !btn) return;
+            if(!backup?.createdAt) {
+                status.textContent = 'Aucun point de sauvegarde disponible.';
+                btn.disabled = true;
+                return;
+            }
+            const d = new Date(backup.createdAt);
+            const dateLabel = Number.isNaN(d.getTime()) ? backup.createdAt : d.toLocaleString('fr-FR');
+            status.textContent = `Dernier point : ${backup.label || 'Opération en masse'} — ${dateLabel}`;
+            btn.disabled = false;
+        }
+
+        async function sstUndoLastOperation() {
+            const backup = sstGetOperationBackup();
+            if(!backup?.data) {
+                alert('Aucun point de sauvegarde disponible.');
+                return;
+            }
+            const when = new Date(backup.createdAt);
+            const label = Number.isNaN(when.getTime()) ? '' : ` du ${when.toLocaleString('fr-FR')}`;
+            if(!confirm(`Annuler la dernière opération${label} ?\n\nLes données enregistrées juste avant cette opération seront restaurées. Les modifications effectuées depuis ce point seront remplacées.`)) return;
+
+            const btn = document.getElementById('sst-undo-last-btn');
+            if(btn) { btn.disabled = true; btn.classList.add('opacity-60'); btn.textContent = '⏳ Restauration…'; }
+            try {
+                const restoredKeys = [];
+                for(const key of SST_BACKUP_KEYS) {
+                    if(Object.prototype.hasOwnProperty.call(backup.data, key)) {
+                        localStorage.setItem(key, JSON.stringify(backup.data[key]));
+                        restoredKeys.push(key);
+                    }
+                }
+                ensurePapripactActionNumbers();
+
+                if(window.SSTCloud?.isCloudTenant?.() && restoredKeys.length) {
+                    await sstV247CommitKeys(...restoredKeys);
+                }
+
+                localStorage.removeItem(SST_BACKUP_STORAGE_KEY);
+                sstRenderOperationBackupStatus();
+                alert(window.SSTCloud?.isCloudTenant?.()
+                    ? '✅ Dernière opération annulée et données resynchronisées dans Firebase.'
+                    : '✅ Dernière opération annulée. Les données précédentes ont été restaurées.');
+                location.reload();
+            } catch(err) {
+                console.error('Restauration du dernier point impossible', err);
+                alert('⚠️ La restauration n’a pas pu être terminée : ' + (err?.message || 'erreur inconnue') + '. Le point de sauvegarde est conservé pour réessayer.');
+                sstRenderOperationBackupStatus();
+            } finally {
+                if(btn && document.contains(btn)) {
+                    btn.classList.remove('opacity-60');
+                    btn.textContent = '↩️ Annuler la dernière opération';
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', sstRenderOperationBackupStatus);
+
         // --- EXPORTATION ET IMPORTATION DES DONNEES ---
         async function exportAllAppData() {
             ensurePapripactActionNumbers();
@@ -4197,6 +4309,13 @@
 
             if (!confirm("⚠️ Attention : L'importation d'un fichier de sauvegarde écrasera toutes vos données actuelles sur cet ordinateur. Voulez-vous continuer ?")) {
                 event.target.value = '';
+                return;
+            }
+
+            const backupOk = sstCreateOperationBackup('Avant restauration/import du fichier de sauvegarde');
+            if(!backupOk) {
+                event.target.value = '';
+                alert('⚠️ Impossible de créer le point de sauvegarde automatique. Import annulé pour protéger les données existantes.');
                 return;
             }
 
@@ -5237,6 +5356,10 @@
             const { onConfirm, results } = __sstImportState;
             const validRows = results.filter(r => r.status !== 'error').map(r => r.data);
             try {
+                const backupOk = sstCreateOperationBackup('Avant import en masse');
+                if(!backupOk) {
+                    throw new Error('Impossible de créer le point de sauvegarde automatique. Import annulé pour protéger les données existantes.');
+                }
                 await onConfirm(validRows);
                 sstCloseImportModal();
             } catch (err) {
