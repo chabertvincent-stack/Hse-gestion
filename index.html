@@ -9199,25 +9199,62 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             sstMaybeAlertHighDuerpRisk(savedIdx);
         }
 
+
+        // Gestion commune des actions PAPRIPACT liées à une fiche source supprimée.
+        // Si plusieurs liens sources sont présents, on retire uniquement le lien correspondant.
+        async function sstHandlePapSourceDeletion(sourceType, source) {
+            let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            const code = String(source?.code || source?.reference || source?.ref || source?.riskId || source?.id || '');
+            const cloudId = String(source?._cloudId || '');
+            const matches = (a) => {
+                const origin = String(a?.origine || a?.sourceType || '');
+                if(sourceType==='FA') return origin==='FA' && !!code && ((String(a.action||'').includes(code)) || String(a.commentaires||'').includes(code) || String(a.sourceReference||'')===code);
+                if(sourceType==='SU') return origin==='SU' && !!code && ((String(a.action||'').includes(code)) || String(a.commentaires||'').includes(code) || String(a.sourceReference||'')===code);
+                if(sourceType==='DUERP') return origin==='DUERP' && !!code && (String(a.duerpRiskId||'')===code || String(a.sourceReference||'')===code);
+                if(sourceType==='Tournée HSE') return origin==='Tournée HSE' && ((!!code && (String(a.tourneeReference||'')===code || String(a.sourceReference||'')===code)) || (!code && Number(a.tourneeIndex)===Number(source?._sourceIndex)));
+                if(sourceType==='AT') return origin==='AT' && ((String(a.atAnalysisId||'')===String(source?.id||'') && !!source?.id) || (String(a.atAnalysisCloudId||'')===cloudId && !!cloudId) || (String(a.atAnalysisReference||'')===String(source?.reference||'') && !!source?.reference) || (String(a.sourceReference||'')===String(source?.reference||'') && !!source?.reference));
+                return false;
+            };
+            const linked = actions.filter(matches);
+            if(!linked.length) return false;
+            const deleteLinked = confirm(`Cette entrée possède ${linked.length} action(s) liée(s) au PAPRIPACT.\n\nOK : supprimer également ces actions du PAPRIPACT.\nAnnuler : conserver les actions dans le PAPRIPACT mais supprimer leur lien vers cette entrée.`);
+            if(deleteLinked) {
+                const removeSet = new Set(linked);
+                actions = actions.filter(a=>!removeSet.has(a));
+            } else {
+                actions = actions.map(a=>{
+                    if(!matches(a)) return a;
+                    const copy={...a};
+                    if(sourceType==='FA' || sourceType==='SU') {
+                        if(String(copy.sourceReference||'')===code) delete copy.sourceReference;
+                        // Les références legacy étaient parfois intégrées au commentaire : les conserver comme historique,
+                        // mais supprimer le lien explicite si présent.
+                    } else if(sourceType==='DUERP') {
+                        delete copy.duerpRiskId; delete copy.duerpIndex; delete copy.sourceReference;
+                    } else if(sourceType==='Tournée HSE') {
+                        delete copy.tourneeReference; delete copy.tourneeIndex; delete copy.tourneeItemId; delete copy.sourceReference; delete copy.sourceReference2;
+                    } else if(sourceType==='AT') {
+                        delete copy.atAnalysisId; delete copy.atAnalysisCloudId; delete copy.atAnalysisReference;
+                    }
+                    copy.sourceLinkRemovedAt=new Date().toISOString();
+                    copy.commentaires=(String(copy.commentaires||'').trim() + `\nLien vers ${sourceType} supprimé le ${new Date().toLocaleDateString('fr-FR')}.`).trim();
+                    return copy;
+                });
+            }
+            localStorage.setItem('papripact_actions', JSON.stringify(actions));
+            return true;
+        }
+
         async function deleteDuerpRisque(idx) {
             if(sstDuerpReadOnly()) { alert('Votre compte est en lecture seule sur le DUERP.'); return; }
             if(!confirm("Supprimer ce risque DUERP ?")) return;
-            let risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
-            const cible=risques[idx];
-            if(!cible) { loadDuerp(); return; }
-            // Retirer uniquement la ligne sélectionnée, sans supprimer d'autres
-            // risques pouvant partager une référence historique.
-            risques.splice(idx, 1);
-            localStorage.setItem('duerp_risques', JSON.stringify(risques));
-            loadDuerp();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques');
-                else await sstQueueCloudCommit('duerp_risques');
-            } catch(err) {
-                console.warn('Synchronisation de la suppression DUERP impossible :', err);
-                alert('Le risque est supprimé localement, mais la synchronisation cloud n’a pas pu être confirmée. Vérifiez la connexion puis réessayez.');
-            }
-            loadDuerp();
+            let risques=JSON.parse(localStorage.getItem('duerp_risques')||'[]');
+            const cible=risques[idx]; if(!cible){loadDuerp();return;}
+            const papChanged=await sstHandlePapSourceDeletion('DUERP',cible);
+            risques.splice(idx,1); localStorage.setItem('duerp_risques',JSON.stringify(risques)); loadDuerp();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('duerp_risques',...(papChanged?['papripact_actions']:[])); }
+            catch(err){console.warn('Synchronisation suppression DUERP impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
+            loadDuerp(); loadPapripactLocalOnly();
         }
 
         // --- CREATION ACTION PAPRIPACT DEPUIS UNE LIGNE DUERP ---
@@ -9982,6 +10019,19 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 (!filterSecteur || String(f.secteur||'')===filterSecteur) &&
                 (!filterYear || sstDateYear(f.date)===filterYear)
             );
+            // Tri d'affichage uniquement : année croissante, puis numéro FA numérique.
+            // Le tableau source et les index d'édition/suppression restent inchangés.
+            const faSortParts = ({f}) => {
+                const code = String(f?.code || '').trim();
+                const match = code.match(/^(\d{4})-FA-(\d+)$/i);
+                const year = match ? Number(match[1]) : Number(sstDateYear(f?.date)) || 9999;
+                const number = match ? Number(match[2]) : Number.MAX_SAFE_INTEGER;
+                return {year, number, code};
+            };
+            filteredFiches.sort((a,b) => {
+                const A = faSortParts(a), B = faSortParts(b);
+                return A.year - B.year || A.number - B.number || A.code.localeCompare(B.code, 'fr', {numeric:true}) || a.idx - b.idx;
+            });
             if(!filteredFiches.length){
                 container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune fiche ne correspond aux filtres sélectionnés.</div>`;
                 return;
@@ -10079,30 +10129,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function deleteFicheAmelioration(idx) {
-            if(!confirm("Supprimer cette fiche d'amélioration ? L'action associée dans le PAPRIPACT sera également supprimée.")) return;
-            let fiches = JSON.parse(localStorage.getItem('fiches_amelioration') || '[]');
-            let target = fiches[idx];
-            let targetCode = target ? target.code : null;
-
-            fiches.splice(idx, 1);
-            localStorage.setItem('fiches_amelioration', JSON.stringify(fiches));
-
-            if(targetCode) {
-                let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
-                actions = actions.filter(a => !(a.origine === 'FA' && ((a.action && a.action.includes(targetCode)) || (a.commentaires && a.commentaires.includes(targetCode)))));
-                localStorage.setItem('papripact_actions', JSON.stringify(actions));
-            }
-
-            // Rafraîchissement local immédiat : ne pas attendre Firestore pour rendre la main.
-            renderFichesAmeliorationLocal();
-            if(!document.getElementById('tab-papripact').classList.contains('hidden')) {
-                loadPapripact();
-            }
-            loadDashboard();
-
-            // On pousse le tableau local complet : supprimer uniquement le cache local
-            // permettait à l'ancienne fiche de revenir lors d'une prochaine lecture Firebase.
-            sstQueueCloudCommit('fiches_amelioration', 'papripact_actions');
+            if(!confirm("Supprimer cette fiche d'amélioration ?")) return;
+            let fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]'); const target=fiches[idx]; if(!target)return;
+            const papChanged=await sstHandlePapSourceDeletion('FA',target);
+            fiches.splice(idx,1); localStorage.setItem('fiches_amelioration',JSON.stringify(fiches));
+            renderFichesAmeliorationLocal(); if(!document.getElementById('tab-papripact').classList.contains('hidden')) loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('fiches_amelioration',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('fiches_amelioration',...(papChanged?['papripact_actions']:[])); }
+            catch(err){console.warn('Synchronisation suppression FA impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
         }
 
         function showFaList() {
@@ -10346,27 +10379,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function deleteSituationUrgence(idx) {
-            if(!confirm("Supprimer cette déclaration de situation d'urgence ? L'action associée dans le PAPRIPACT sera également supprimée.")) return;
-            let fiches = JSON.parse(localStorage.getItem('situations_urgence') || '[]');
-            let targetCode = fiches[idx] ? fiches[idx].code : null;
-
-            fiches.splice(idx, 1);
-            localStorage.setItem('situations_urgence', JSON.stringify(fiches));
-
-            let removed = [];
-            if(targetCode) {
-                let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
-                removed = actions.filter(a => a.origine === 'SU' && ((a.action && a.action.includes(targetCode)) || (a.commentaires && a.commentaires.includes(targetCode))));
-                actions = actions.filter(a => !(a.origine === 'SU' && ((a.action && a.action.includes(targetCode)) || (a.commentaires && a.commentaires.includes(targetCode)))));
-                localStorage.setItem('papripact_actions', JSON.stringify(actions));
-            }
-
-            loadSituationsUrgence();
-            if(!document.getElementById('tab-papripact').classList.contains('hidden')) {
-                loadPapripactLocalOnly();
-            }
-            loadDashboard();
-            sstQueueCloudCommit('situations_urgence', 'papripact_actions');
+            if(!confirm("Supprimer cette déclaration de situation d'urgence ?")) return;
+            let fiches=JSON.parse(localStorage.getItem('situations_urgence')||'[]'); const target=fiches[idx]; if(!target)return;
+            const papChanged=await sstHandlePapSourceDeletion('SU',target);
+            fiches.splice(idx,1); localStorage.setItem('situations_urgence',JSON.stringify(fiches));
+            loadSituationsUrgence(); if(!document.getElementById('tab-papripact').classList.contains('hidden')) loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('situations_urgence',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('situations_urgence',...(papChanged?['papripact_actions']:[])); }
+            catch(err){console.warn('Synchronisation suppression SU impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
         }
 
         function showSuList() {
@@ -12058,17 +12077,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function deleteAtAnalyse(idx){
-            if(!confirm("Supprimer cette analyse d'accident ?")) return; const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]'); const a=analyses[idx];
-            let removedPapActions = [];
-            if(a?.id){
-                let pap=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
-                removedPapActions = pap.filter(x=>x.atAnalysisId===a.id || x.atAnalysisCloudId===a._cloudId || x.atAnalysisReference===a.reference);
-                pap=pap.filter(x=>!(x.atAnalysisId===a.id || x.atAnalysisCloudId===a._cloudId || x.atAnalysisReference===a.reference)); localStorage.setItem('papripact_actions',JSON.stringify(pap));
-            }
-            const sourceAtRef=a?.sourceAtRef||''; analyses.splice(idx,1); localStorage.setItem('at_analyses',JSON.stringify(analyses));
-            if(sourceAtRef){ const registre=getAtRegistreData(); const ri=registre.findIndex(x=>x.ref===sourceAtRef); if(ri!==-1){registre[ri].analyseStatut='À réaliser'; localStorage.setItem('at_registre',JSON.stringify(registre));} }
-            loadAt(true); loadAtRegistre(); loadPapripactLocalOnly(); loadDashboard();
-            sstQueueCloudCommit('at_analyses', 'at_registre', 'papripact_actions');
+            if(!confirm("Supprimer cette analyse d'accident ?")) return;
+            const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]'); const a=analyses[idx]; if(!a)return;
+            const papChanged=await sstHandlePapSourceDeletion('AT',a);
+            const sourceAtRef=a.sourceAtRef||''; analyses.splice(idx,1); localStorage.setItem('at_analyses',JSON.stringify(analyses));
+            if(sourceAtRef){const registre=getAtRegistreData();const ri=registre.findIndex(x=>x.ref===sourceAtRef);if(ri!==-1){registre[ri].analyseStatut='À réaliser';localStorage.setItem('at_registre',JSON.stringify(registre));}}
+            loadAt(true);loadAtRegistre();loadPapripactLocalOnly();loadDashboard();
+            try {if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_analyses','at_registre',...(papChanged?['papripact_actions']:[]));else await sstQueueCloudCommit('at_analyses','at_registre',...(papChanged?['papripact_actions']:[]));}
+            catch(err){console.warn('Synchronisation suppression analyse AT impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
         }
 
         function generateAtAnalysisPdfFromModal(){
@@ -13245,31 +13261,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function deleteTournee(idx){
-            if(!confirm('Supprimer cette tournée ? Les actions déjà créées dans le PAPRIPACT ne seront pas supprimées.'))return;
-            let tournees=JSON.parse(localStorage.getItem('tournees_hse')||'[]');
-            if(!tournees[idx])return;
-            const ref=tournees[idx].reference;
-            tournees.splice(idx,1);
-            sstSafeSetLocalStorage('tournees_hse',JSON.stringify(tournees));
-            // Réindexe les anciennes actions qui utilisaient uniquement l'index.
-            let actions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
-            let changed=false;
-            actions.forEach(a=>{
-                if(a.origine==='Tournée HSE' && !a.tourneeReference && a.tourneeIndex!==null && a.tourneeIndex!==undefined){
-                    if(Number(a.tourneeIndex)===idx){ /* conserve l'index historique pour signaler le lien rompu */ }
-                    else if(Number(a.tourneeIndex)>idx){a.tourneeIndex=Number(a.tourneeIndex)-1;changed=true;}
-                }
-            });
-            if(changed)localStorage.setItem('papripact_actions',JSON.stringify(actions));
-            loadTourneesHse();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('tournees_hse', ...(changed ? ['papripact_actions'] : []));
-                else await sstQueueCloudCommit('tournees_hse', ...(changed ? ['papripact_actions'] : []));
-            } catch(err) {
-                console.warn('Synchronisation de la suppression de tournée impossible :', err);
-                alert('La tournée est supprimée localement, mais la synchronisation cloud n’a pas pu être confirmée. Vérifiez la connexion puis réessayez.');
-            }
-            loadTourneesHse();
+            if(!confirm('Supprimer cette tournée HSE ?')) return;
+            let tournees=JSON.parse(localStorage.getItem('tournees_hse')||'[]'); const target=tournees[idx]; if(!target)return;
+            const source={...target,_sourceIndex:idx}; const papChanged=await sstHandlePapSourceDeletion('Tournée HSE',source);
+            tournees.splice(idx,1); sstSafeSetLocalStorage('tournees_hse',JSON.stringify(tournees)); loadTourneesHse();
+            try {if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('tournees_hse',...(papChanged?['papripact_actions']:[]));else await sstQueueCloudCommit('tournees_hse',...(papChanged?['papripact_actions']:[]));}
+            catch(err){console.warn('Synchronisation suppression tournée HSE impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
+            loadTourneesHse();loadPapripactLocalOnly();
         }
 
         async function openTourneePrintableFallback(idx, errorMessage='') {
