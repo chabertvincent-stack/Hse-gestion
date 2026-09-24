@@ -10001,6 +10001,28 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             sstPopulateFilterOptions('filter-fa-year', fiches.map(f=>sstDateYear(f.date)), 'Toutes les années');
         }
 
+        // Sélection multiple des FA (état temporaire d'interface, sans alourdir les données métier).
+        window.sstFaSelected = window.sstFaSelected || new Set();
+        function toggleFaSelection(idx, checked) { if(checked) window.sstFaSelected.add(Number(idx)); else window.sstFaSelected.delete(Number(idx)); renderFichesAmeliorationLocal(); }
+        function toggleAllVisibleFa(checked) {
+            const fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]');
+            const fr=document.getElementById('filter-fa-redacteur-unite')?.value||'', fs=document.getElementById('filter-fa-secteur')?.value||'', fy=document.getElementById('filter-fa-year')?.value||'';
+            fiches.forEach((f,i)=>{ if((!fr||String(f.unite||'')===fr)&&(!fs||String(f.secteur||'')===fs)&&(!fy||sstDateYear(f.date)===fy)){ if(checked) window.sstFaSelected.add(i); else window.sstFaSelected.delete(i); }});
+            renderFichesAmeliorationLocal();
+        }
+        async function deleteSelectedFichesAmelioration() {
+            const ids=Array.from(window.sstFaSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} fiche(s) d'amélioration sélectionnée(s) ?\n\nPour chaque fiche liée au PAPRIPACT, tu pourras choisir de supprimer l'action ou de la conserver sans lien.`)) return;
+            let fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]');
+            let papChanged=false;
+            for(const idx of ids){ const target=fiches[idx]; if(target){ const changed=await sstHandlePapSourceDeletion('FA',target); papChanged=papChanged||changed; fiches.splice(idx,1); }}
+            localStorage.setItem('fiches_amelioration',JSON.stringify(fiches)); window.sstFaSelected.clear();
+            renderFichesAmeliorationLocal(); if(!document.getElementById('tab-papripact').classList.contains('hidden')) loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('fiches_amelioration',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('fiches_amelioration',...(papChanged?['papripact_actions']:[])); }
+            catch(err){console.warn('Synchronisation suppression groupée FA impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
+        }
+
         function renderFichesAmeliorationLocal() {
             let fiches = JSON.parse(localStorage.getItem('fiches_amelioration') || '[]');
             let actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
@@ -10039,6 +10061,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune fiche ne correspond aux filtres sélectionnés.</div>`;
                 return;
             }
+            const selectedCount=(window.sstFaSelected||new Set()).size;
+            const visibleAllSelected=filteredFiches.length>0 && filteredFiches.every(({idx})=>window.sstFaSelected.has(idx));
+            container.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleFa(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedFichesAmelioration()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstFaSelected.clear();renderFichesAmeliorationLocal()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+            </div>`;
             filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
                 let linkedActionIdx = findPapripactActionForSource(actionsPap, 'FA', displayCode);
@@ -10055,6 +10083,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <div class="flex justify-between items-start border-b pb-2">
                             <div>
                                 <div class="flex items-center gap-2 flex-wrap">
+                                    <input type="checkbox" aria-label="Sélectionner ${displayCode}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstFaSelected.has(idx)?'checked':''} onchange="toggleFaSelection(${idx},this.checked)" title="Sélectionner cette fiche">
                                     ${faPapBadgeHtml}
                                     ${faStatutBadgeHtml}
                                     <h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur}</h4>
@@ -10305,6 +10334,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`;
                 return;
             }
+            const selectedCount=(window.sstFaSelected||new Set()).size;
+            const visibleAllSelected=filteredFiches.length>0 && filteredFiches.every(({idx})=>window.sstFaSelected.has(idx));
+            container.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleFa(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedFichesAmelioration()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstFaSelected.clear();renderFichesAmeliorationLocal()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+            </div>`;
             filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
 
