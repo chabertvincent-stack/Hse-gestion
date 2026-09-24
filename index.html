@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.96</title>
+    <title>Application SST & RH - Gestion V2.100</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -150,7 +150,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.96</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.100</div>
         </aside>
 
         <!-- Main Content -->
@@ -13369,6 +13369,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         const sstV242SyncTimers = new Map();
         let sstV242SyncChain = Promise.resolve();
         const sstV247DirtyKeys = new Set();
+        // Compteur de mutations par source : empêche une synchro ancienne de valider/écraser une suppression plus récente.
+        const sstV242MutationRevision = new Map();
 
         function sstV242PhysicalKey(key, companyId = sstV242CompanyNamespace) {
             if(!companyId || !SST_V242_STORAGE[key]) return key;
@@ -13419,7 +13421,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     const k=String(key);
                     if(this === window.localStorage && SST_V242_STORAGE[k] && sstV242CompanyNamespace){
                         sstNativeSetItem.call(this, sstV242PhysicalKey(k), String(val));
-                        if(!sstV242SuppressSync){ sstV247DirtyKeys.add(k); sstV242ScheduleSync(k); }
+                        if(!sstV242SuppressSync){ sstV247DirtyKeys.add(k); sstV242MutationRevision.set(k,(sstV242MutationRevision.get(k)||0)+1); sstV242ScheduleSync(k); }
                         return;
                     }
                     return sstNativeSetItem.call(this,k,String(val));
@@ -13428,7 +13430,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     const k=String(key);
                     if(this === window.localStorage && SST_V242_STORAGE[k] && sstV242CompanyNamespace){
                         sstNativeRemoveItem.call(this, sstV242PhysicalKey(k));
-                        if(!sstV242SuppressSync){ sstV247DirtyKeys.add(k); sstV242ScheduleSync(k); }
+                        if(!sstV242SuppressSync){ sstV247DirtyKeys.add(k); sstV242MutationRevision.set(k,(sstV242MutationRevision.get(k)||0)+1); sstV242ScheduleSync(k); }
                         return;
                     }
                     return sstNativeRemoveItem.call(this,k);
@@ -13608,6 +13610,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         async function sstV242SyncKeyToCloud(key, forceFull=false){
             if(!window.SSTFirebaseApi || !sstV242Db() || !window.SSTCloud?.isCloudTenant?.() || !sstV242CanWriteStorage(key)) return false;
             const def=SST_V242_STORAGE[key];
+            const revisionAtStart=sstV242MutationRevision.get(key)||0;
             const current=sstV242ReadLocal(key);
             const value=current===null?sstV242BlankFor(key):current;
             let previous=sstV242Snapshots.get(key);
@@ -13624,12 +13627,23 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     catch (publicErr) { console.warn('Synchronisation des fiches QR casque publiques impossible :', publicErr); }
                 }
                 sstV242Snapshots.set(key, JSON.parse(JSON.stringify(arr)));
-                sstV242WriteLocalSilently(key,arr);
+                // Ne jamais réécrire un instantané ancien sur un état local modifié pendant
+                // l'aller-retour Firestore (ex. deuxième suppression pendant la première).
+                if((sstV242MutationRevision.get(key)||0)===revisionAtStart){
+                    sstV242WriteLocalSilently(key,arr);
+                }
             } else {
                 await sstV242Fb().setDoc(sstV242RecordPath(key,'_singleton'),{value:sstV242Clean(value),updatedBy:window.SST_APP_CONTEXT?.uid||'',updatedAt:sstV242Fb().serverTimestamp()},{merge:true});
                 sstV242Snapshots.set(key, JSON.parse(JSON.stringify(value)));
             }
-            sstV247DirtyKeys.delete(key);
+            if((sstV242MutationRevision.get(key)||0)===revisionAtStart){
+                sstV247DirtyKeys.delete(key);
+            } else {
+                // Une mutation est arrivée pendant l'écriture : la garder en attente et
+                // relancer une synchronisation sérielle avec la dernière version locale.
+                sstV247DirtyKeys.add(key);
+                sstV242ScheduleSync(key);
+            }
             return true;
         }
         function sstV242ScheduleSync(key){
