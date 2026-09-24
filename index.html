@@ -3446,7 +3446,7 @@
         }
 
         // VERSION DE L'APPLICATION : à modifier ICI uniquement (titre, bandeau, export et sauvegarde en dépendent).
-        const SST_APP_VERSION = '2.98';
+        const SST_APP_VERSION = '2.99';
         document.addEventListener('DOMContentLoaded', () => {
             document.title = `Application SST & RH - Gestion V${SST_APP_VERSION}`;
             const v = document.getElementById('sst-app-version'); if (v) v.textContent = `Version ${SST_APP_VERSION}`;
@@ -13518,8 +13518,14 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             // (créations / suppressions non encore synchronisées). Sinon la relecture écrasait le cache local avec
             // l'ancien état du cloud : une suppression était annulée et une création pouvait disparaître.
             if(sstV247DirtyKeys.has(key) && sstV242CanWriteStorage(key)){
-                try { await sstV247CommitKeys(key); }
-                catch(err){ console.warn(`Envoi des modifications locales (${key}) avant relecture impossible :`, err); }
+                try {
+                    await sstV247CommitKeys(key);
+                } catch(err){
+                    // Hors connexion : surtout ne pas relire le cache/cloud ancien et écraser le local.
+                    // La donnée reste marquée « dirty » et sera renvoyée à la reconnexion.
+                    console.warn(`Envoi des modifications locales (${key}) avant relecture impossible :`, err);
+                    return false;
+                }
             }
             const remote=await sstV242FetchKey(key);
             if(remote.exists){
@@ -13637,15 +13643,80 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             sstV242SyncTimers.set(key,timer);
         }
 
+        // V2.99 : réconciliation hors connexion avant envoi.
+        // On compare la version locale au dernier état cloud connu (snapshot),
+        // puis on fusionne avec l'état actuellement présent dans Firebase.
+        // Une modification locale gagne sur le même enregistrement modifié à distance,
+        // mais les autres modifications faites sur un autre appareil sont conservées.
+        async function sstV299ReconcileDirtyKey(key){
+            if(!sstV247DirtyKeys.has(key) || !sstV242CanWriteStorage(key)) return false;
+            const remote=await sstV242FetchKey(key);
+            const baseline=sstV242Snapshots.get(key);
+            const local=sstV242ReadLocal(key);
+            const def=SST_V242_STORAGE[key];
+
+            if(def.kind==='array'){
+                const baseArr=Array.isArray(baseline)?baseline:[];
+                const localArr=Array.isArray(local)?local:[];
+                const remoteArr=remote.exists && Array.isArray(remote.value)?remote.value:[];
+                const baseMap=new Map(), localMap=new Map(), remoteMap=new Map();
+                baseArr.forEach((x,i)=>baseMap.set(sstV242StableId(key,x,i),x));
+                localArr.forEach((x,i)=>localMap.set(sstV242StableId(key,x,i),x));
+                remoteArr.forEach((x,i)=>remoteMap.set(sstV242StableId(key,x,i),x));
+                const ids=[...new Set([...baseMap.keys(),...localMap.keys(),...remoteMap.keys()])];
+                const merged=[];
+                const localChanged=(id)=>JSON.stringify(sstV242Clean(localMap.get(id)))!==JSON.stringify(sstV242Clean(baseMap.get(id)));
+                const remoteChanged=(id)=>JSON.stringify(sstV242Clean(remoteMap.get(id)))!==JSON.stringify(sstV242Clean(baseMap.get(id)));
+                for(const id of ids){
+                    const lc=localChanged(id), rc=remoteChanged(id);
+                    let chosen;
+                    if(lc) chosen=localMap.get(id);
+                    else if(rc) chosen=remoteMap.get(id);
+                    else chosen=localMap.has(id)?localMap.get(id):remoteMap.get(id);
+                    if(chosen!==undefined) merged.push(chosen);
+                }
+                // Préserve l'ordre local pour les éléments modifiés localement,
+                // puis ajoute les éléments uniquement présents/modifiés à distance.
+                const orderIds=[];
+                localArr.forEach((x,i)=>orderIds.push(sstV242StableId(key,x,i)));
+                remoteArr.forEach((x,i)=>{ const id=sstV242StableId(key,x,i); if(!orderIds.includes(id)) orderIds.push(id); });
+                const byId=new Map(merged.map((x,i)=>[sstV242StableId(key,x,i),x]));
+                const ordered=orderIds.map(id=>byId.get(id)).filter(x=>x!==undefined);
+                sstV242WriteLocalSilently(key,ordered);
+                sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remoteArr)));
+            } else {
+                const baseVal=baseline===undefined?sstV242BlankFor(key):baseline;
+                const localChanged=JSON.stringify(sstV242Clean(local))!==JSON.stringify(sstV242Clean(baseVal));
+                if(!localChanged && remote.exists){
+                    sstV242WriteLocalSilently(key,remote.value);
+                    sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remote.value)));
+                } else if(remote.exists){
+                    sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remote.value)));
+                } else {
+                    sstV242Snapshots.set(key,JSON.parse(JSON.stringify(sstV242BlankFor(key))));
+                }
+            }
+            return true;
+        }
+
         async function sstV247CommitKeys(...keys){
             if(!window.SSTCloud?.isCloudTenant?.()) return;
             const unique=[...new Set(keys.filter(k=>SST_V242_STORAGE[k]))];
             for(const key of unique){
                 if(!sstV242CanWriteStorage(key)) continue;
-                await (sstV242SyncChain = sstV242SyncChain.then(()=>sstV242SyncKeyToCloud(key)));
+                await (sstV242SyncChain = sstV242SyncChain.then(async()=>{
+                    if(sstV247DirtyKeys.has(key)) await sstV299ReconcileDirtyKey(key);
+                    return sstV242SyncKeyToCloud(key);
+                }));
             }
         }
         window.sstV247CommitKeys=sstV247CommitKeys;
+
+        // Une reconnexion réseau déclenche immédiatement les écritures en attente.
+        window.addEventListener('online', ()=>{
+            if(!window.SSTCloud?.isCloudTenant?.()) return;
+            [...sstV247DirtyKeys].forEach(k=>sstV242ScheduleSync(k));
+        });
 
         setInterval(()=>{
             if(!window.SSTCloud?.isCloudTenant?.() || !sstV247DirtyKeys.size) return;
@@ -13656,6 +13727,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(sstV242Listeners.has(key) || !sstV242Db() || !sstV242CanReadStorage(key)) return;
             const unsub=sstV242Fb().onSnapshot(sstV242CollectionPath(key), snap=>{
                 const def=SST_V242_STORAGE[key];
+                // Une écriture locale est prioritaire tant qu'elle n'est pas confirmée par Firebase.
+                // Le snapshot peut provenir du cache Firebase avec l'ancien état : ne pas l'appliquer
+                // et ne pas faire réapparaître une suppression ou disparaître un ajout hors connexion.
+                if(sstV247DirtyKeys.has(key)) return;
                 try{
                     sstV242SuppressSync=true;
                     if(def.kind==='single'){
