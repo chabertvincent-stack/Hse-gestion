@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.86</title>
+    <title>Application SST & RH - Gestion V2.96</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -150,7 +150,7 @@
                     <button onclick="switchTab('settings', this)" class="tab-btn w-full text-left px-4 py-2.5 rounded text-slate-300 font-medium transition hover:bg-slate-700">⚙️ Réglages</button>
                 </nav>
             </div>
-            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.86</div>
+            <div id="sst-app-version" class="p-4 bg-slate-900 text-xs text-slate-500 text-center">Version 2.96</div>
         </aside>
 
         <!-- Main Content -->
@@ -2686,6 +2686,23 @@
             return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
         }
 
+        // Suppressions : affichage local immédiat puis synchronisation cloud sérialisée.
+        // Cela évite qu'une seconde suppression relise l'ancien état Firebase et fasse
+        // réapparaître l'élément supprimé.
+        window.__sstDeleteSyncChain = window.__sstDeleteSyncChain || Promise.resolve();
+        function sstQueueCloudCommit(...keys) {
+            const uniqueKeys = [...new Set(keys.filter(Boolean))];
+            if (!uniqueKeys.length) return Promise.resolve();
+            window.__sstDeleteSyncChain = window.__sstDeleteSyncChain
+                .catch(() => {})
+                .then(async () => {
+                    if (!window.SSTCloud?.isCloudTenant?.()) return;
+                    await sstV247CommitKeys(...uniqueKeys);
+                })
+                .catch(err => console.warn('Synchronisation cloud en arrière-plan impossible :', err));
+            return window.__sstDeleteSyncChain;
+        }
+
         // PAPRIPACT est le carnet d'actions de plusieurs modules (DUERP, fiches d'amélioration, urgence,
         // analyse AT, tournées HSE) : sans lui, leurs liens vers un plan d'actions n'ont plus de destination.
         // On le rend donc obligatoire dès que l'un de ces modules est activé.
@@ -4983,11 +5000,7 @@
             unites = unites.map(u => u.parent === unite.nom ? { ...u, parent: '' } : u);
             localStorage.setItem('unites_travail', JSON.stringify(unites));
             loadUnites();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('unites_travail');
-            } catch(err) {
-                console.warn('Synchronisation cloud des unités impossible après suppression :', err);
-            }
+            sstQueueCloudCommit('unites_travail');
             refreshUnitDependentSelects();
         }
 
@@ -5853,8 +5866,8 @@
             let profils = JSON.parse(localStorage.getItem('profils_postes') || '[]');
             profils.splice(idx, 1);
             localStorage.setItem('profils_postes', JSON.stringify(profils));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('profils_postes');
             loadProfilsPostes();
+            sstQueueCloudCommit('profils_postes');
         }
 
         // --- GESTION DES SALARIES & FORMATIONS (RH) ---
@@ -6708,7 +6721,7 @@
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
             sessions = sessions.filter(s => s.id != id);
             localStorage.setItem('training_sessions', JSON.stringify(sessions));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+            sstQueueCloudCommit('training_sessions');
             closeSessionModal();
             renderCalendar();
             loadCalendarRHStats();
@@ -7056,7 +7069,7 @@
             let sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
             sessions = sessions.filter(s => String(s.id) !== String(sessionId));
             localStorage.setItem('training_sessions', JSON.stringify(sessions));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+            sstQueueCloudCommit('training_sessions');
             closeParticipantsModal();
             renderCalendar();
             loadCalendarRHStats();
@@ -8979,11 +8992,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             risques.splice(idx, 1);
             localStorage.setItem('duerp_risques', JSON.stringify(risques));
             loadDuerp();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques');
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression DUERP impossible :', err);
-            }
+            sstQueueCloudCommit('duerp_risques');
         }
 
         // --- CREATION ACTION PAPRIPACT DEPUIS UNE LIGNE DUERP ---
@@ -9649,16 +9658,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             localStorage.setItem('papripact_actions', JSON.stringify(actions));
             ensurePapripactActionNumbers();
             closePapripactModal();
-            await loadPapripact();
+            loadPapripactLocalOnly();
             loadDuerp();
             loadDashboard();
-            try {
-                if (isCloudPapripactTenant() && target) {
-                    await window.SSTCloud.deleteModuleRecord('papripact', target._cloudId || `PAP-${target.numero}`);
-                }
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression PAPRIPACT impossible :', err);
-            }
+            sstQueueCloudCommit('papripact_actions');
         }
 
         // --- AMELIORATION (FICHES D'AMÉLIORATION) ---
@@ -9872,12 +9875,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }
             loadDashboard();
 
-            // Synchronisation cloud en arrière-plan. Une suppression locale ne doit pas
-            // être bloquée par un aller-retour réseau de plusieurs secondes.
-            if(window.SSTCloud?.isCloudTenant?.() && targetCode) {
-                Promise.resolve(window.SSTCloud.deleteModuleRecord('amelioration', target?._cloudId || targetCode))
-                    .catch(err => console.warn('Synchronisation cloud de la suppression FA impossible :', err));
-            }
+            // On pousse le tableau local complet : supprimer uniquement le cache local
+            // permettait à l'ancienne fiche de revenir lors d'une prochaine lecture Firebase.
+            sstQueueCloudCommit('fiches_amelioration', 'papripact_actions');
         }
 
         function showFaList() {
@@ -10138,19 +10138,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
             loadSituationsUrgence();
             if(!document.getElementById('tab-papripact').classList.contains('hidden')) {
-                loadPapripact();
+                loadPapripactLocalOnly();
             }
             loadDashboard();
-
-            try {
-                if (isCloudPapripactTenant()) {
-                    for (const a of removed) {
-                        if (a._cloudId) await window.SSTCloud.deleteModuleRecord('papripact', a._cloudId);
-                    }
-                }
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression SU impossible :', err);
-            }
+            sstQueueCloudCommit('situations_urgence', 'papripact_actions');
         }
 
         function showSuList() {
@@ -11133,11 +11124,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             data.splice(idx, 1);
             localStorage.setItem('at_registre', JSON.stringify(data));
             loadAtRegistre();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_registre');
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression AT registre impossible :', err);
-            }
+            sstQueueCloudCommit('at_registre');
         }
 
         // --- AT : ANALYSE APPROFONDIE ---
@@ -11834,30 +11821,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }
             const sourceAtRef=a?.sourceAtRef||''; analyses.splice(idx,1); localStorage.setItem('at_analyses',JSON.stringify(analyses));
             if(sourceAtRef){ const registre=getAtRegistreData(); const ri=registre.findIndex(x=>x.ref===sourceAtRef); if(ri!==-1){registre[ri].analyseStatut='À réaliser'; localStorage.setItem('at_registre',JSON.stringify(registre));} }
-            loadAt(true); loadAtRegistre(); loadPapripact(); loadDashboard();
-
-            try {
-                if (isCloudPapripactTenant()) {
-                    for (const x of removedPapActions) {
-                        if (x._cloudId) await window.SSTCloud.deleteModuleRecord('papripact', x._cloudId);
-                    }
-                }
-                if(isCloudAtTenant() && a) {
-                    // La persistance Analyse AT V2.47/V2.42 est portée par
-                    // companies/{companyId}/sync/at_analyses/records.
-                    // Supprimer uniquement le cache local ne suffit pas :
-                    // le listener Firebase réinjecterait immédiatement l'analyse.
-                    await sstV247CommitKeys('at_analyses');
-                }
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression AT impossible :', err);
-            }
-
-            // Réaffichage après suppression et synchronisation cloud.
-            loadAt(true);
-            loadAtRegistre();
-            loadPapripact();
-            loadDashboard();
+            loadAt(true); loadAtRegistre(); loadPapripactLocalOnly(); loadDashboard();
+            sstQueueCloudCommit('at_analyses', 'at_registre', 'papripact_actions');
         }
 
         function generateAtAnalysisPdfFromModal(){
@@ -13051,12 +13016,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             });
             if(changed)localStorage.setItem('papripact_actions',JSON.stringify(actions));
             loadTourneesHse();
-            try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('tournees_hse');
-                if(changed && window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('papripact_actions');
-            } catch(err) {
-                console.warn('Synchronisation cloud de la suppression de tournée impossible :', err);
-            }
+            sstQueueCloudCommit('tournees_hse', ...(changed ? ['papripact_actions'] : []));
         }
 
         async function openTourneePrintableFallback(idx, errorMessage='') {
