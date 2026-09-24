@@ -9203,10 +9203,21 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(sstDuerpReadOnly()) { alert('Votre compte est en lecture seule sur le DUERP.'); return; }
             if(!confirm("Supprimer ce risque DUERP ?")) return;
             let risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
+            const cible=risques[idx];
+            if(!cible) { loadDuerp(); return; }
+            // Retirer uniquement la ligne sélectionnée, sans supprimer d'autres
+            // risques pouvant partager une référence historique.
             risques.splice(idx, 1);
             localStorage.setItem('duerp_risques', JSON.stringify(risques));
             loadDuerp();
-            sstQueueCloudCommit('duerp_risques');
+            try {
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques');
+                else await sstQueueCloudCommit('duerp_risques');
+            } catch(err) {
+                console.warn('Synchronisation de la suppression DUERP impossible :', err);
+                alert('Le risque est supprimé localement, mais la synchronisation cloud n’a pas pu être confirmée. Vérifiez la connexion puis réessayez.');
+            }
+            loadDuerp();
         }
 
         // --- CREATION ACTION PAPRIPACT DEPUIS UNE LIGNE DUERP ---
@@ -13251,7 +13262,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             });
             if(changed)localStorage.setItem('papripact_actions',JSON.stringify(actions));
             loadTourneesHse();
-            sstQueueCloudCommit('tournees_hse', ...(changed ? ['papripact_actions'] : []));
+            try {
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('tournees_hse', ...(changed ? ['papripact_actions'] : []));
+                else await sstQueueCloudCommit('tournees_hse', ...(changed ? ['papripact_actions'] : []));
+            } catch(err) {
+                console.warn('Synchronisation de la suppression de tournée impossible :', err);
+                alert('La tournée est supprimée localement, mais la synchronisation cloud n’a pas pu être confirmée. Vérifiez la connexion puis réessayez.');
+            }
+            loadTourneesHse();
         }
 
         async function openTourneePrintableFallback(idx, errorMessage='') {
@@ -13494,7 +13512,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             try { seed = JSON.stringify(item); } catch { seed=String(item); }
             let h=2166136261;
             for(let i=0;i<seed.length;i++){ h^=seed.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
-            return `r${index}_${(h>>>0).toString(36)}`;
+            // Identifiant indépendant de la position : une suppression ne doit pas
+            // renuméroter l'identité cloud des lignes suivantes.
+            return `r_${(h>>>0).toString(36)}`;
         }
         function sstV242Clean(value){
             if(Array.isArray(value)) return value.map(sstV242Clean);
