@@ -9676,27 +9676,30 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 }
 
                 let refBadge = "";
-                if(a.origine === 'DUERP') {
+                // Une action conservée après suppression de sa source ne doit plus afficher
+                // de badge cliquable vers l'enregistrement supprimé, même si le code historique
+                // reste présent dans le texte ou dans les champs legacy.
+                if(!a.sourceLinkRemovedAt && a.origine === 'DUERP') {
                     let refId = a.duerpRiskId || (a.duerpIndex !== undefined && a.duerpIndex !== null ? "DUERP-R" + String(a.duerpIndex + 1).padStart(3, '0') : "DUERP");
                     refBadge = `<button onclick="scrollToDuerpRisk('${refId}')" class="inline-block px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-800 font-extrabold text-[10px] rounded border border-indigo-200 ml-1 transition cursor-pointer" title="Accéder directement à la ligne DUERP ${refId}">🔗 ${refId}</button>`;
-                } else if(a.origine === 'FA') {
+                } else if(!a.sourceLinkRemovedAt && a.origine === 'FA') {
                     let codeFA = a.faCode || a.sourceReference || ((a.action + ' ' + (a.commentaires || '')).match(/\d{4}-FA-\d+/)||[])[0] || '';
                     if(codeFA) {
                         refBadge = `<button onclick="scrollToFa('${codeFA}')" class="inline-block px-1.5 py-0.5 bg-blue-100 hover:bg-blue-600 hover:text-white text-blue-800 font-extrabold text-[10px] rounded border border-blue-200 ml-1 transition cursor-pointer" title="Accéder directement à la Fiche d'Amélioration ${codeFA}">🔗 ${codeFA}</button>`;
                     }
-                } else if(a.origine === 'SU') {
+                } else if(!a.sourceLinkRemovedAt && a.origine === 'SU') {
                     let codeSU = a.suCode || a.sourceReference || ((a.action + ' ' + (a.commentaires || '')).match(/\d{4}-SU-\d+/)||[])[0] || '';
                     if(codeSU) {
                         refBadge = `<button onclick="scrollToSu('${codeSU}')" class="inline-block px-1.5 py-0.5 bg-amber-100 hover:bg-amber-600 hover:text-white text-amber-800 font-extrabold text-[10px] rounded border border-amber-300 ml-1 transition cursor-pointer" title="Accéder directement à la Situation d'Urgence ${codeSU}">🔗 ${codeSU}</button>`;
                     }
-                } else if(a.origine === 'AT' && (a.atAnalysisId || a.atAnalysisCloudId || a.atAnalysisReference)) {
+                } else if(!a.sourceLinkRemovedAt && a.origine === 'AT' && (a.atAnalysisId || a.atAnalysisCloudId || a.atAnalysisReference)) {
                     const atAnalyses = ensureAllAtAnalysisReferences();
                     const atAnalysis = atAnalyses.find(x => String(x?.id||'')===String(a.atAnalysisId||'') || String(x?._cloudId||'')===String(a.atAnalysisCloudId||'') || String(x?.reference||'')===String(a.atAnalysisReference||''));
                     const atReference = atAnalysis?.reference || a.atAnalysisReference || 'Analyse AT';
                     const stableAtRef = atAnalysis?._cloudId || atAnalysis?.id || atAnalysis?.reference || a.atAnalysisId || a.atAnalysisCloudId || a.atAnalysisReference;
                     const safeAtId = JSON.stringify(String(stableAtRef));
                     refBadge = `<button onclick='scrollToAtAnalysis(${safeAtId})' class="inline-block px-1.5 py-0.5 bg-red-100 hover:bg-red-600 hover:text-white text-red-800 font-extrabold text-[10px] rounded border border-red-200 ml-1 transition cursor-pointer" title="Accéder directement à l'analyse AT ${escapeHtml(atReference)}">🔗 Analyse AT ${escapeHtml(atReference)}</button>`;
-                } else if(a.origine === 'Tournée HSE') {
+                } else if(!a.sourceLinkRemovedAt && a.origine === 'Tournée HSE') {
                     const tourneeRef = a.tourneeReference || '';
                     const safeTourneeRef = tourneeRef ? JSON.stringify(tourneeRef) : 'null';
                     const safeItemId = a.tourneeItemId ? JSON.stringify(a.tourneeItemId) : 'null';
