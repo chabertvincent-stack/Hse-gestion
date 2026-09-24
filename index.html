@@ -2483,8 +2483,30 @@
         window.SST_COMMERCIAL_REQUESTED = window.SST_FIREBASE_CONFIG.enabled === true;
     </script>
 
+    <!-- Diagnostic de secours : ce script classique reste actif même si le module Firebase ne se charge pas. -->
+    <script>
+        window.sstFirebaseModuleLoadFailed = function () {
+            const message = 'Le module Firebase n’a pas pu être chargé. Vérifiez la connexion réseau ou le blocage des ressources par le navigateur, puis rechargez la page.';
+            const box = document.getElementById('sst-login-error');
+            if (box) { box.textContent = message; box.className = 'rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3'; }
+            const loading = document.getElementById('auth-loading');
+            if (loading) loading.classList.add('hidden');
+            const gate = document.getElementById('auth-gate');
+            if (gate) gate.classList.remove('hidden');
+            console.error('[SST] Échec de chargement du module Firebase ou de l’une de ses dépendances.');
+        };
+        // Le formulaire reste explicite même si le module n'a pas encore défini son gestionnaire.
+        window.submitSstLogin = window.submitSstLogin || function (event) {
+            event?.preventDefault();
+            window.sstFirebaseModuleLoadFailed();
+        };
+        window.resetSstPassword = window.resetSstPassword || function () {
+            window.sstFirebaseModuleLoadFailed();
+        };
+    </script>
+
     <!-- Firebase Web SDK : version ESM épinglée selon la documentation Firebase actuelle -->
-    <script type="module">
+    <script type="module" onerror="window.sstFirebaseModuleLoadFailed && window.sstFirebaseModuleLoadFailed()">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
@@ -14421,7 +14443,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     showAuthLoading(false);
                     setAppLocked(true);
                     const box=document.getElementById('sst-login-error');
-                    if(box){box.textContent="La connexion à Firebase n'a pas abouti (réseau instable, ou le navigateur a bloqué une ressource après un avertissement de sécurité). Rechargez la page, ou réessayez avec une autre connexion internet.";box.className='rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3';}
+                    if(box){box.textContent="Firebase a été chargé, mais l’initialisation ou la vérification de session n’a pas répondu en 15 secondes. Vérifiez la connexion réseau et les paramètres du projet Firebase, puis rechargez la page.";box.className='rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3';}
                     showAuthGate(true);
                     return;
                 }
