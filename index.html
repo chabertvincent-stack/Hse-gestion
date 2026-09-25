@@ -5557,7 +5557,12 @@
                 const uniteMatch = unites.find(u => u.nom.toLowerCase() === uniteRaw.toLowerCase());
                 if (!uniteMatch) return { status: 'error', message: `Unité "${uniteRaw}" introuvable — créez-la d'abord`, display };
                 if (!danger) return { status: 'error', message: 'Danger manquant', display };
-                let g = clampGFM(r.gravite1a4 || r.gravite), f = clampGFM(r.frequence1a4 || r.frequence), m = clampGFM(r.maitrise1a4 || r.maitrise);
+                // CORRECTIF : sstNormalizeHeader() retire TOUS les caractères non
+                // alphanumériques (espaces, parenthèses, ET le tiret). "Gravite (1-4)"
+                // devient donc la clé "gravite14" et non "gravite1a4" — la clé attendue
+                // ici ne correspondait jamais, donc g/f/m tombaient systématiquement sur
+                // la valeur par défaut (2), quelles que soient les valeurs du fichier importé.
+                let g = clampGFM(r.gravite14 || r.gravite), f = clampGFM(r.frequence14 || r.frequence), m = clampGFM(r.maitrise14 || r.maitrise);
                 let warn = '';
                 if (g === null) { g = 2; warn = 'valeur(s) de cotation par défaut (2) à vérifier'; }
                 if (f === null) { f = 2; warn = 'valeur(s) de cotation par défaut (2) à vérifier'; }
