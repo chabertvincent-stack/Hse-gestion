@@ -571,10 +571,12 @@
                                 </div>
                             </div>
 
+                            <div id="at-registre-bulk-bar" class="mb-2"></div>
                             <div class="overflow-x-auto border rounded-lg">
                                 <table class="w-full text-left border-collapse text-xs min-w-[1450px]">
                                     <thead>
                                         <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider">
+                                            <th class="p-3 border-b"><input type="checkbox" id="at-registre-select-all-visible" class="rounded border-slate-300" onchange="toggleAllVisibleAtRegistre(this.checked)" title="Tout sélectionner (résultats affichés)"></th>
                                             <th class="p-3 border-b">Réf.</th>
                                             <th class="p-3 border-b">Date / Heure</th>
                                             <th class="p-3 border-b">Salarié</th>
@@ -1028,6 +1030,7 @@
                         </div>
 
                         <div id="duerp-alert-banner" class="hidden"></div>
+                        <div id="duerp-bulk-bar" class="mb-2" data-duerp-write></div>
                         <div id="table-duerp-risques" class="space-y-4"></div>
                     </div>
                 </div>
@@ -8982,6 +8985,50 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         // --- DUERP ---
+        // Accordéon DUERP par unité : on mémorise les groupes ouverts pour qu'un
+        // rafraîchissement (ex. après une suppression) ne referme pas ce qui était ouvert.
+        window.sstDuerpOpenGroups = window.sstDuerpOpenGroups || new Set();
+        function toggleDuerpAccordion(accId) {
+            const el = document.getElementById(accId);
+            if(!el) return;
+            el.classList.toggle('hidden');
+            if(el.classList.contains('hidden')) window.sstDuerpOpenGroups.delete(accId);
+            else window.sstDuerpOpenGroups.add(accId);
+        }
+        // Sélection multiple des risques DUERP (état temporaire d'interface, sans alourdir les données métier).
+        window.sstDuerpSelected = window.sstDuerpSelected || new Set();
+        function toggleDuerpSelection(idx, checked) { if(checked) window.sstDuerpSelected.add(Number(idx)); else window.sstDuerpSelected.delete(Number(idx)); loadDuerp(); }
+        function toggleAllVisibleDuerpGroup(indices, checked) { (indices||[]).forEach(i=>{ if(checked) window.sstDuerpSelected.add(Number(i)); else window.sstDuerpSelected.delete(Number(i)); }); loadDuerp(); }
+        function toggleAllVisibleDuerp(checked) {
+            const risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
+            const filterUnite = document.getElementById('filter-duerp-unite')?.value || '';
+            const filterNiveau = document.getElementById('filter-duerp-niveau')?.value || '';
+            risques.forEach((r, idx) => {
+                const calc = calculateDuerpCotation(r);
+                const match = (!filterUnite || r.unite === filterUnite) && (!filterNiveau || calc.zone === filterNiveau);
+                if(match){ if(checked) window.sstDuerpSelected.add(idx); else window.sstDuerpSelected.delete(idx); }
+            });
+            loadDuerp();
+        }
+        async function deleteSelectedDuerpRisques() {
+            if(sstDuerpReadOnly()) { alert('Votre compte est en lecture seule sur le DUERP.'); return; }
+            const ids=Array.from(window.sstDuerpSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} risque(s) DUERP sélectionné(s) ?`)) return;
+            let risques=JSON.parse(localStorage.getItem('duerp_risques')||'[]');
+            const sources=ids.map(idx=>risques[idx]).filter(Boolean);
+            const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            const hasLinkedPap=sources.some(cible=>{const riskId=cible?.riskId||''; return papActions.some(a=>a.duerpRiskId===riskId || (a.origine==='DUERP' && a.unite===cible.unite && String(a.action||'').includes(cible.danger||'')));});
+            const deletePapLinked=hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux risques sélectionnés.\n\nOK : supprimer toutes les actions PAPRIPACT liées.\nAnnuler : conserver les actions, mais retirer les liens vers les risques supprimés.`) : false;
+            let papChanged=false;
+            for(const idx of ids){ const cible=risques[idx]; if(cible){ const changed=await sstHandlePapSourceDeletion('DUERP',cible,deletePapLinked); papChanged=papChanged||changed; risques.splice(idx,1); }}
+            localStorage.setItem('duerp_risques',JSON.stringify(risques));
+            window.sstDuerpSelected.clear();
+            loadDuerp(); loadPapripactLocalOnly();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('duerp_risques',...(papChanged?['papripact_actions']:[])); }
+            catch(err){ console.warn('Synchronisation suppression groupée DUERP impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
+        }
+
         function loadDuerp() {
             let risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]');
             let actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
@@ -9002,9 +9049,23 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 return matchUnite && matchNiveau;
             });
 
+            const duerpBulkBar = document.getElementById('duerp-bulk-bar');
             if(filtered.length === 0) {
                 container.innerHTML = `<div class="bg-slate-50 p-6 rounded-lg border text-center text-slate-500">Aucun risque enregistré.</div>`;
+                if(duerpBulkBar) duerpBulkBar.innerHTML='';
                 return;
+            }
+
+            window.sstDuerpSelected = window.sstDuerpSelected || new Set();
+            window.sstDuerpOpenGroups = window.sstDuerpOpenGroups || new Set();
+            if(duerpBulkBar){
+                const filteredIdx = filtered.map(r => risques.indexOf(r));
+                const selectedCount = window.sstDuerpSelected.size;
+                const visibleAllSelected = filteredIdx.length>0 && filteredIdx.every(i => window.sstDuerpSelected.has(i));
+                duerpBulkBar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm" data-duerp-write>
+                    <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleDuerp(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                    <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedDuerpRisques()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstDuerpSelected.clear();loadDuerp()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                </div>`;
             }
 
             // Regroupement par Unité de Travail, replié par défaut : avec un grand nombre d'unités
@@ -9022,14 +9083,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let accId = 'acc-duerp-' + uName.replace(/[^a-zA-Z0-9]/g, '_');
                 // Replié par défaut, sauf si l'utilisateur a explicitement filtré sur cette unité
                 // (dans ce cas une seule unité est de toute façon affichée, autant l'ouvrir directement).
-                let isOpen = !!filterUnite;
+                let isOpen = !!filterUnite || window.sstDuerpOpenGroups?.has(accId);
                 const zoneLabels = getDuerpCurrentCotationConfig().zones;
                 let nbElevé = groupRisques.filter(r => calculateDuerpCotation(r).zone === 'red').length;
                 let nbMoyen = groupRisques.filter(r => calculateDuerpCotation(r).zone === 'orange').length;
 
                 html += `
                     <div class="border rounded-lg bg-white shadow-sm overflow-hidden">
-                        <div onclick="toggleAccordion('${accId}')" class="bg-slate-100 p-4 font-bold text-slate-800 flex flex-wrap justify-between items-center cursor-pointer hover:bg-slate-200 transition gap-2">
+                        <div onclick="toggleDuerpAccordion('${accId}')" class="bg-slate-100 p-4 font-bold text-slate-800 flex flex-wrap justify-between items-center cursor-pointer hover:bg-slate-200 transition gap-2">
                             <div class="flex items-center flex-wrap gap-2">
                                 <span>🏢 ${uName}</span>
                                 <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${groupRisques.length} risque(s)</span>
@@ -9042,6 +9103,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <table class="w-full text-left border-separate border-spacing-0">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
+                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b" data-duerp-write><input type="checkbox" class="rounded border-slate-300" onchange="toggleAllVisibleDuerpGroup([${groupRisques.map(gr=>risques.indexOf(gr)).join(',')}],this.checked)" title="Tout sélectionner (cette unité)"></th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Réf. & Danger</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Dommage Potentiel</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Mesures Actuelles</th>
@@ -9086,6 +9148,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                     html += `
                         <tr id="duerp-row-${riskId}" class="hover:bg-slate-50 transition-colors">
+                            <td class="p-3 border-b" data-duerp-write><input type="checkbox" aria-label="Sélectionner ${riskId}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstDuerpSelected.has(actualIdx)?'checked':''} onchange="toggleDuerpSelection(${actualIdx},this.checked)"></td>
                             <td class="p-3 border-b">
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
                                 <div class="text-xs text-slate-600">${r.danger}</div>
@@ -9260,7 +9323,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             let risques=JSON.parse(localStorage.getItem('duerp_risques')||'[]');
             const cible=risques[idx]; if(!cible){loadDuerp();return;}
             const papChanged=await sstHandlePapSourceDeletion('DUERP',cible);
-            risques.splice(idx,1); localStorage.setItem('duerp_risques',JSON.stringify(risques)); loadDuerp();
+            risques.splice(idx,1); localStorage.setItem('duerp_risques',JSON.stringify(risques)); window.sstDuerpSelected?.clear(); loadDuerp();
             try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('duerp_risques',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('duerp_risques',...(papChanged?['papripact_actions']:[])); }
             catch(err){console.warn('Synchronisation suppression DUERP impossible :',err);alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.');}
             loadDuerp(); loadPapripactLocalOnly();
@@ -11340,6 +11403,44 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             alert(`✅ Heures travaillées de ${year} enregistrées pour ${unite || 'l’ensemble de l’entreprise'}.`);
         }
 
+        // Sélection multiple du registre AT (état temporaire d'interface, sans alourdir les données métier).
+        window.sstAtRegistreSelected = window.sstAtRegistreSelected || new Set();
+        function toggleAtRegistreSelection(idx, checked) { if(checked) window.sstAtRegistreSelected.add(Number(idx)); else window.sstAtRegistreSelected.delete(Number(idx)); loadAtRegistre(); }
+        function toggleAllVisibleAtRegistre(checked) {
+            const data = getAtRegistreData();
+            const year = document.getElementById('filter-at-registre-annee')?.value || '';
+            const unite = document.getElementById('filter-at-registre-unite')?.value || '';
+            const siege = document.getElementById('filter-at-registre-siege')?.value || '';
+            const classification = document.getElementById('filter-at-registre-type')?.value || '';
+            data.forEach((a, idx) => {
+                const match = (!year || String(getYearFromDateStr(a.date)) === year) && (!unite || a.unite === unite) && (!siege || a.siege === siege) && (!classification || a.classification === classification);
+                if(match){ if(checked) window.sstAtRegistreSelected.add(idx); else window.sstAtRegistreSelected.delete(idx); }
+            });
+            loadAtRegistre();
+        }
+        async function deleteSelectedAtRegistre() {
+            const ids=Array.from(window.sstAtRegistreSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} accident(s) du travail sélectionné(s) du registre ?\n\nLes analyses AT strictement rattachées à ces accidents seront supprimées avec eux.`)) return;
+            let data = getAtRegistreData();
+            const targets = ids.map(idx => ({idx, ref: String(data[idx]?.ref||'')})).filter(t => data[t.idx]);
+            const targetRefs = new Set(targets.filter(t => t.ref).map(t => t.ref));
+            const noRefIdxSet = new Set(targets.filter(t => !t.ref).map(t => t.idx));
+            const nextData = data.filter((item, i) => {
+                const ref = String(item?.ref || '');
+                return ref ? !targetRefs.has(ref) : !noRefIdxSet.has(i);
+            });
+            localStorage.setItem('at_registre', JSON.stringify(nextData));
+            let analyses = JSON.parse(localStorage.getItem('at_analyses') || '[]');
+            analyses = analyses.filter(a => !targetRefs.has(String(a?.sourceAtRef || '')));
+            localStorage.setItem('at_analyses', JSON.stringify(analyses));
+            window.sstAtRegistreSelected.clear();
+            loadAtRegistre();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_registre','at_analyses'); else await sstQueueCloudCommit('at_registre','at_analyses'); }
+            catch(err){ console.warn('Synchronisation suppression groupée registre AT impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
+            loadAtRegistre();
+        }
+
         function loadAtRegistre() {
             const data = getAtRegistreData();
             populateAtRegistreFilters(data);
@@ -11389,8 +11490,21 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(!tbody) return;
             tbody.innerHTML = '';
             if(filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="12" class="p-6 text-center text-slate-500">Aucun accident du travail enregistré pour les critères sélectionnés.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="13" class="p-6 text-center text-slate-500">Aucun accident du travail enregistré pour les critères sélectionnés.</td></tr>';
+                const bar=document.getElementById('at-registre-bulk-bar'); if(bar) bar.innerHTML='';
                 return;
+            }
+            window.sstAtRegistreSelected = window.sstAtRegistreSelected || new Set();
+            const atRegBulkBar = document.getElementById('at-registre-bulk-bar');
+            if(atRegBulkBar){
+                const filteredIdx = filtered.map(a => data.indexOf(a));
+                const selectedCount = window.sstAtRegistreSelected.size;
+                const visibleAllSelected = filteredIdx.length>0 && filteredIdx.every(i => window.sstAtRegistreSelected.has(i));
+                const selectAllBox=document.getElementById('at-registre-select-all-visible'); if(selectAllBox) selectAllBox.checked=visibleAllSelected;
+                atRegBulkBar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                    <span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span>
+                    <div class="flex items-center gap-3"><button type="button" onclick="deleteSelectedAtRegistre()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstAtRegistreSelected.clear();loadAtRegistre()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                </div>`;
             }
 
             const parseAtRef = ref => {
@@ -11417,6 +11531,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     : '<span class="text-slate-500">0 j</span>';
                 const row = `
                     <tr class="hover:bg-slate-50 align-top">
+                        <td class="p-3 border-b"><input type="checkbox" aria-label="Sélectionner ${escapeHtml(a.ref||'')}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstAtRegistreSelected.has(idx)?'checked':''} onchange="toggleAtRegistreSelection(${idx},this.checked)"></td>
                         <td class="p-3 border-b font-bold text-blue-700 whitespace-nowrap">${escapeHtml(a.ref || '')}</td>
                         <td class="p-3 border-b whitespace-nowrap">${escapeHtml(a.date || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.heure || '')}</div></td>
                         <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(a.salarie || 'N/C')}<div class="mt-0.5">${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel, sstStatutMapAt))}</div></td>
@@ -11485,6 +11600,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 ? data.filter(item => String(item?.ref || '') !== targetRef)
                 : data.filter((item, i) => i !== idx);
             localStorage.setItem('at_registre', JSON.stringify(nextData));
+            window.sstAtRegistreSelected?.clear();
 
             // Supprimer également l'analyse strictement rattachée à cet AT : sinon
             // l'analyse orpheline peut rester dans l'autre collection et contribuer
