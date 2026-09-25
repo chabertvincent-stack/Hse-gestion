@@ -14000,30 +14000,45 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             // - contenu réellement modifié (ou fiche nouvelle) -> setDoc complet, légitime ;
             // - position seule changée -> updateDoc du seul champ order, qui échoue
             //   proprement (sans rien recréer) si le document a été supprimé entre-temps.
+            // IMPORTANT : on ne doit JAMAIS laisser l'appelant croire que tout est synchronisé
+            // si une écriture a réellement échoué (ex. droits Firestore, réseau). Avaler l'erreur
+            // ici sans la faire remonter est exactement ce qui causait des fiches "revenues du
+            // néant" : la suppression/modification restait en échec côté serveur, mais l'app
+            // avançait quand même son instantané local et levait le drapeau "à synchroniser",
+            // donc plus aucune tentative n'était refaite — jusqu'à ce qu'un autre appareil (ou
+            // un rechargement) relise Firestore et voie encore l'ancienne fiche.
+            const failures=[];
             for(const [id,v] of curMap){
                 const old=prevMap.get(id);
                 const contentChanged=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item));
                 const indexChanged=!!old && old.index!==v.index;
                 if(contentChanged){
-                    await sstV242Fb().setDoc(sstV242RecordPath(key,id),{
-                        payload:sstV242Clean(v.item), order:v.index, updatedBy:window.SST_APP_CONTEXT?.uid||'', updatedAt:sstV242Fb().serverTimestamp()
-                    },{merge:true});
+                    try {
+                        await sstV242Fb().setDoc(sstV242RecordPath(key,id),{
+                            payload:sstV242Clean(v.item), order:v.index, updatedBy:window.SST_APP_CONTEXT?.uid||'', updatedAt:sstV242Fb().serverTimestamp()
+                        },{merge:true});
+                    } catch(err){
+                        console.warn(`Écriture Firestore (${key}/${id}) impossible :`, err);
+                        failures.push({id, op:'write', err});
+                    }
                 } else if(indexChanged){
                     try {
                         await sstV242Fb().updateDoc(sstV242RecordPath(key,id),{ order:v.index });
                     } catch(err){
                         // "not-found" : la fiche a déjà été supprimée côté serveur (par cet
-                        // appareil ou par un autre) -> surtout ne pas la recréer.
-                        if(err?.code !== 'not-found') console.warn(`Mise à jour de l'ordre (${key}/${id}) impossible :`, err);
+                        // appareil ou par un autre) -> surtout ne pas la recréer, et ce n'est
+                        // pas un échec à signaler (résultat attendu et correct).
+                        if(err?.code !== 'not-found'){ console.warn(`Mise à jour de l'ordre (${key}/${id}) impossible :`, err); failures.push({id, op:'order', err}); }
                     }
                 }
             }
             for(const [id] of prevMap){
                 if(!curMap.has(id)){
                     try { await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
-                    catch(err){ console.warn(`Suppression Firestore (${key}/${id}) impossible :`, err); }
+                    catch(err){ console.warn(`Suppression Firestore (${key}/${id}) impossible :`, err); failures.push({id, op:'delete', err}); }
                 }
             }
+            return failures;
         }
         async function sstV242SyncPublicHelmetRecords(previous, current){
             if (!sstV242CompanyNamespace || !sstV242Db() || !window.SSTFirebaseApi) return;
@@ -14058,6 +14073,19 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             }
         }
 
+        // Notifie une fois par clé (pas à chaque tentative, pour ne pas spammer) qu'une
+        // écriture/suppression a réellement échoué côté serveur. Le detail exact (code
+        // d'erreur Firestore, ex. "permission-denied") est dans la console (F12) et permet
+        // de diagnostiquer une règle de sécurité ou un souci réseau propre à cet appareil.
+        const sstV242NotifiedFailures = new Set();
+        function sstV242NotifySyncFailure(key, failures){
+            const codes = Array.from(new Set(failures.map(f => f.err?.code || f.err?.message || 'inconnu')));
+            console.warn(`Synchronisation cloud incomplète pour "${key}" — ${failures.length} élément(s) concerné(s) :`, codes, failures);
+            if(sstV242NotifiedFailures.has(key)) return;
+            sstV242NotifiedFailures.add(key);
+            setTimeout(() => { sstV242NotifiedFailures.delete(key); }, 5*60*1000);
+            alert(`Une synchronisation a échoué (${key}).\n\nCode : ${codes.join(', ')}\n\nLa donnée reste correcte sur cet appareil pour l'instant, mais elle n'a pas pu être envoyée au serveur et pourrait réapparaître si un autre appareil se synchronise avant que la tentative automatique ne réussisse. Vérifiez la connexion internet de cet appareil ; si le problème persiste, ouvrez la console du navigateur (F12) pour voir le détail exact et transmettez-le au support.`);
+        }
         async function sstV242SyncKeyToCloud(key, forceFull=false){
             if(!window.SSTFirebaseApi || !sstV242Db() || !window.SSTCloud?.isCloudTenant?.() || !sstV242CanWriteStorage(key)) return false;
             const def=SST_V242_STORAGE[key];
@@ -14070,12 +14098,22 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 const arr=Array.isArray(value)?value.map(x=>x):[];
                 if (key === 'salaries_formations') arr.forEach(sal => { if (sal && typeof sal === 'object') ensureSalarieQrPublicId(sal); });
                 sstV242WriteLocalSilently(key,arr);
-                await sstV242WriteArrayDiff(key, Array.isArray(previous)?previous:[], arr);
+                const failures=await sstV242WriteArrayDiff(key, Array.isArray(previous)?previous:[], arr);
                 if (key === 'salaries_formations') {
                     // Publication séparée, limitée aux données nécessaires à la fiche casque publique.
                     // Une erreur ici ne doit jamais bloquer la synchronisation RH principale.
                     try { await sstV242SyncPublicHelmetRecords(previous, arr); }
                     catch (publicErr) { console.warn('Synchronisation des fiches QR casque publiques impossible :', publicErr); }
+                }
+                if(failures && failures.length){
+                    // Au moins une écriture/suppression a réellement échoué côté serveur :
+                    // on NE fait PAS avancer l'instantané (sinon on "oublierait" que ce
+                    // document doit encore être réconcilié) et on garde la clé marquée comme
+                    // à synchroniser pour qu'une nouvelle tentative ait lieu automatiquement.
+                    sstV247MarkDirty(key);
+                    sstV242ScheduleSync(key);
+                    sstV242NotifySyncFailure(key, failures);
+                    return false;
                 }
                 sstV242Snapshots.set(key, JSON.parse(JSON.stringify(arr)));
                 // Ne jamais réécrire un instantané ancien sur un état local modifié pendant
