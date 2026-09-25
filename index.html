@@ -2490,7 +2490,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
         import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
 
         const CFG = window.SST_FIREBASE_CONFIG || {};
@@ -3416,7 +3416,7 @@
         window.SSTFirebaseApi = window.SSTFirebaseApi || {
             getDb: () => firebaseDb,
             isEnabled: () => Boolean(CFG.enabled && configIsUsable),
-            doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, getDoc, query, where, onSnapshot
+            doc, setDoc, updateDoc, deleteDoc, serverTimestamp, collection, getDocs, getDoc, query, where, onSnapshot
         };
 
         // Pont supplémentaire : ces fonctions, définies dans ce module (imports Firebase),
@@ -13806,17 +13806,41 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 curMap.set(sstV242StableId(key,copy,i),{item:copy,index:i});
                 if(copy && typeof copy==='object' && JSON.stringify(copy)!==JSON.stringify(item)) cur[i]=copy;
             });
-            // No undefined payloads and stable order are kept in the Firestore document.
+            // CORRECTIF (bug « une suppression revient ») : un simple décalage de
+            // position — provoqué par la suppression/l'ajout d'une autre ligne, y compris
+            // depuis un AUTRE appareil pas encore reflété dans le cache local — ne doit
+            // JAMAIS réécrire le contenu complet d'une fiche avec setDoc(...,{merge:true}).
+            // setDoc avec merge:true RECRÉE le document s'il n'existe plus côté serveur :
+            // si cette fiche vient d'être supprimée ailleurs et que le cache local de CET
+            // appareil ne le sait pas encore, l'ancien réflexe « position changée = à
+            // réécrire » la faisait réapparaître dans Firestore. On distingue donc :
+            // - contenu réellement modifié (ou fiche nouvelle) -> setDoc complet, légitime ;
+            // - position seule changée -> updateDoc du seul champ order, qui échoue
+            //   proprement (sans rien recréer) si le document a été supprimé entre-temps.
             for(const [id,v] of curMap){
                 const old=prevMap.get(id);
-                const changed=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item)) || old.index!==v.index;
-                if(changed){
+                const contentChanged=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item));
+                const indexChanged=!!old && old.index!==v.index;
+                if(contentChanged){
                     await sstV242Fb().setDoc(sstV242RecordPath(key,id),{
                         payload:sstV242Clean(v.item), order:v.index, updatedBy:window.SST_APP_CONTEXT?.uid||'', updatedAt:sstV242Fb().serverTimestamp()
                     },{merge:true});
+                } else if(indexChanged){
+                    try {
+                        await sstV242Fb().updateDoc(sstV242RecordPath(key,id),{ order:v.index });
+                    } catch(err){
+                        // "not-found" : la fiche a déjà été supprimée côté serveur (par cet
+                        // appareil ou par un autre) -> surtout ne pas la recréer.
+                        if(err?.code !== 'not-found') console.warn(`Mise à jour de l'ordre (${key}/${id}) impossible :`, err);
+                    }
                 }
             }
-            for(const [id] of prevMap){ if(!curMap.has(id)) await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
+            for(const [id] of prevMap){
+                if(!curMap.has(id)){
+                    try { await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
+                    catch(err){ console.warn(`Suppression Firestore (${key}/${id}) impossible :`, err); }
+                }
+            }
         }
         async function sstV242SyncPublicHelmetRecords(previous, current){
             if (!sstV242CompanyNamespace || !sstV242Db() || !window.SSTFirebaseApi) return;
