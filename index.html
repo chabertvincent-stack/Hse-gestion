@@ -6849,7 +6849,7 @@
                     const parts = sstNormalizeSessionParticipants(s);
                     let count = parts.length;
                     const past = sstIsPastSession(s);
-                    const pending = past ? parts.filter(p => !p.validated).length : 0;
+                    const pending = past ? parts.filter(p => !p.validated && !p.absent).length : 0;
                     const closed = past && count > 0 && pending === 0;
                     if(past) s.cloturee = closed;
                     const sessionClass = closed
@@ -7016,7 +7016,10 @@
             const parts = sstNormalizeSessionParticipants(sessionObj);
             const past = sstIsPastSession(sessionObj);
             const upcoming = sstGetUpcomingSessionsForFormation(sessionObj.formationNom, sessionObj.id);
-            const pendingCount = past ? parts.filter(p => !p.validated).length : 0;
+            // Un participant marqué absent/échec et réinscrit ailleurs est "traité" : il ne doit
+            // plus bloquer indéfiniment la clôture de CETTE session (sinon une session avec ne
+            // serait-ce qu'un seul participant réinscrit ne pouvait plus jamais passer au vert).
+            const pendingCount = past ? parts.filter(p => !p.validated && !p.absent).length : 0;
             const closed = past && parts.length > 0 && pendingCount === 0;
             if(past) sessionObj.cloturee = closed;
 
@@ -7028,36 +7031,44 @@
             parts.forEach((p, idx) => {
                 const validated = !!p.validated;
                 const prepared = !!(p.present && p.attestation) && !validated;
+                const awaitingReinscription = past && !!p.absent && !validated;
                 const status = validated
                     ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 text-[10px] font-bold">✅ Formation validée</span>`
-                    : (prepared
-                        ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold">☑ Prêt à valider</span>`
-                        : (past
-                            ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold">⏳ À clôturer</span>`
-                            : `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">Inscrit</span>`));
+                    : (awaitingReinscription
+                        ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 text-[10px] font-bold">↪ Absent(e) / à réinscrire</span>`
+                        : (prepared
+                            ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-bold">☑ Prêt à valider</span>`
+                            : (past
+                                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold">⏳ À clôturer</span>`
+                                : `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">Inscrit</span>`)));
 
                 let pastActions = '';
                 if(past && !validated) {
                     const options = upcoming.length
                         ? upcoming.map(s => `<option value="${s.id}">${formatDateFr(s.date)}${s.organisme ? ' · ' + escapeHtml(s.organisme) : ''}</option>`).join('')
                         : `<option value="">Aucune future session disponible</option>`;
-                    pastActions = `
-                        <div class="mt-2 flex flex-col gap-2">
-                            <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-                                <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
-                                    <input type="checkbox" ${prepared ? 'checked' : ''} onchange="prepareSessionParticipantValidation(${idx}, this.checked)" class="w-4 h-4 rounded border-slate-300 text-green-600">
-                                    <span>Présent + attestation reçue</span>
-                                </label>
-                                ${prepared ? `<button type="button" onclick="validateSessionParticipant(${idx})" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[10px] font-bold shadow-sm">✅ Valider</button>` : ''}
-                                <div class="flex items-center gap-1 ml-auto">
-                                    <select id="session-reinscription-${idx}" class="p-1.5 border rounded text-[10px] bg-white" ${upcoming.length ? '' : 'disabled'}>
-                                        ${options}
-                                    </select>
-                                    <button type="button" onclick="reinscrireParticipant(${idx})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-semibold" ${upcoming.length ? '' : 'disabled'}>↪ Réinscrire</button>
+                    if(awaitingReinscription) {
+                        pastActions = `
+                            <div class="mt-2 flex flex-col gap-2">
+                                <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                                    <div class="flex items-center gap-1"><select id="session-reinscription-${idx}" class="p-1.5 border rounded text-[10px] bg-white" ${upcoming.length ? '' : 'disabled'}>${options}</select><button type="button" onclick="reinscrireParticipant(${idx})" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded text-[10px] font-semibold" ${upcoming.length ? '' : 'disabled'}>↪ Réinscrire</button></div>
                                 </div>
-                            </div>
-                            ${prepared ? `<div class="text-[10px] text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">☑ Vérification préparée. Cliquez sur <strong>Valider</strong> pour enregistrer définitivement la présence et l’attestation.</div>` : ''}
-                        </div>`;
+                                ${upcoming.length ? '' : `<div class="text-[10px] text-orange-700 bg-orange-50 border border-orange-100 rounded px-2 py-1">Créez une nouvelle session pour cette formation afin de pouvoir réinscrire cette personne.</div>`}
+                            </div>`;
+                    } else {
+                        pastActions = `
+                            <div class="mt-2 flex flex-col gap-2">
+                                <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                                    <label class="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-700 cursor-pointer">
+                                        <input type="checkbox" ${prepared ? 'checked' : ''} onchange="prepareSessionParticipantValidation(${idx}, this.checked)" class="w-4 h-4 rounded border-slate-300 text-green-600">
+                                        <span>Présent + attestation reçue</span>
+                                    </label>
+                                    ${prepared ? `<button type="button" onclick="validateSessionParticipant(${idx})" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[10px] font-bold shadow-sm">✅ Valider</button>` : ''}
+                                    <button type="button" onclick="markAbsentSessionParticipant(${idx})" class="ml-auto bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-2.5 py-1.5 rounded text-[10px] font-semibold">❌ Absent(e) / non obtenue</button>
+                                </div>
+                                ${prepared ? `<div class="text-[10px] text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-1">☑ Vérification préparée. Cliquez sur <strong>Valider</strong> pour enregistrer définitivement la présence et l’attestation.</div>` : ''}
+                            </div>`;
+                    }
                 } else if(past && validated) {
                     pastActions = `<div class="mt-1 text-[10px] text-green-700">Validée le ${escapeHtml(formatDateFr(p.validatedAt || sessionObj.date))} · date formation enregistrée : ${escapeHtml(formatDateFr(sessionObj.date))}</div>`;
                 }
@@ -7103,8 +7114,15 @@
             renderParticipantsList(s);
         }
 
-        async function persistTrainingSessions() {
-            localStorage.setItem('training_sessions', JSON.stringify(JSON.parse(localStorage.getItem('training_sessions') || '[]')));
+        // CORRECTIF : cette fonction ne sauvegardait rien du tout — elle relisait puis
+        // réécrivait le contenu déjà présent dans localStorage, sans jamais y injecter le
+        // tableau "sessions" modifié en mémoire par l'appelant. Résultat : la validation
+        // (présence + attestation + date de formation) semblait fonctionner à l'écran (rendu
+        // depuis l'objet en mémoire) mais n'était jamais réellement enregistrée, et disparaissait
+        // au moindre rechargement ou changement d'onglet. Elle prend maintenant le tableau à
+        // persister en paramètre.
+        async function persistTrainingSessions(sessions) {
+            localStorage.setItem('training_sessions', JSON.stringify(sessions));
             if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
         }
 
@@ -7168,12 +7186,43 @@
             s.cloturee = s.participants.length > 0 && pendingAfter === 0;
             s.clotureeAt = s.cloturee ? new Date().toISOString().split('T')[0] : '';
 
-            await persistTrainingSessions();
+            await persistTrainingSessions(sessions);
             renderParticipantsList(s);
             renderCalendar();
             loadCalendarRHStats();
             if(typeof loadFormations === 'function') loadFormations();
             if(typeof loadHseAutorisationsPanel === 'function') loadHseAutorisationsPanel();
+        }
+
+        async function markAbsentSessionParticipant(participantIdx) {
+            const sessionId = document.getElementById('part-modal-session-id').value;
+            const sessions = JSON.parse(localStorage.getItem('training_sessions') || '[]');
+            const s = sessions.find(x => String(x.id) === String(sessionId));
+            if(!s) return;
+            sstNormalizeSessionParticipants(s);
+            const p = s.participants[participantIdx];
+            if(!p) return;
+
+            if(!sstIsPastSession(s)) {
+                alert('Cette action n’est disponible qu’une fois la date de formation passée.');
+                return;
+            }
+            if(!confirm(`Confirmer que ${p.nom} n'était pas présent(e) ou n'a pas obtenu cette formation ?\n\nCette personne sera marquée à réinscrire dans une nouvelle session.`)) return;
+
+            p.absent = true;
+            p.validated = false;
+            p.present = false;
+            p.attestation = false;
+            p.validatedAt = '';
+
+            const pendingAfter = s.participants.filter(x => !x.validated && !x.absent).length;
+            s.cloturee = s.participants.length > 0 && pendingAfter === 0;
+            s.clotureeAt = s.cloturee ? (s.clotureeAt || new Date().toISOString().split('T')[0]) : '';
+
+            await persistTrainingSessions(sessions);
+            renderParticipantsList(s);
+            renderCalendar();
+            loadCalendarRHStats();
         }
 
         async function reinscrireParticipant(participantIdx) {
@@ -7199,8 +7248,14 @@
             participant.present = false;
             participant.attestation = false;
 
-            localStorage.setItem('training_sessions', JSON.stringify(sessions));
-            if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('training_sessions');
+            const sourcePendingAfter = source.participants.filter(x => !x.validated && !x.absent).length;
+            source.cloturee = source.participants.length > 0 && sourcePendingAfter === 0;
+            source.clotureeAt = source.cloturee ? (source.clotureeAt || new Date().toISOString().split('T')[0]) : '';
+            // La session cible reçoit un nouvel inscrit non validé : elle ne peut plus être clôturée.
+            target.cloturee = false;
+            target.clotureeAt = '';
+
+            await persistTrainingSessions(sessions);
 
             alert(`${participant.nom} a été réinscrit à la session du ${formatDateFr(target.date)}.`);
             renderParticipantsList(source);
