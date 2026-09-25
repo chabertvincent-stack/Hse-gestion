@@ -11432,13 +11432,19 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             });
             localStorage.setItem('at_registre', JSON.stringify(nextData));
             let analyses = JSON.parse(localStorage.getItem('at_analyses') || '[]');
+            const linkedAnalyses = analyses.filter(a => targetRefs.has(String(a?.sourceAtRef || '')));
+            const papActions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            const hasLinkedPap = linkedAnalyses.some(a => papActions.some(x => x?.origine === 'AT' && ((String(x?.atAnalysisId||'')===String(a?.id||'')&&!!a?.id) || (String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'')&&!!a?._cloudId) || (String(x?.atAnalysisReference||'')===String(a?.reference||'')&&!!a?.reference))));
+            const deletePapLinked = hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux analyses des accidents sélectionnés.\n\nOK : supprimer ces actions PAPRIPACT.\nAnnuler : conserver les actions, mais retirer leur lien vers les analyses supprimées.`) : false;
+            let papChanged = false;
+            for(const a of linkedAnalyses){ const changed = await sstHandlePapSourceDeletion('AT', a, deletePapLinked); papChanged = papChanged || changed; }
             analyses = analyses.filter(a => !targetRefs.has(String(a?.sourceAtRef || '')));
             localStorage.setItem('at_analyses', JSON.stringify(analyses));
             window.sstAtRegistreSelected.clear();
             loadAtRegistre();
-            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_registre','at_analyses'); else await sstQueueCloudCommit('at_registre','at_analyses'); }
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_registre','at_analyses',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('at_registre','at_analyses',...(papChanged?['papripact_actions']:[])); }
             catch(err){ console.warn('Synchronisation suppression groupée registre AT impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
-            loadAtRegistre();
+            loadAtRegistre(); loadPapripactLocalOnly();
         }
 
         function loadAtRegistre() {
@@ -11607,21 +11613,27 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             // aux anciennes migrations/réconciliations. Les analyses indépendantes
             // (sans sourceAtRef) sont conservées.
             let analyses = JSON.parse(localStorage.getItem('at_analyses') || '[]');
+            const linkedAnalyses = targetRef ? analyses.filter(a => String(a?.sourceAtRef || '') === targetRef) : [];
+            const papActions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            const hasLinkedPap = linkedAnalyses.some(a => papActions.some(x => x?.origine === 'AT' && ((String(x?.atAnalysisId||'')===String(a?.id||'')&&!!a?.id) || (String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'')&&!!a?._cloudId) || (String(x?.atAnalysisReference||'')===String(a?.reference||'')&&!!a?.reference))));
+            const deletePapLinked = hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées à l'analyse de cet accident.\n\nOK : supprimer ces actions PAPRIPACT.\nAnnuler : conserver les actions, mais retirer leur lien vers l'analyse supprimée.`) : false;
+            let papChanged = false;
+            for(const a of linkedAnalyses){ const changed = await sstHandlePapSourceDeletion('AT', a, deletePapLinked); papChanged = papChanged || changed; }
             if(targetRef) analyses = analyses.filter(a => String(a?.sourceAtRef || '') !== targetRef);
             localStorage.setItem('at_analyses', JSON.stringify(analyses));
             loadAtRegistre();
             try {
                 if(window.SSTCloud?.isCloudTenant?.()) {
-                    // Valider les deux collections liées avant de terminer la suppression.
-                    await sstV247CommitKeys('at_registre','at_analyses');
+                    // Valider les collections liées avant de terminer la suppression.
+                    await sstV247CommitKeys('at_registre','at_analyses',...(papChanged?['papripact_actions']:[]));
                 } else {
-                    await sstQueueCloudCommit('at_registre','at_analyses');
+                    await sstQueueCloudCommit('at_registre','at_analyses',...(papChanged?['papripact_actions']:[]));
                 }
             } catch(err) {
                 console.warn('Synchronisation de la suppression AT impossible :', err);
                 alert('La suppression est enregistrée localement, mais la synchronisation cloud n’a pas pu être confirmée. Vérifiez la connexion puis réessayez.');
             }
-            loadAtRegistre();
+            loadAtRegistre(); loadPapripactLocalOnly();
         }
 
         // --- AT : ANALYSE APPROFONDIE ---
