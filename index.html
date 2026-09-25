@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Application SST & RH - Gestion V2.111</title>
+    <title>Application SST & RH - Gestion V2.112 TEST — synchronisation ciblée</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1265,10 +1265,12 @@
                             </div>
                         </div>
 
+                        <div id="papripact-bulk-bar" class="mb-2"></div>
                         <div class="overflow-x-auto overflow-y-auto max-h-[65vh] border border-slate-200 rounded-lg">
                             <table class="w-full text-left border-separate border-spacing-0 text-xs">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider border-b">
+                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b"><input type="checkbox" id="pap-select-all-visible" class="rounded border-slate-300" onchange="toggleAllVisiblePap(this.checked)" title="Tout sélectionner (résultats affichés)"></th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">N° / Origine / Réf. / Unité</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Intitulé de l'Action</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b text-center">Hiérarchie / Type</th>
@@ -1664,6 +1666,7 @@
                                 </select>
                             </div>
                         </div>
+                        <div id="tournee-bulk-bar" class="mb-3"></div>
                         <div id="liste-tournees" class="space-y-4"></div>
                     </div>
 
@@ -2483,33 +2486,11 @@
         window.SST_COMMERCIAL_REQUESTED = window.SST_FIREBASE_CONFIG.enabled === true;
     </script>
 
-    <!-- Diagnostic de secours : ce script classique reste actif même si le module Firebase ne se charge pas. -->
-    <script>
-        window.sstFirebaseModuleLoadFailed = function () {
-            const message = 'Le module Firebase n’a pas pu être chargé. Vérifiez la connexion réseau ou le blocage des ressources par le navigateur, puis rechargez la page.';
-            const box = document.getElementById('sst-login-error');
-            if (box) { box.textContent = message; box.className = 'rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3'; }
-            const loading = document.getElementById('auth-loading');
-            if (loading) loading.classList.add('hidden');
-            const gate = document.getElementById('auth-gate');
-            if (gate) gate.classList.remove('hidden');
-            console.error('[SST] Échec de chargement du module Firebase ou de l’une de ses dépendances.');
-        };
-        // Le formulaire reste explicite même si le module n'a pas encore défini son gestionnaire.
-        window.submitSstLogin = window.submitSstLogin || function (event) {
-            event?.preventDefault();
-            window.sstFirebaseModuleLoadFailed();
-        };
-        window.resetSstPassword = window.resetSstPassword || function () {
-            window.sstFirebaseModuleLoadFailed();
-        };
-    </script>
-
     <!-- Firebase Web SDK : version ESM épinglée selon la documentation Firebase actuelle -->
-    <script type="module" onerror="window.sstFirebaseModuleLoadFailed && window.sstFirebaseModuleLoadFailed()">
+    <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
         import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
 
         const CFG = window.SST_FIREBASE_CONFIG || {};
@@ -3435,7 +3416,7 @@
         window.SSTFirebaseApi = window.SSTFirebaseApi || {
             getDb: () => firebaseDb,
             isEnabled: () => Boolean(CFG.enabled && configIsUsable),
-            doc, setDoc, deleteDoc, serverTimestamp, collection, getDocs, getDoc, query, where, onSnapshot
+            doc, setDoc, updateDoc, deleteDoc, serverTimestamp, collection, getDocs, getDoc, query, where, onSnapshot
         };
 
         // Pont supplémentaire : ces fonctions, définies dans ce module (imports Firebase),
@@ -9645,6 +9626,41 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return iso < todayIso;
         }
 
+        // Sélection multiple des actions PAPRIPACT (état temporaire d'interface, sans alourdir les données métier).
+        window.sstPapSelected = window.sstPapSelected || new Set();
+        function togglePapSelection(idx, checked) { if(checked) window.sstPapSelected.add(Number(idx)); else window.sstPapSelected.delete(Number(idx)); loadPapripactLocalOnly(); }
+        function toggleAllVisiblePap(checked) {
+            let actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
+            const filterOrigine = document.getElementById('filter-origine')?.value || '';
+            const filterPriorite = document.getElementById('filter-priorite')?.value || '';
+            const filterStatut = document.getElementById('filter-statut')?.value || '';
+            const filterResponsable = document.getElementById('filter-responsable')?.value || '';
+            const filterUnite = document.getElementById('filter-service')?.value || '';
+            const filterDelai = document.getElementById('filter-delai-papripact')?.value || '';
+            actions.forEach((a, idx) => {
+                const match = (!filterOrigine || (a.origine || 'DUERP') === filterOrigine)
+                    && (!filterPriorite || String(a.priorite || '') === filterPriorite)
+                    && (!filterStatut || a.statut === filterStatut)
+                    && (!filterResponsable || a.responsable === filterResponsable)
+                    && (!filterUnite || a.unite === filterUnite)
+                    && (!filterDelai || (filterDelai === 'depasse' && sstPapripactDelayOverdue(a)));
+                if(match){ if(checked) window.sstPapSelected.add(idx); else window.sstPapSelected.delete(idx); }
+            });
+            loadPapripactLocalOnly();
+        }
+        async function deleteSelectedPapripactActions() {
+            const ids=Array.from(window.sstPapSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} action(s) PAPRIPACT sélectionnée(s) ?\n\nLa fiche source (FA, SU, DUERP, AT, Tournée HSE) éventuellement liée n'est pas supprimée : seul le lien vers cette action disparaît.`)) return;
+            let actions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            for(const idx of ids){ if(actions[idx]) actions.splice(idx,1); }
+            localStorage.setItem('papripact_actions',JSON.stringify(actions));
+            window.sstPapSelected.clear();
+            loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('papripact_actions'); else await sstQueueCloudCommit('papripact_actions'); }
+            catch(err){ console.warn('Synchronisation suppression groupée PAPRIPACT impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
+        }
+
         function loadPapripactLocalOnly() {
             let actions = ensurePapripactActionNumbers();
             const sourceLinksChanged = ensurePapripactSourceLinks(actions);
@@ -9674,11 +9690,25 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 return matchOrigine && matchPrio && matchStatut && matchResp && matchUnite && matchDelai;
             });
 
+            window.sstPapSelected = window.sstPapSelected || new Set();
+            const papBulkBar = document.getElementById('papripact-bulk-bar');
+            if(papBulkBar){
+                const selectedCount = window.sstPapSelected.size;
+                papBulkBar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                    <span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span>
+                    <div class="flex items-center gap-3"><button type="button" onclick="deleteSelectedPapripactActions()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstPapSelected.clear();loadPapripactLocalOnly()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                </div>`;
+            }
+
             if(filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-500">Aucune action PAPRIPACT trouvée.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" class="p-4 text-center text-slate-500">Aucune action PAPRIPACT trouvée.</td></tr>`;
                 updatePapripactCloudUi();
+                const selectAllBox=document.getElementById('pap-select-all-visible'); if(selectAllBox) selectAllBox.checked=false;
                 return;
             }
+
+            const papSelectAllBox = document.getElementById('pap-select-all-visible');
+            if(papSelectAllBox) papSelectAllBox.checked = filtered.every(a => window.sstPapSelected.has(actions.indexOf(a)));
 
             filtered.forEach(a => {
                 let idx = actions.indexOf(a);
@@ -9740,6 +9770,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 tbody.innerHTML += `
                     <tr id="pap-row-${idx}" data-pap-action-key="${escapeHtml(papActionKey)}" class="hover:bg-slate-50 transition-colors">
+                        <td class="p-3 border-b"><input type="checkbox" aria-label="Sélectionner l'action N° ${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
                         <td class="p-3 border-b">
                             <div class="flex items-center flex-wrap gap-1 mb-1">
                                 <span class="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border bg-slate-100 text-slate-700 border-slate-300">N° ${String(a.numero || idx + 1)}</span>
@@ -9770,17 +9801,21 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function loadPapripact() {
-            if (isCloudPapripactTenant()) {
+            // CORRECTIF QUOTA : affichage local immédiat. Une fois l'écouteur temps réel sstV242 abonné à
+            // « papripact_actions » (à la connexion), le cache local est déjà tenu à jour en continu ; il
+            // est donc inutile de relire toute la collection à chaque ouverture de cet onglet — d'autant
+            // que refreshPapripactFromCloud() relit en plus une ancienne collection Firestore distincte
+            // (« modules/papripact/records »), ce qui doublait encore le coût. On ne s'en sert plus que
+            // comme filet de secours tant que l'écouteur n'est pas encore actif (tout début de session).
+            loadPapripactLocalOnly();
+            if (isCloudPapripactTenant() && !sstV242Listeners.has('papripact_actions')) {
                 try {
                     await refreshPapripactFromCloud();
                 } catch (err) {
-                    loadPapripactLocalOnly();
                     const status = document.getElementById('pap-cloud-status-text');
                     if (status) status.textContent = `Mode dégradé : ${err?.message || 'impossible de charger les données cloud'}`;
                 }
-                return;
             }
-            loadPapripactLocalOnly();
         }
 
         function openNewPapripactModal() {
@@ -10140,11 +10175,15 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const banner = document.getElementById('fa-cloud-status-banner');
             const bannerText = document.getElementById('fa-cloud-status-text');
             const cloud = window.SSTCloud?.isCloudTenant?.() && window.SSTCloud?.canModule?.('amelioration');
+            // Affichage local IMMÉDIAT (voir aussi le correctif de sstV242SyncKeyFromCloud) : on ne fait
+            // plus attendre l'utilisateur sur un aller-retour réseau avant de rafraîchir la liste.
+            renderFichesAmeliorationLocal();
             if(cloud) {
                 if(banner) banner.classList.remove('hidden');
                 if(bannerText) bannerText.textContent = `Entreprise : ${window.SST_APP_CONTEXT?.companyName || 'Entreprise'}`;
                 try {
                     await window.SSTCloud.syncFichesAmeliorationFromCloud();
+                    renderFichesAmeliorationLocal();
                 } catch(err) {
                     console.error('Synchronisation des Fiches d\'Amélioration impossible', err);
                     if(bannerText) bannerText.textContent = `Erreur de synchronisation : ${err?.message || 'accès Firestore impossible'}`;
@@ -10152,7 +10191,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             } else if(banner) {
                 banner.classList.add('hidden');
             }
-            renderFichesAmeliorationLocal();
         }
 
 
@@ -12920,6 +12958,38 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             sstPopulateFilterOptions('filter-tournee-unite', tournees.map(t=>t.secteur), 'Toutes les unités');
         }
 
+        // Sélection multiple des tournées HSE (état temporaire d'interface, sans alourdir les données métier).
+        window.sstTourneeSelected = window.sstTourneeSelected || new Set();
+        function toggleTourneeSelection(idx, checked) { if(checked) window.sstTourneeSelected.add(Number(idx)); else window.sstTourneeSelected.delete(Number(idx)); loadTourneesHse(); }
+        function toggleAllVisibleTournees(checked) {
+            const tournees = JSON.parse(localStorage.getItem('tournees_hse') || '[]');
+            const filterYear=document.getElementById('filter-tournee-year')?.value||'';
+            const filterUnite=document.getElementById('filter-tournee-unite')?.value||'';
+            tournees.forEach((t,idx)=>{
+                const match=(!filterYear || sstDateYear(t.date)===filterYear) && (!filterUnite || String(t.secteur||'')===filterUnite);
+                if(match){ if(checked) window.sstTourneeSelected.add(idx); else window.sstTourneeSelected.delete(idx); }
+            });
+            loadTourneesHse();
+        }
+        async function deleteSelectedTournees() {
+            const ids=Array.from(window.sstTourneeSelected||[]).filter(Number.isInteger).sort((a,b)=>b-a);
+            if(!ids.length) return;
+            if(!confirm(`Supprimer les ${ids.length} tournée(s) HSE sélectionnée(s) ?`)) return;
+            let tournees=JSON.parse(localStorage.getItem('tournees_hse')||'[]');
+            const sources=ids.map(idx=>({target:tournees[idx],idx})).filter(x=>x.target);
+            const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            const hasLinkedPap=sources.some(({target,idx})=>papActions.some(a=>a.origine==='Tournée HSE' && ((target.reference && (a.tourneeReference===target.reference || a.sourceReference===target.reference)) || (!target.reference && Number(a.tourneeIndex)===Number(idx)))));
+            const deletePapLinked=hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux tournées sélectionnées.\n\nOK : supprimer toutes les actions PAPRIPACT liées.\nAnnuler : conserver les actions, mais retirer les liens vers les tournées supprimées.`) : false;
+            let papChanged=false;
+            for(const {target,idx} of sources){ const source={...target,_sourceIndex:idx}; const changed=await sstHandlePapSourceDeletion('Tournée HSE',source,deletePapLinked); papChanged=papChanged||changed; }
+            for(const idx of ids){ if(tournees[idx]) tournees.splice(idx,1); }
+            sstSafeSetLocalStorage('tournees_hse',JSON.stringify(tournees));
+            window.sstTourneeSelected.clear();
+            loadTourneesHse(); loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('tournees_hse',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('tournees_hse',...(papChanged?['papripact_actions']:[])); }
+            catch(err){ console.warn('Synchronisation suppression groupée tournées HSE impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
+        }
+
         function loadTourneesHse() {
             const tournees = JSON.parse(localStorage.getItem('tournees_hse') || '[]');
             const actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]');
@@ -12932,6 +13002,16 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 (!filterYear || sstDateYear(t.date)===filterYear) &&
                 (!filterUnite || String(t.secteur||'')===filterUnite)
             );
+            window.sstTourneeSelected = window.sstTourneeSelected || new Set();
+            const tourneeBulkBar = document.getElementById('tournee-bulk-bar');
+            if(tourneeBulkBar){
+                const selectedCount = window.sstTourneeSelected.size;
+                const visibleAllSelected = filtered.length>0 && filtered.every(({idx})=>window.sstTourneeSelected.has(idx));
+                tourneeBulkBar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                    <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${filtered.length?'':'disabled'} ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleTournees(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                    <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedTournees()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstTourneeSelected.clear();loadTourneesHse()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                </div>`;
+            }
             if(!filtered.length) {
                 container.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune tournée ne correspond aux filtres sélectionnés.</div>`;
                 return;
@@ -12968,6 +13048,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
+                                        <input type="checkbox" aria-label="Sélectionner la tournée ${escapeHtml(t.reference||'')}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" onclick="event.stopPropagation()" ${window.sstTourneeSelected.has(idx)?'checked':''} onchange="toggleTourneeSelection(${idx},this.checked)">
                                         <span class="bg-blue-100 text-blue-800 font-extrabold text-xs px-2.5 py-1 rounded border border-blue-200">${escapeHtml(t.reference||'')}</span>
                                         <span class="px-2.5 py-1 rounded text-[11px] font-semibold border ${statusClass(t.statut)}">${escapeHtml(t.statut||'En cours')}</span>
                                         <span class="font-bold text-slate-800 text-base truncate">🏢 ${escapeHtml(t.secteur||'Secteur non défini')}</span>
@@ -13645,6 +13726,15 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     return false;
                 }
             }
+            // CORRECTIF QUOTA : un écouteur temps réel (onSnapshot) déjà actif pour cette clé maintient
+            // DÉJÀ le cache local à jour en continu, à moindre coût (deltas uniquement après le premier
+            // évènement). Relire ici toute la collection (getDocs) à chaque appel — ce qui arrivait à
+            // chaque ouverture d'onglet, chaque sauvegarde, chaque suppression — la relisait donc en
+            // double, en entier, sans raison : c'était la principale source de surconsommation du quota
+            // Firebase. On se contente désormais du cache déjà tenu à jour par l'écouteur.
+            if(sstV242Listeners.has(key)){
+                return sstV247HasMeaningfulValue(key, sstV242ReadLocal(key));
+            }
             const remote=await sstV242FetchKey(key);
             if(remote.exists){
                 sstV242Snapshots.set(key, JSON.parse(JSON.stringify(remote.value)));
@@ -13678,17 +13768,41 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 curMap.set(sstV242StableId(key,copy,i),{item:copy,index:i});
                 if(copy && typeof copy==='object' && JSON.stringify(copy)!==JSON.stringify(item)) cur[i]=copy;
             });
-            // No undefined payloads and stable order are kept in the Firestore document.
+            // CORRECTIF V2.113 (bug « une suppression revient ») : un simple décalage de
+            // position — provoqué par la suppression/l'ajout d'une autre ligne, y compris
+            // depuis un AUTRE appareil pas encore reflété dans le cache local — ne doit
+            // JAMAIS réécrire le contenu complet d'une fiche avec setDoc(...,{merge:true}).
+            // setDoc avec merge:true RECRÉE le document s'il n'existe plus côté serveur :
+            // si cette fiche vient d'être supprimée ailleurs et que le cache local de CET
+            // appareil ne le sait pas encore, l'ancien réflexe « position changée = à
+            // réécrire » la faisait réapparaître dans Firestore. On distingue donc :
+            // - contenu réellement modifié (ou fiche nouvelle) -> setDoc complet, légitime ;
+            // - position seule changée -> updateDoc du seul champ order, qui échoue
+            //   proprement (sans rien recréer) si le document a été supprimé entre-temps.
             for(const [id,v] of curMap){
                 const old=prevMap.get(id);
-                const changed=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item)) || old.index!==v.index;
-                if(changed){
+                const contentChanged=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item));
+                const indexChanged=!!old && old.index!==v.index;
+                if(contentChanged){
                     await sstV242Fb().setDoc(sstV242RecordPath(key,id),{
                         payload:sstV242Clean(v.item), order:v.index, updatedBy:window.SST_APP_CONTEXT?.uid||'', updatedAt:sstV242Fb().serverTimestamp()
                     },{merge:true});
+                } else if(indexChanged){
+                    try {
+                        await sstV242Fb().updateDoc(sstV242RecordPath(key,id),{ order:v.index });
+                    } catch(err){
+                        // "not-found" : la fiche a déjà été supprimée côté serveur (par cet
+                        // appareil ou par un autre) -> surtout ne pas la recréer.
+                        if(err?.code !== 'not-found') console.warn(`Mise à jour de l'ordre (${key}/${id}) impossible :`, err);
+                    }
                 }
             }
-            for(const [id] of prevMap){ if(!curMap.has(id)) await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
+            for(const [id] of prevMap){
+                if(!curMap.has(id)){
+                    try { await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
+                    catch(err){ console.warn(`Suppression Firestore (${key}/${id}) impossible :`, err); }
+                }
+            }
         }
         async function sstV242SyncPublicHelmetRecords(previous, current){
             if (!sstV242CompanyNamespace || !sstV242Db() || !window.SSTFirebaseApi) return;
@@ -13791,49 +13905,88 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         // mais les autres modifications faites sur un autre appareil sont conservées.
         async function sstV299ReconcileDirtyKey(key){
             if(!sstV247DirtyKeys.has(key) || !sstV242CanWriteStorage(key)) return false;
-            const remote=await sstV242FetchKey(key);
             const baseline=sstV242Snapshots.get(key);
             const local=sstV242ReadLocal(key);
             const def=SST_V242_STORAGE[key];
 
+            // V2.112 : au démarrage seulement, si aucun état de référence n'est connu,
+            // conserver la réconciliation complète historique pour protéger la migration.
+            if(def.kind==='array' && Array.isArray(baseline)){
+                const baseArr=baseline;
+                const localArr=Array.isArray(local)?local:[];
+                const baseMap=new Map(), localMap=new Map();
+                baseArr.forEach((x,i)=>baseMap.set(sstV242StableId(key,x,i),x));
+                localArr.forEach((x,i)=>localMap.set(sstV242StableId(key,x,i),x));
+                const ids=new Set([...baseMap.keys(),...localMap.keys()]);
+                const mergedMap=new Map(localMap);
+
+                // On ne lit que les documents que CET appareil a modifiés ou supprimés.
+                // Les fiches inchangées et les nouvelles fiches des autres utilisateurs
+                // ne sont pas relues : les écritures différentielles ne les écrasent pas.
+                for(const id of ids){
+                    const baseItem=baseMap.get(id);
+                    const localItem=localMap.get(id);
+                    const localChanged=JSON.stringify(sstV242Clean(localItem))!==JSON.stringify(sstV242Clean(baseItem));
+                    if(!localChanged) continue;
+
+                    const ref=sstV242RecordPath(key,id);
+                    const remoteSnap=await sstV242Fb().getDoc(ref);
+                    const remoteItem=remoteSnap.exists()
+                        ? (remoteSnap.data()?.payload!==undefined ? {...(remoteSnap.data().payload||{}),_cloudId:id} : undefined)
+                        : undefined;
+                    const remoteChanged=JSON.stringify(sstV242Clean(remoteItem))!==JSON.stringify(sstV242Clean(baseItem));
+
+                    if(localItem!==undefined){
+                        // En cas de conflit sur le même document, la modification locale
+                        // garde la priorité, comme dans la logique précédente.
+                        mergedMap.set(id,localItem);
+                    }else if(remoteChanged && remoteItem!==undefined){
+                        // Une suppression locale ne doit pas effacer une modification
+                        // distante arrivée depuis le dernier état connu.
+                        mergedMap.set(id,remoteItem);
+                    }else{
+                        mergedMap.delete(id);
+                    }
+                }
+
+                // Ordre stable : ordre local, puis documents distants conservés par fusion.
+                const orderedIds=[...localArr.map((x,i)=>sstV242StableId(key,x,i))];
+                for(const id of baseMap.keys()) if(mergedMap.has(id) && !orderedIds.includes(id)) orderedIds.push(id);
+                const merged=orderedIds.map(id=>mergedMap.get(id)).filter(x=>x!==undefined);
+                sstV242WriteLocalSilently(key,merged);
+                // Ne pas avancer le snapshot ici : l'écriture différentielle doit comparer
+                // l'état local au dernier état confirmé, pour ne pas perdre les suppressions.
+                return true;
+            }
+
+            // Repli de sécurité pour les clés singleton/objet et la toute première
+            // synchronisation sans baseline : garder la réconciliation éprouvée.
+            const remote=await sstV242FetchKey(key);
             if(def.kind==='array'){
-                const baseArr=Array.isArray(baseline)?baseline:[];
+                const baseArr=[];
                 const localArr=Array.isArray(local)?local:[];
                 const remoteArr=remote.exists && Array.isArray(remote.value)?remote.value:[];
-                const baseMap=new Map(), localMap=new Map(), remoteMap=new Map();
+                const baseMap=new Map(),localMap=new Map(),remoteMap=new Map();
                 baseArr.forEach((x,i)=>baseMap.set(sstV242StableId(key,x,i),x));
                 localArr.forEach((x,i)=>localMap.set(sstV242StableId(key,x,i),x));
                 remoteArr.forEach((x,i)=>remoteMap.set(sstV242StableId(key,x,i),x));
-                const ids=[...new Set([...baseMap.keys(),...localMap.keys(),...remoteMap.keys()])];
+                const ids=[...new Set([...localMap.keys(),...remoteMap.keys()])];
                 const merged=[];
-                const localChanged=(id)=>JSON.stringify(sstV242Clean(localMap.get(id)))!==JSON.stringify(sstV242Clean(baseMap.get(id)));
-                const remoteChanged=(id)=>JSON.stringify(sstV242Clean(remoteMap.get(id)))!==JSON.stringify(sstV242Clean(baseMap.get(id)));
                 for(const id of ids){
-                    const lc=localChanged(id), rc=remoteChanged(id);
-                    let chosen;
-                    if(lc) chosen=localMap.get(id);
-                    else if(rc) chosen=remoteMap.get(id);
-                    else chosen=localMap.has(id)?localMap.get(id):remoteMap.get(id);
+                    const chosen=localMap.has(id)?localMap.get(id):remoteMap.get(id);
                     if(chosen!==undefined) merged.push(chosen);
                 }
-                // Préserve l'ordre local pour les éléments modifiés localement,
-                // puis ajoute les éléments uniquement présents/modifiés à distance.
-                const orderIds=[];
-                localArr.forEach((x,i)=>orderIds.push(sstV242StableId(key,x,i)));
-                remoteArr.forEach((x,i)=>{ const id=sstV242StableId(key,x,i); if(!orderIds.includes(id)) orderIds.push(id); });
-                const byId=new Map(merged.map((x,i)=>[sstV242StableId(key,x,i),x]));
-                const ordered=orderIds.map(id=>byId.get(id)).filter(x=>x!==undefined);
-                sstV242WriteLocalSilently(key,ordered);
+                sstV242WriteLocalSilently(key,merged);
                 sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remoteArr)));
-            } else {
+            }else{
                 const baseVal=baseline===undefined?sstV242BlankFor(key):baseline;
                 const localChanged=JSON.stringify(sstV242Clean(local))!==JSON.stringify(sstV242Clean(baseVal));
                 if(!localChanged && remote.exists){
                     sstV242WriteLocalSilently(key,remote.value);
                     sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remote.value)));
-                } else if(remote.exists){
+                }else if(remote.exists){
                     sstV242Snapshots.set(key,JSON.parse(JSON.stringify(remote.value)));
-                } else {
+                }else{
                     sstV242Snapshots.set(key,JSON.parse(JSON.stringify(sstV242BlankFor(key))));
                 }
             }
@@ -13862,7 +14015,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         setInterval(()=>{
             if(!window.SSTCloud?.isCloudTenant?.() || !sstV247DirtyKeys.size) return;
             [...sstV247DirtyKeys].forEach(k=>sstV242ScheduleSync(k));
-        },3000);
+        },30000);
 
         function sstV242SubscribeKey(key){
             if(sstV242Listeners.has(key) || !sstV242Db() || !sstV242CanReadStorage(key)) return;
@@ -14443,7 +14596,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                     showAuthLoading(false);
                     setAppLocked(true);
                     const box=document.getElementById('sst-login-error');
-                    if(box){box.textContent="Firebase a été chargé, mais l’initialisation ou la vérification de session n’a pas répondu en 15 secondes. Vérifiez la connexion réseau et les paramètres du projet Firebase, puis rechargez la page.";box.className='rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3';}
+                    if(box){box.textContent="La connexion à Firebase n'a pas abouti (réseau instable, ou le navigateur a bloqué une ressource après un avertissement de sécurité). Rechargez la page, ou réessayez avec une autre connexion internet.";box.className='rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3';}
                     showAuthGate(true);
                     return;
                 }
