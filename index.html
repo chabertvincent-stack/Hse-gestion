@@ -149,6 +149,24 @@
 }
 
 </style>
+<style id="papripact-mobile-highlight-fix">
+/* Conserve la navigation et rend la surbrillance visible sur les cartes mobiles.
+   La classe .row-highlight est ajoutée par scrollToPapripactAction() sur la carte cible. */
+@keyframes papripact-card-highlight-outline {
+  0%, 12% { outline-color: #f59e0b; outline-offset: 2px; }
+  35% { outline-color: #fbbf24; outline-offset: 3px; }
+  100% { outline-color: transparent; outline-offset: 3px; }
+}
+@media (max-width: 640px) {
+  #tab-papripact tbody#liste-papripact > tr.row-highlight {
+    outline: 4px solid #f59e0b !important;
+    outline-offset: 2px !important;
+    animation: papripact-card-highlight-outline 9s ease-out forwards !important;
+    position: relative !important;
+    z-index: 2 !important;
+  }
+}
+</style>
 </head>
     <body class="bg-gray-100 font-sans antialiased">
 
