@@ -77,6 +77,78 @@
         #app-shell.commercial-locked { display:none !important; }
         body.commercial-locked { overflow:hidden !important; }
     </style>
+<style id="papripact-mobile-cards-css">
+
+/* PAPRIPACT — présentation mobile en cartes (sans modifier les données ni les handlers) */
+@media (max-width: 640px) {
+  #tab-papripact #liste-papripact-wrapper,
+  #tab-papripact .papripact-table-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  #tab-papripact .overflow-x-auto.overflow-y-auto.max-h-\[65vh\] {
+    overflow: visible !important;
+    max-height: none !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+  #tab-papripact table:has(> thead + tbody#liste-papripact) {
+    display: block !important;
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  #tab-papripact table:has(> thead + tbody#liste-papripact) thead { display:none !important; }
+  #tab-papripact tbody#liste-papripact { display:block !important; width:100% !important; }
+  #tab-papripact tbody#liste-papripact tr {
+    display:block !important;
+    width:100% !important;
+    margin: 0 0 14px 0 !important;
+    padding: 12px !important;
+    background:#fff !important;
+    border:1px solid #cbd5e1 !important;
+    border-radius:14px !important;
+    box-shadow:0 2px 8px rgba(15,23,42,.07) !important;
+    overflow:hidden !important;
+  }
+  #tab-papripact tbody#liste-papripact tr td {
+    display:grid !important;
+    grid-template-columns:minmax(92px, 34%) minmax(0,1fr) !important;
+    gap:8px !important;
+    align-items:start !important;
+    width:100% !important;
+    max-width:none !important;
+    padding:9px 2px !important;
+    border:0 !important;
+    border-bottom:1px solid #e2e8f0 !important;
+    text-align:left !important;
+    white-space:normal !important;
+    overflow-wrap:anywhere !important;
+    font-size:13px !important;
+  }
+  #tab-papripact tbody#liste-papripact tr td:last-child { border-bottom:0 !important; padding-top:12px !important; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(1) {
+    display:flex !important; justify-content:flex-end !important; align-items:center !important;
+    padding:0 0 8px !important; border-bottom:1px solid #e2e8f0 !important;
+  }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(1)::before { content:'Sélectionner'; margin-right:auto; color:#64748b; font-size:12px; font-weight:700; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(2)::before { content:'N° / Origine / Unité'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(3)::before { content:'Action'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(4)::before { content:'Hiérarchie / Type'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(5)::before { content:'Priorité'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(6)::before { content:'Responsable'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(7)::before { content:'Calendrier'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(8)::before { content:'Ressources'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(9)::before { content:'Statut'; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(10)::before { content:'Gestion'; }
+  #tab-papripact tbody#liste-papripact tr td::before { color:#64748b; font-size:11px; line-height:1.35; font-weight:800; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(3) .font-bold { font-size:14px !important; line-height:1.45 !important; }
+  #tab-papripact tbody#liste-papripact tr td:nth-child(10) button { display:inline-flex; align-items:center; justify-content:center; background:#eff6ff; border:1px solid #bfdbfe; border-radius:9px; padding:8px 14px; text-decoration:none !important; }
+  #tab-papripact tbody#liste-papripact tr td[colspan] { display:block !important; text-align:center !important; }
+  #tab-papripact tbody#liste-papripact tr td[colspan]::before { content:none !important; }
+}
+
+</style>
 </head>
     <body class="bg-gray-100 font-sans antialiased">
 
@@ -13746,104 +13818,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const pct=rows.length?Math.round(done/rows.length*100):0;
             const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.reference||'Tournée HSE')}</title><style>
 body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0f172a}.sheet{max-width:1180px;margin:18px auto;background:#fff;padding:24px;border:1px solid #cbd5e1;box-shadow:0 4px 14px rgba(15,23,42,.08)}h1{margin:0;font-size:22px}.sub{color:#475569;font-size:12px;margin-top:4px}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0}.meta div,.kpi{border:1px solid #cbd5e1;background:#f8fafc;border-radius:8px;padding:8px;font-size:11px}.label{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:18px}.kpi strong{display:block;font-size:18px;margin-top:3px}.progress{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:5px 0 14px}.progress>span{display:block;height:100%;background:#2563eb;width:${pct}%}table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:18px}th{background:#1e293b;color:#fff;text-align:left;padding:7px}td{border:1px solid #cbd5e1;padding:7px;vertical-align:top}.center{text-align:center}.num{width:28px;text-align:center;font-weight:700}.status-OK{background:#f0fdf4}.status-KO{background:#fef2f2}.status-SO{background:#f8fafc}.photo{max-width:180px;max-height:110px;display:block;margin-top:6px;border:1px solid #cbd5e1;border-radius:6px}.muted{color:#64748b;font-size:9px;margin-top:3px}.actions{margin-top:18px}button{background:#2563eb;color:#fff;border:0;border-radius:7px;padding:10px 15px;font-weight:700;cursor:pointer}@media(max-width:800px){.meta,.kpis{grid-template-columns:1fr 1fr}}@media print{body{background:#fff}.sheet{margin:0;max-width:none;box-shadow:none;border:0;padding:10px}button{display:none}th{background:#1e293b!important;color:#fff!important}.photo{max-width:130px;max-height:90px}}
-</style>
-<style id="sst-mobile-table-cards-v1">
-/* SST V2.113 — présentation mobile des tableaux en cartes.
-   Règles limitées aux écrans étroits : le tableau ordinateur reste inchangé. */
-@media (max-width: 767px) {
-  table.sst-mobile-cards {
-    display: block !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
-    table-layout: auto !important;
-    background: transparent !important;
-  }
-  table.sst-mobile-cards thead {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    padding: 0 !important;
-    margin: -1px !important;
-    overflow: hidden !important;
-    clip: rect(0,0,0,0) !important;
-    white-space: nowrap !important;
-    border: 0 !important;
-  }
-  table.sst-mobile-cards tbody {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    gap: 12px !important;
-    width: 100% !important;
-  }
-  table.sst-mobile-cards tbody tr {
-    display: flex !important;
-    flex-direction: column !important;
-    min-width: 0 !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    overflow: hidden !important;
-    border: 1px solid #dbe3ee !important;
-    border-radius: 14px !important;
-    background: #fff !important;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, .06) !important;
-    padding: 8px 12px !important;
-    margin: 0 !important;
-  }
-  table.sst-mobile-cards tbody tr:has(td[colspan]) {
-    display: block !important;
-  }
-  table.sst-mobile-cards tbody td {
-    display: grid !important;
-    grid-template-columns: minmax(90px, 34%) minmax(0, 1fr) !important;
-    align-items: start !important;
-    gap: 10px !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-    padding: 9px 2px !important;
-    border: 0 !important;
-    border-bottom: 1px solid #edf1f6 !important;
-    background: transparent !important;
-    white-space: normal !important;
-    overflow-wrap: anywhere !important;
-    word-break: normal !important;
-    color: #334155;
-  }
-  table.sst-mobile-cards tbody td:last-child { border-bottom: 0 !important; }
-  table.sst-mobile-cards tbody td::before {
-    content: attr(data-label);
-    display: block !important;
-    min-width: 0 !important;
-    color: #64748b !important;
-    font-size: 11px !important;
-    line-height: 1.35 !important;
-    font-weight: 700 !important;
-    letter-spacing: .015em !important;
-    overflow-wrap: anywhere !important;
-  }
-  table.sst-mobile-cards tbody td[data-label=""]::before,
-  table.sst-mobile-cards tbody td:not([data-label])::before { content: none !important; }
-  table.sst-mobile-cards tbody td[colspan] { display: block !important; }
-  table.sst-mobile-cards tbody td[colspan]::before { content: none !important; }
-  table.sst-mobile-cards tbody td input,
-  table.sst-mobile-cards tbody td select,
-  table.sst-mobile-cards tbody td textarea,
-  table.sst-mobile-cards tbody td button,
-  table.sst-mobile-cards tbody td a { max-width: 100% !important; }
-  table.sst-mobile-cards tbody td input,
-  table.sst-mobile-cards tbody td select,
-  table.sst-mobile-cards tbody td textarea { min-width: 0 !important; box-sizing: border-box !important; }
-  /* Keep existing status/highlight classes visible without changing their behavior. */
-  table.sst-mobile-cards tbody tr[class*="border-l-"],
-  table.sst-mobile-cards tbody tr[class*="bg-"] { background-color: #fff !important; }
-  table.sst-mobile-cards tbody tr:focus-within { outline: 2px solid #2563eb; outline-offset: 1px; }
-}
-</style>
-</head><body><div class="sheet"><div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:12px">${getSstDocumentBranding().logoDataUrl?`<img src="${esc(getSstDocumentBranding().logoDataUrl)}" style="max-width:120px;max-height:50px;object-fit:contain">`:''}<div><div style="font-weight:800;font-size:15px">${esc(getSstDocumentBranding().companyName)}</div>${getSstDocumentBranding().establishment?`<div style="font-size:10px;color:#475569">${esc(getSstDocumentBranding().establishment)}</div>`:''}${getSstDocumentBranding().address?`<div style="font-size:9px;color:#64748b">${esc(getSstDocumentBranding().address)}</div>`:''}</div></div><h1>COMPTE-RENDU TOURNÉE QHSE — ${esc(t.reference||'')}</h1><div class="sub">Secteur : ${esc(t.secteur||'N/C')} · Date : ${esc(t.date||'N/C')} ${t.heure?'· '+esc(t.heure):''}</div><div class="meta"><div><div class="label">Intervenant(s)</div>${esc(t.technicien||'N/C')}</div><div><div class="label">Responsable de zone</div>${esc(t.contremaitre||'N/C')}</div><div><div class="label">Encadrant de l’unité</div>${esc(t.encadrant||'N/C')}</div><div><div class="label">Statut</div>${esc(t.statut||'En cours')}</div></div><div class="kpis"><div class="kpi"><div class="label">Contrôlés</div><strong>${done}/${rows.length}</strong></div><div class="kpi"><div class="label">OK</div><strong>${ok}</strong></div><div class="kpi"><div class="label">NOK</div><strong>${ko}</strong></div><div class="kpi"><div class="label">Sans objet</div><strong>${so}</strong></div><div class="kpi"><div class="label">Actions</div><strong>${actions.length}</strong></div></div><div class="label">Progression du contrôle · ${pct}%</div><div class="progress"><span></span></div><table><thead><tr><th>N°</th><th>Point de contrôle</th><th>OK</th><th>NOK</th><th>SO</th><th>Observation / Photo</th></tr></thead><tbody>${rowsHtml}</tbody></table><h2 style="font-size:15px">Plan d'actions PAPRIPACT (${actions.length})</h2><table><thead><tr><th>N°</th><th>Action</th><th>Statut</th><th>Priorité</th><th>Responsable</th></tr></thead><tbody>${actionsHtml}</tbody></table><div style="margin-top:20px;font-size:9px;color:#64748b">${esc([getSstDocumentBranding().companyName,getSstDocumentBranding().footer].filter(Boolean).join(' · '))}</div><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`;
+</style></head><body><div class="sheet"><div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:12px">${getSstDocumentBranding().logoDataUrl?`<img src="${esc(getSstDocumentBranding().logoDataUrl)}" style="max-width:120px;max-height:50px;object-fit:contain">`:''}<div><div style="font-weight:800;font-size:15px">${esc(getSstDocumentBranding().companyName)}</div>${getSstDocumentBranding().establishment?`<div style="font-size:10px;color:#475569">${esc(getSstDocumentBranding().establishment)}</div>`:''}${getSstDocumentBranding().address?`<div style="font-size:9px;color:#64748b">${esc(getSstDocumentBranding().address)}</div>`:''}</div></div><h1>COMPTE-RENDU TOURNÉE QHSE — ${esc(t.reference||'')}</h1><div class="sub">Secteur : ${esc(t.secteur||'N/C')} · Date : ${esc(t.date||'N/C')} ${t.heure?'· '+esc(t.heure):''}</div><div class="meta"><div><div class="label">Intervenant(s)</div>${esc(t.technicien||'N/C')}</div><div><div class="label">Responsable de zone</div>${esc(t.contremaitre||'N/C')}</div><div><div class="label">Encadrant de l’unité</div>${esc(t.encadrant||'N/C')}</div><div><div class="label">Statut</div>${esc(t.statut||'En cours')}</div></div><div class="kpis"><div class="kpi"><div class="label">Contrôlés</div><strong>${done}/${rows.length}</strong></div><div class="kpi"><div class="label">OK</div><strong>${ok}</strong></div><div class="kpi"><div class="label">NOK</div><strong>${ko}</strong></div><div class="kpi"><div class="label">Sans objet</div><strong>${so}</strong></div><div class="kpi"><div class="label">Actions</div><strong>${actions.length}</strong></div></div><div class="label">Progression du contrôle · ${pct}%</div><div class="progress"><span></span></div><table><thead><tr><th>N°</th><th>Point de contrôle</th><th>OK</th><th>NOK</th><th>SO</th><th>Observation / Photo</th></tr></thead><tbody>${rowsHtml}</tbody></table><h2 style="font-size:15px">Plan d'actions PAPRIPACT (${actions.length})</h2><table><thead><tr><th>N°</th><th>Action</th><th>Statut</th><th>Priorité</th><th>Responsable</th></tr></thead><tbody>${actionsHtml}</tbody></table><div style="margin-top:20px;font-size:9px;color:#64748b">${esc([getSstDocumentBranding().companyName,getSstDocumentBranding().footer].filter(Boolean).join(' · '))}</div><button onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`;
             const popup=window.open('','_blank','width=1200,height=900');
             if(!popup){alert('Le navigateur bloque la fenêtre d’impression. Autorisez les fenêtres contextuelles puis réessayez.');return false;}
             popup.document.open();popup.document.write(html);popup.document.close();
@@ -15129,46 +15104,5 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             setTimeout(() => { try { sstOnboardingMaybeAutoShow(); } catch (e) {} }, 400);
         });
     </script>
-
-<script id="sst-mobile-table-cards-v1-js">
-(function(){
-  'use strict';
-  function enhanceSstMobileTables(root){
-    const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('table').forEach(function(table){
-      if (table.closest('.sheet, [data-no-mobile-cards], .sst-print-only')) return;
-      const headerRow = table.querySelector('thead tr');
-      const headers = headerRow ? Array.from(headerRow.querySelectorAll('th,td')).map(function(cell){
-        return (cell.innerText || cell.textContent || '').replace(/\s+/g,' ').trim();
-      }) : [];
-      const bodyRows = table.querySelectorAll('tbody tr');
-      if (!headers.length || !bodyRows.length) return;
-      table.classList.add('sst-mobile-cards');
-      bodyRows.forEach(function(row){
-        Array.from(row.children).filter(function(cell){ return cell.matches('td'); }).forEach(function(cell,index){
-          if (cell.hasAttribute('colspan')) return;
-          const label = headers[index] || ('Information ' + (index + 1));
-          cell.setAttribute('data-label', label);
-        });
-      });
-    });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',function(){enhanceSstMobileTables(document);});
-  else enhanceSstMobileTables(document);
-  const observer = new MutationObserver(function(records){
-    records.forEach(function(record){
-      record.addedNodes.forEach(function(node){
-        if (node.nodeType !== 1) return;
-        const owningTable = node.closest && node.closest('table');
-        if (owningTable) enhanceSstMobileTables(owningTable.parentElement || document);
-        else if (node.matches && node.matches('table')) enhanceSstMobileTables(node.parentElement || document);
-        else if (node.querySelectorAll) enhanceSstMobileTables(node);
-      });
-    });
-  });
-  observer.observe(document.documentElement,{childList:true,subtree:true});
-  window.sstRefreshMobileTableCards = function(){enhanceSstMobileTables(document);};
-})();
-</script>
 </body>
 </html>
