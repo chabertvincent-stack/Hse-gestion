@@ -10,6 +10,58 @@
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
+        /* Tableaux -> cartes empilées sur petit écran (smartphone). Pur CSS : le contenu de
+           chaque cellule (liens, badges, cases à cocher, surbrillances, onclick...) reste
+           exactement le même, seule la mise en page change. Chaque <td> doit porter un
+           attribut data-label="Nom de colonne" pour l'étiquette affichée devant sa valeur. */
+        @media (max-width: 767px) {
+            table.sst-responsive-table { min-width: 0 !important; }
+            table.sst-responsive-table thead { display: none; }
+            table.sst-responsive-table, table.sst-responsive-table tbody,
+            table.sst-responsive-table tr, table.sst-responsive-table td {
+                display: block;
+                width: 100%;
+            }
+            table.sst-responsive-table tr {
+                margin-bottom: 0.75rem;
+                border: 1px solid #e2e8f0;
+                border-radius: 0.75rem;
+                padding: 0.6rem 0.75rem;
+                background: #fff;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            }
+            table.sst-responsive-table tr:hover { background: #fff; }
+            table.sst-responsive-table td {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 0.75rem;
+                padding: 0.4rem 0 !important;
+                border: none !important;
+                border-bottom: 1px dashed #e2e8f0 !important;
+                text-align: right;
+            }
+            table.sst-responsive-table td:last-child { border-bottom: none !important; }
+            table.sst-responsive-table td[data-label]::before {
+                content: attr(data-label);
+                font-weight: 700;
+                font-size: 0.65rem;
+                text-transform: uppercase;
+                letter-spacing: 0.02em;
+                color: #64748b;
+                text-align: left;
+                flex-shrink: 0;
+                padding-top: 0.15rem;
+            }
+            table.sst-responsive-table td:not([data-label]) { display: none; }
+            table.sst-responsive-table td > * { min-width: 0; }
+            /* Cellules "case à cocher de sélection" et "actions" : mieux en pleine largeur, sans étiquette. */
+            table.sst-responsive-table td.sst-td-full {
+                display: block;
+                text-align: left;
+            }
+            table.sst-responsive-table td.sst-td-full::before { content: none; }
+        }
         @media print {
             body * {
                 visibility: hidden;
@@ -329,7 +381,7 @@
                             </div>
 
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
+                                <table class="w-full text-left border-collapse sst-responsive-table">
                                     <thead>
                                         <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
                                             <th class="p-3 border-b">Intitulé de la formation</th>
@@ -458,7 +510,7 @@
                             </div>
 
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
+                                <table class="w-full text-left border-collapse sst-responsive-table">
                                     <thead>
                                         <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
                                             <th class="p-3 border-b">Salarié</th>
@@ -573,7 +625,7 @@
 
                             <div id="at-registre-bulk-bar" class="mb-2"></div>
                             <div class="overflow-x-auto border rounded-lg">
-                                <table class="w-full text-left border-collapse text-xs min-w-[1450px]">
+                                <table class="w-full text-left border-collapse text-xs min-w-[1450px] sst-responsive-table">
                                     <thead>
                                         <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider">
                                             <th class="p-3 border-b"><input type="checkbox" id="at-registre-select-all-visible" class="rounded border-slate-300" onchange="toggleAllVisibleAtRegistre(this.checked)" title="Tout sélectionner (résultats affichés)"></th>
@@ -1287,7 +1339,7 @@
                         <div id="pap-bulk-toolbar" class="mb-3"></div>
 
                         <div class="overflow-x-auto overflow-y-auto max-h-[65vh] border border-slate-200 rounded-lg">
-                            <table class="w-full text-left border-separate border-spacing-0 text-xs">
+                            <table class="w-full text-left border-separate border-spacing-0 text-xs sst-responsive-table">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider border-b">
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b w-8"><input type="checkbox" id="pap-select-all-header" class="rounded border-slate-300 w-4 h-4 cursor-pointer" onchange="toggleAllVisiblePap(this.checked)" title="Tout sélectionner"></th>
@@ -1642,7 +1694,7 @@
                         </div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
+                            <table class="w-full text-left border-collapse sst-responsive-table">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
                                         <th class="p-3 border-b">Salarié & Date</th>
@@ -5899,10 +5951,10 @@
                 let validiteText = f.validite == 0 ? "Illimitée" : `${f.validite} mois`;
                 tbody.innerHTML += `
                     <tr class="hover:bg-slate-50">
-                        <td class="p-3 border-b font-bold text-slate-800">${f.nom}</td>
-                        <td class="p-3 border-b">${validiteText}</td>
-                        <td class="p-3 border-b">${f.necessiteAuth ? '<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs">Oui</span>' : 'Non'}</td>
-                        <td class="p-3 border-b text-right space-x-2">
+                        <td class="p-3 border-b font-bold text-slate-800" data-label="Formation">${f.nom}</td>
+                        <td class="p-3 border-b" data-label="Validité">${validiteText}</td>
+                        <td class="p-3 border-b" data-label="Autorisation requise">${f.necessiteAuth ? '<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs">Oui</span>' : 'Non'}</td>
+                        <td class="p-3 border-b text-right space-x-2 sst-td-full">
                             <button onclick="editCatalogueFormation(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
                             <button onclick="deleteCatalogueFormation(${idx})" class="text-red-500 text-xs hover:underline">Supprimer</button>
                         </td>
@@ -7839,11 +7891,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 tbody.innerHTML += `
                     <tr class="hover:bg-slate-50">
-                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(sal.nom || 'Sans nom')} ${sstStatutPill(sstGetSalarieStatut(sal))}</td>
-                        <td class="p-3 border-b text-xs text-slate-600">${escapeHtml(sal.service || 'N/C')} - ${escapeHtml(sal.poste || 'N/C')}</td>
-                        <td class="p-3 border-b"><span class="px-2 py-1 rounded border text-xs ${badgeClass}">${escapeHtml(badgeText)}</span></td>
-                        <td class="p-3 border-b text-center">${sal.docConduite ? '✅ Reçu' : '❌ Non reçu'}</td>
-                        <td class="p-3 border-b text-right">
+                        <td class="p-3 border-b font-bold text-slate-800" data-label="Salarié">${escapeHtml(sal.nom || 'Sans nom')} ${sstStatutPill(sstGetSalarieStatut(sal))}</td>
+                        <td class="p-3 border-b text-xs text-slate-600" data-label="Unité & Poste">${escapeHtml(sal.service || 'N/C')} - ${escapeHtml(sal.poste || 'N/C')}</td>
+                        <td class="p-3 border-b" data-label="Fin validité visite médicale"><span class="px-2 py-1 rounded border text-xs ${badgeClass}">${escapeHtml(badgeText)}</span></td>
+                        <td class="p-3 border-b text-center" data-label="Doc. non contre-indication">${sal.docConduite ? '✅ Reçu' : '❌ Non reçu'}</td>
+                        <td class="p-3 border-b text-right sst-td-full">
                             <button onclick="openInfirmiereModal(${actualIdx})" class="text-blue-600 hover:underline text-xs font-semibold">Mettre à jour</button>
                         </td>
                     </tr>`;
@@ -9239,7 +9291,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <span class="text-xs text-slate-500 font-semibold">▼ Réduire / Développer</span>
                         </div>
                         <div id="${accId}" class="${isOpen ? '' : 'hidden'} overflow-x-auto overflow-y-auto max-h-[65vh]">
-                            <table class="w-full text-left border-separate border-spacing-0">
+                            <table class="w-full text-left border-separate border-spacing-0 sst-responsive-table">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b" data-duerp-write><input type="checkbox" class="rounded border-slate-300" onchange="toggleAllVisibleDuerpGroup([${groupRisques.map(gr=>risques.indexOf(gr)).join(',')}],this.checked)" title="Tout sélectionner (cette unité)"></th>
@@ -9295,17 +9347,17 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                     html += `
                         <tr id="duerp-row-${riskId}" class="hover:bg-slate-50 transition-colors">
-                            <td class="p-3 border-b" data-duerp-write><input type="checkbox" aria-label="Sélectionner ${riskId}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstDuerpSelected.has(actualIdx)?'checked':''} onchange="toggleDuerpSelection(${actualIdx},this.checked)"></td>
-                            <td class="p-3 border-b">
+                            <td class="p-3 border-b sst-td-full" data-duerp-write><input type="checkbox" aria-label="Sélectionner ${riskId}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstDuerpSelected.has(actualIdx)?'checked':''} onchange="toggleDuerpSelection(${actualIdx},this.checked)"></td>
+                            <td class="p-3 border-b" data-label="Réf. & Danger">
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
                                 <div class="text-xs text-slate-600">${r.danger}</div>
                             </td>
-                            <td class="p-3 border-b text-xs">${sstDuerpListHtml(r.dommage)}</td>
-                            <td class="p-3 border-b text-xs">${sstDuerpListHtml(r.prevention)}</td>
-                            <td class="p-3 border-b text-center font-bold text-xs">${score} (${valueText})</td>
-                            <td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs ${badgeClass}">${nivText}</span></td>
-                            <td class="p-3 border-b text-xs max-w-xs">${actionsHtml}</td>
-                            <td class="p-3 border-b text-right space-x-1 whitespace-nowrap">
+                            <td class="p-3 border-b text-xs" data-label="Dommage potentiel">${sstDuerpListHtml(r.dommage)}</td>
+                            <td class="p-3 border-b text-xs" data-label="Mesures actuelles">${sstDuerpListHtml(r.prevention)}</td>
+                            <td class="p-3 border-b text-center font-bold text-xs" data-label="Cotation">${score} (${valueText})</td>
+                            <td class="p-3 border-b text-center" data-label="Niveau"><span class="px-2 py-0.5 rounded text-xs ${badgeClass}">${nivText}</span></td>
+                            <td class="p-3 border-b text-xs max-w-xs sst-td-full" data-label="Actions PAPRIPACT">${actionsHtml}</td>
+                            <td class="p-3 border-b text-right space-x-1 whitespace-nowrap sst-td-full">
                                 <button onclick="openDuerpPapModalFromIndex(${actualIdx})" data-duerp-write class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded text-xs font-semibold shadow-sm transition">📋 + Action</button>
                                 <button onclick="editDuerpRisque(${actualIdx})" data-duerp-write class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
                                 <button onclick="deleteDuerpRisque(${actualIdx})" data-duerp-write class="text-red-500 text-xs hover:underline">Supprimer</button>
@@ -9981,8 +10033,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 tbody.innerHTML += `
                     <tr id="pap-row-${idx}" data-pap-action-key="${escapeHtml(papActionKey)}" class="hover:bg-slate-50 transition-colors">
-                        <td class="p-3 border-b text-center"><input type="checkbox" aria-label="Sélectionner l'action N°${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
-                        <td class="p-3 border-b">
+                        <td class="p-3 border-b text-center sst-td-full"><input type="checkbox" aria-label="Sélectionner l'action N°${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
+                        <td class="p-3 border-b" data-label="N° / Origine / Unité">
                             <div class="flex items-center flex-wrap gap-1 mb-1">
                                 <span class="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border bg-slate-100 text-slate-700 border-slate-300">N° ${String(a.numero || idx + 1)}</span>
                                 <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${badgeOrigine}">${origineLabel}</span>
@@ -9990,20 +10042,20 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             </div>
                             <div class="font-bold text-slate-800 text-xs mt-1">${a.unite || 'Toutes unités'}</div>
                         </td>
-                        <td class="p-3 border-b max-w-sm">
+                        <td class="p-3 border-b max-w-sm" data-label="Action">
                             <div class="font-bold text-slate-800 text-xs mb-0.5">${a.action}</div>
                         </td>
-                        <td class="p-3 border-b text-center">
+                        <td class="p-3 border-b text-center" data-label="Hiérarchie / Type">
                             <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${a.type || 'Technique'}</span>
                         </td>
-                        <td class="p-3 border-b text-center font-bold text-xs">${displayPrio}</td>
-                        <td class="p-3 border-b font-semibold text-slate-700">${a.responsable || 'À définir'}</td>
-                        <td class="p-3 border-b">${datesDisplay}</td>
-                        <td class="p-3 border-b text-right font-bold text-slate-800">${a.cout ? a.cout + ' €' : '-'}</td>
-                        <td class="p-3 border-b text-center">
+                        <td class="p-3 border-b text-center font-bold text-xs" data-label="Priorité">${displayPrio}</td>
+                        <td class="p-3 border-b font-semibold text-slate-700" data-label="Responsable">${a.responsable || 'À définir'}</td>
+                        <td class="p-3 border-b" data-label="Calendrier">${datesDisplay}</td>
+                        <td class="p-3 border-b text-right font-bold text-slate-800" data-label="Ressources (€)">${a.cout ? a.cout + ' €' : '-'}</td>
+                        <td class="p-3 border-b text-center" data-label="Statut">
                             <span class="inline-block px-2.5 py-1 rounded text-xs font-bold border ${badgeStatut}">${a.statut}</span>
                         </td>
-                        <td class="p-3 border-b text-right whitespace-nowrap">
+                        <td class="p-3 border-b text-right whitespace-nowrap sst-td-full">
                             <button onclick="editPapripactAction(${idx})" class="text-blue-600 text-xs font-semibold hover:underline">Modifier</button>
                         </td>
                     </tr>`;
@@ -11707,20 +11759,20 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     : '<span class="text-slate-500">0 j</span>';
                 const row = `
                     <tr class="hover:bg-slate-50 align-top">
-                        <td class="p-3 border-b"><input type="checkbox" aria-label="Sélectionner ${escapeHtml(a.ref||'')}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstAtRegistreSelected.has(idx)?'checked':''} onchange="toggleAtRegistreSelection(${idx},this.checked)"></td>
-                        <td class="p-3 border-b font-bold text-blue-700 whitespace-nowrap">${escapeHtml(a.ref || '')}</td>
-                        <td class="p-3 border-b whitespace-nowrap">${escapeHtml(a.date || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.heure || '')}</div></td>
-                        <td class="p-3 border-b font-bold text-slate-800">${escapeHtml(a.salarie || 'N/C')}<div class="mt-0.5">${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel, sstStatutMapAt))}</div></td>
-                        <td class="p-3 border-b"><div class="font-semibold">${escapeHtml(a.unite || 'N/C')}</div><div class="text-[11px] text-slate-500">${escapeHtml(a.poste || '')}</div></td>
-                        <td class="p-3 border-b">${escapeHtml(a.lieu || 'N/C')}</td>
-                        <td class="p-3 border-b"><span class="px-2 py-0.5 rounded border bg-slate-50 font-semibold">${escapeHtml(a.classification || 'N/C')}</span></td>
-                        <td class="p-3 border-b">${escapeHtml(a.origine || 'N/C')}</td>
-                        <td class="p-3 border-b">${escapeHtml(a.siege || 'N/C')}</td>
-                        <td class="p-3 border-b">${escapeHtml(a.natureLesion || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.lesions || '')}</div></td>
-                        <td class="p-3 border-b text-center">${stopBadge}</td>
-                        <td class="p-3 border-b text-center">${analysisBadge}</td>
-                        <td class="p-3 border-b max-w-xs"><div class="truncate" title="${escapeHtml(a.actions || '')}">${escapeHtml(a.actions || 'N/C')}</div></td>
-                        <td class="p-3 border-b text-right whitespace-nowrap"><button onclick="openAtRegistreModal(${idx})" class="text-blue-600 hover:underline font-semibold mr-2">Modifier</button><button onclick="deleteAtRegistre(${idx})" class="text-red-500 hover:underline">Supprimer</button></td>
+                        <td class="p-3 border-b sst-td-full"><input type="checkbox" aria-label="Sélectionner ${escapeHtml(a.ref||'')}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstAtRegistreSelected.has(idx)?'checked':''} onchange="toggleAtRegistreSelection(${idx},this.checked)"></td>
+                        <td class="p-3 border-b font-bold text-blue-700 whitespace-nowrap" data-label="Réf.">${escapeHtml(a.ref || '')}</td>
+                        <td class="p-3 border-b whitespace-nowrap" data-label="Date / Heure">${escapeHtml(a.date || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.heure || '')}</div></td>
+                        <td class="p-3 border-b font-bold text-slate-800" data-label="Salarié">${escapeHtml(a.salarie || 'N/C')}<div class="mt-0.5">${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel, sstStatutMapAt))}</div></td>
+                        <td class="p-3 border-b" data-label="Unité / Poste"><div class="font-semibold">${escapeHtml(a.unite || 'N/C')}</div><div class="text-[11px] text-slate-500">${escapeHtml(a.poste || '')}</div></td>
+                        <td class="p-3 border-b" data-label="Lieu">${escapeHtml(a.lieu || 'N/C')}</td>
+                        <td class="p-3 border-b" data-label="Classification"><span class="px-2 py-0.5 rounded border bg-slate-50 font-semibold">${escapeHtml(a.classification || 'N/C')}</span></td>
+                        <td class="p-3 border-b" data-label="Origine / Type">${escapeHtml(a.origine || 'N/C')}</td>
+                        <td class="p-3 border-b" data-label="Siège">${escapeHtml(a.siege || 'N/C')}</td>
+                        <td class="p-3 border-b" data-label="Nature">${escapeHtml(a.natureLesion || 'N/C')}<div class="text-[11px] text-slate-500">${escapeHtml(a.lesions || '')}</div></td>
+                        <td class="p-3 border-b text-center" data-label="Jours perdus">${stopBadge}</td>
+                        <td class="p-3 border-b text-center" data-label="Analyse AT">${analysisBadge}</td>
+                        <td class="p-3 border-b max-w-xs" data-label="Actions décidées"><div class="truncate" title="${escapeHtml(a.actions || '')}">${escapeHtml(a.actions || 'N/C')}</div></td>
+                        <td class="p-3 border-b text-right whitespace-nowrap sst-td-full"><button onclick="openAtRegistreModal(${idx})" class="text-blue-600 hover:underline font-semibold mr-2">Modifier</button><button onclick="deleteAtRegistre(${idx})" class="text-red-500 hover:underline">Supprimer</button></td>
                     </tr>`;
                 tbody.innerHTML += row;
             });
@@ -12396,7 +12448,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 const atRowKey = String(a?._cloudId || a?.id || a?.reference || a?.sourceAtRef || idx);
                 const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]').filter(x=>x?.origine==='AT' && (String(x?.atAnalysisId||'')===String(a?.id||'') || String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'') || String(x?.atAnalysisReference||'')===String(atReference||'')));
                 const actionHtml=papActions.length ? `<details class="mt-2 text-left"><summary class="cursor-pointer text-[11px] font-bold text-indigo-700 hover:text-indigo-900">📋 ${papActions.length} action${papActions.length>1?'s':''} PAPRIPACT</summary><div class="mt-2 space-y-1.5">${papActions.map(ac=>{const stable=JSON.stringify(String(ac._cloudId||ac.id||ac.numero||''));const st=ac.statut||'À traiter';const scls=st==='Clôturée'?'bg-green-50 text-green-700 border-green-200':st==='En cours'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200';return `<button type="button" onclick='scrollToPapripactAction(${stable})' class="w-full text-left border rounded-lg bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 px-2.5 py-2 transition"><div class="font-semibold text-xs text-slate-700">N° ${escapeHtml(ac.numero||'?')} — ${escapeHtml(ac.action||'Action')}</div><div class="flex justify-between gap-2 mt-1"><span class="text-[10px] text-slate-500">${escapeHtml(ac.responsable||'À définir')} · ${escapeHtml(ac.delai||'N/C')}</span><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${scls}">${escapeHtml(st)}</span></div></button>`;}).join('')}</div></details>` : `<div class="mt-2 text-[10px] text-slate-400 italic">Aucune action PAPRIPACT liée.</div>`;
-                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
+                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b" data-label="Salarié & date"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs" data-label="Unité / Poste">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md" data-label="Déroulé des faits"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center" data-label="Statut"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center" data-label="AT lié">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap sst-td-full"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
             });
 
             // Ré-applique une éventuelle surbrillance en attente (navigation depuis le
