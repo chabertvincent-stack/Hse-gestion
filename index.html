@@ -2895,7 +2895,7 @@
             const company=ctx?.role==='companyAdmin';
             document.getElementById('platform-admin-nav')?.classList.toggle('hidden', !platform && !company);
             document.getElementById('sst-platform-admin-panel')?.classList.toggle('hidden', !platform);
-            document.getElementById('sst-company-admin-panel')?.classList.toggle('hidden', !company && !platform);
+            document.getElementById('sst-company-admin-panel')?.classList.toggle('hidden', !company);
             document.getElementById('sst-company-modules-edit-block')?.classList.toggle('hidden', !platform);
             document.getElementById('sst-company-modules-readonly-block')?.classList.toggle('hidden', !company);
             if(company){
