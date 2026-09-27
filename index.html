@@ -1266,7 +1266,7 @@
                 <div id="tab-papripact" class="tab-content hidden space-y-6">
                     <div id="pap-cloud-status-banner" class="hidden mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
                         <div>
-                            <div><strong>☁️ Données PAPRIPACT cloud actives.</strong> Les actions de cette entreprise sont stockées dans Firebase et synchronisées automatiquement entre les appareils autorisés.</div>
+                            <div><strong>☁️ Synchronisation active.</strong> Les actions de cette entreprise sont sauvegardées en ligne et synchronisées automatiquement entre les appareils autorisés.</div>
                             <div id="pap-cloud-status-text" class="mt-1 text-[11px] text-sky-700"></div>
                         </div>
                     </div>
@@ -1487,7 +1487,7 @@
                 <div id="tab-amelioration" class="tab-content hidden space-y-6">
                     <div id="fa-list-view">
                         <div id="fa-cloud-status-banner" class="hidden mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-                            <div><strong>☁️ Données cloud actives.</strong> Les Fiches d'Amélioration de cette entreprise sont stockées dans Firebase et synchronisées automatiquement entre les appareils autorisés.</div>
+                            <div><strong>☁️ Synchronisation active.</strong> Les Fiches d'Amélioration de cette entreprise sont sauvegardées en ligne et synchronisées automatiquement entre les appareils autorisés.</div>
                             <div id="fa-cloud-status-text" class="mt-1 text-[11px] text-sky-700"></div>
                         </div>
                         <div class="flex flex-wrap justify-between items-center gap-3 mb-6 sticky top-0 z-10 bg-gray-100 py-3 -mx-1 px-1">
@@ -1656,7 +1656,7 @@
                 <div id="tab-at" class="tab-content hidden space-y-6">
                     <div id="at-cloud-status-banner" class="hidden rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
                         <div>
-                            <div><strong>☁️ Données Analyse AT cloud actives.</strong> Les analyses de cette entreprise sont stockées dans Firebase et synchronisées automatiquement entre les appareils autorisés.</div>
+                            <div><strong>☁️ Synchronisation active.</strong> Les analyses de cette entreprise sont sauvegardées en ligne et synchronisées automatiquement entre les appareils autorisés.</div>
                             <div id="at-cloud-status-text" class="mt-1 text-[11px] text-sky-700"></div>
                         </div>
                     </div>
@@ -1896,9 +1896,7 @@
                     <div class="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
                         <div class="mb-6 border-b pb-4">
                             <h3 id="sst-admin-title" class="text-xl font-bold text-slate-800">🧩 Administration</h3>
-                            <p id="sst-admin-subtitle" class="text-xs text-slate-500 mt-1">Création des entreprises, activation des modules et gestion des utilisateurs. Les données métier sont synchronisées dans Firebase sans modifier les fonctionnalités historiques.</p>
-                        <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 text-xs"><strong>Mode test sans Blaze :</strong> les comptes et entreprises sont créés directement depuis le navigateur avec les services Firebase gratuits. Le renforcement serveur par Cloud Functions pourra être ajouté plus tard pour la version commerciale.</div>
-                        <div class="mb-5 rounded-lg border border-blue-200 bg-blue-50 text-blue-900 px-4 py-3 text-xs"><strong>Sécurité Firebase :</strong> le compte platformAdmin doit avoir les règles Firestore adaptées à la version actuelle publiées pour créer, modifier et supprimer des entreprises. Les erreurs « Missing or insufficient permissions » viennent des règles actuellement actives dans Firebase.</div>
+                            <p id="sst-admin-subtitle" class="text-xs text-slate-500 mt-1">Création des entreprises, activation des modules et gestion des utilisateurs.</p>
                         </div>
 
                         <div id="sst-platform-admin-panel" class="hidden space-y-6">
@@ -2160,8 +2158,8 @@
                         </div>
 
                         <div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                            <div class="text-sm font-bold text-slate-800">☁️ Synchronisation Firebase</div>
-                            <p class="text-xs text-slate-600 mt-1 leading-relaxed">Tous les modules de cette entreprise sont automatiquement synchronisés avec Firebase en temps réel, sur tous les appareils autorisés — aucune action manuelle n'est nécessaire.</p>
+                            <div class="text-sm font-bold text-slate-800">☁️ Synchronisation automatique</div>
+                            <p class="text-xs text-slate-600 mt-1 leading-relaxed">Tous les modules de cette entreprise sont automatiquement synchronisés en temps réel, sur tous les appareils autorisés — aucune action manuelle n'est nécessaire.</p>
                             <div id="sst-cloud-full-sync-status" class="text-[11px] text-emerald-800 mt-3"></div>
                         </div>
 
@@ -2739,7 +2737,7 @@
             if(company) company.textContent = ctx.companyName || 'Entreprise';
             if(user) user.textContent = `${ctx.displayName || 'Utilisateur'}${ctx.email ? ' · ' + ctx.email : ''}`;
             if(logout) logout.classList.toggle('hidden', !(CFG.enabled && firebaseAuth));
-            if(status) status.textContent = CFG.enabled && firebaseAuth ? `Connecté · ${ctx.companyName} · données cloud actives pour tous les modules · administration sans Cloud Functions.` : 'Mode local actif · Firebase n’est pas activé dans cette version de test.';
+            if(status) status.textContent = CFG.enabled && firebaseAuth ? `Connecté · ${ctx.companyName} · synchronisation active pour tous les modules.` : 'Mode local actif · synchronisation en ligne non disponible.';
             if(role) role.textContent = `Rôle : ${ctx.role}`;
             if(modules){ const active = Object.keys(ctx.modules || {}).filter(k => ctx.modules[k] && !['dashboard','settings'].includes(k)); modules.textContent = active.length ? `Modules : ${active.length} actifs` : 'Modules : aucun'; }
             applyPapripactRegimeUi();
@@ -2890,7 +2888,7 @@
             const title=document.getElementById('sst-admin-title');
             const subtitle=document.getElementById('sst-admin-subtitle');
             if(title) title.textContent=platform ? '🧩 Administration plateforme' : '🧩 Administration entreprise';
-            if(subtitle) subtitle.textContent=platform ? 'Créez des entreprises, activez leurs modules et préparez leurs comptes administrateurs, directement avec Firebase Authentication et Firestore.' : `Gérez les utilisateurs de ${ctx?.companyName || 'votre entreprise'}. Les modules sont activés par l'administrateur de la plateforme.`;
+            if(subtitle) subtitle.textContent=platform ? 'Créez des entreprises, activez leurs modules et préparez leurs comptes administrateurs.' : `Gérez les utilisateurs de ${ctx?.companyName || 'votre entreprise'}. Les modules sont activés par l'administrateur de la plateforme.`;
             if(platform){
                 renderSstModuleChecks('admin-create-company-modules', {formations:true,duerp:true,papripact:true,amelioration:true,urgence:true,at:true});
             }
