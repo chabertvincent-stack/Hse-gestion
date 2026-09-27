@@ -1693,10 +1693,12 @@
                             </div>
                         </div>
 
+                        <div id="at-analyses-bulk-bar" class="mb-2"></div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left border-collapse sst-responsive-table">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider">
+                                        <th class="p-3 border-b"><input type="checkbox" id="at-analyses-select-all-visible" class="rounded border-slate-300" onchange="toggleAllVisibleAtAnalyses(this.checked)" title="Tout sélectionner (résultats affichés)"></th>
                                         <th class="p-3 border-b">Salarié & Date</th>
                                         <th class="p-3 border-b">Unité / Poste</th>
                                         <th class="p-3 border-b">Déroulé des faits</th>
@@ -6073,7 +6075,7 @@
                             <div>🏢 ${uniteName} <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${posts.length} poste(s)</span></div>
                             <span class="text-xs text-slate-500 font-semibold">▼ Réduire / Développer</span>
                         </div>
-                        <div id="${accordionId}" class="p-4 space-y-3">`;
+                        <div id="${accordionId}" class="p-4 space-y-3 ${sstIsOpen(accordionId, false) ? '' : 'hidden'}">`;
 
                 posts.forEach(p => {
                     let formationsHtml = '';
@@ -6210,8 +6212,8 @@
                             <div>🏢 ${uniteName} <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${unitSalaries.length} salarié(s)</span>${unitSalaries.filter(x => sstGetSalarieStatut(x) === 'Intérimaire').length ? `<span class="ml-1 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-normal">dont ${unitSalaries.filter(x => sstGetSalarieStatut(x) === 'Intérimaire').length} intérimaire(s)</span>` : ''}</div>
                             <span class="text-xs text-slate-500 font-semibold">▼ Réduire / Développer</span>
                         </div>
-                        <div id="${accordionId}" class="p-4 space-y-3">`;
-                
+                        <div id="${accordionId}" class="p-4 space-y-3 ${sstIsOpen(accordionId, false) ? '' : 'hidden'}">`;
+
                 unitSalaries.forEach(sal => {
                     let actualIdx = salaries.indexOf(sal);
                     let salDetailsId = 'sal-details-' + actualIdx;
@@ -6244,7 +6246,7 @@
                                     <button onclick="deleteSalarie(${actualIdx})" class="text-red-500 text-xs hover:underline px-2">Supprimer</button>
                                 </div>
                             </div>
-                            <div id="${salDetailsId}" class="hidden pl-4 border-l-2 border-blue-400 space-y-1 mt-2 pt-2">
+                            <div id="${salDetailsId}" class="${sstIsOpen(salDetailsId, false) ? '' : 'hidden'} pl-4 border-l-2 border-blue-400 space-y-1 mt-2 pt-2">
                                 ${formsDetailsHtml}
                             </div>
                         </div>`;
@@ -6254,9 +6256,29 @@
             container.innerHTML = html;
         }
 
+        // État "ouvert/fermé" persistant, partagé par TOUS les accordéons de l'application
+        // (blocs classiques via toggleAccordion, et <details> natifs via sstIsOpen/sstSetOpen).
+        // Par défaut un élément jamais touché suit le comportement demandé par l'appelant
+        // (souvent fermé) ; dès que l'utilisateur l'ouvre ou le ferme une fois, ce choix est
+        // mémorisé et survit aux rafraîchissements (filtre, autre action, rechargement de page).
+        function sstGetOpenMap() {
+            try { return JSON.parse(localStorage.getItem('sst_ui_open_map') || '{}'); } catch(e) { return {}; }
+        }
+        function sstSetOpen(id, opened) {
+            if(!id) return;
+            const map = sstGetOpenMap();
+            map[id] = !!opened;
+            try { localStorage.setItem('sst_ui_open_map', JSON.stringify(map)); } catch(e) {}
+        }
+        function sstIsOpen(id, defaultOpen) {
+            const map = sstGetOpenMap();
+            return Object.prototype.hasOwnProperty.call(map, id) ? !!map[id] : !!defaultOpen;
+        }
         function toggleAccordion(id) {
             let el = document.getElementById(id);
-            if(el) el.classList.toggle('hidden');
+            if(!el) return;
+            el.classList.toggle('hidden');
+            sstSetOpen(id, !el.classList.contains('hidden'));
         }
 
         // --- FICHE SALARIE 360 V2.72 : synthese en lecture seule ---
@@ -6709,7 +6731,7 @@
                             <div>🏢 ${sName} <span class="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-normal">${groupSalaries.length} salarié(s)</span></div>
                             <span class="text-xs text-slate-500 font-semibold">▼ Réduire / Développer</span>
                         </div>
-                        <div id="${accId}" class="p-4 space-y-4">`;
+                        <div id="${accId}" class="p-4 space-y-4 ${sstIsOpen(accId, false) ? '' : 'hidden'}">`;
 
                 groupSalaries.forEach(sal => {
                     let actualIdx = salaries.indexOf(sal);
@@ -6836,9 +6858,10 @@
             let html = '';
             stats.forEach((st, idx) => {
                 const detailsId = `calendar-rh-detail-${idx}`;
+                const accDetailsId = 'calendar-rh-acc-' + String(st.nom).replace(/[^a-zA-Z0-9]/g,'_');
                 const escapedFormation = String(st.nom).replace(/'/g, "\\'");
                 html += `
-                    <details class="border rounded-lg bg-slate-50 overflow-hidden group md:col-span-1">
+                    <details id="${accDetailsId}" ${sstIsOpen(accDetailsId,false)?'open':''} ontoggle="sstSetOpen('${accDetailsId}', this.open)" class="border rounded-lg bg-slate-50 overflow-hidden group md:col-span-1">
                         <summary class="list-none cursor-pointer select-none p-3">
                             <div class="flex flex-wrap items-start justify-between gap-3">
                                 <div class="min-w-0">
@@ -9176,15 +9199,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         // --- DUERP ---
-        // Accordéon DUERP par unité : on mémorise les groupes ouverts pour qu'un
-        // rafraîchissement (ex. après une suppression) ne referme pas ce qui était ouvert.
-        window.sstDuerpOpenGroups = window.sstDuerpOpenGroups || new Set();
+        // Accordéon DUERP par unité : repose sur l'état persistant partagé sstIsOpen/sstSetOpen
+        // (localStorage) pour qu'un groupe ouvert le reste après une suppression, un filtre,
+        // OU un rechargement de page — pas seulement le temps de la session en mémoire.
         function toggleDuerpAccordion(accId) {
             const el = document.getElementById(accId);
             if(!el) return;
             el.classList.toggle('hidden');
-            if(el.classList.contains('hidden')) window.sstDuerpOpenGroups.delete(accId);
-            else window.sstDuerpOpenGroups.add(accId);
+            sstSetOpen(accId, !el.classList.contains('hidden'));
         }
         // Sélection multiple des risques DUERP (état temporaire d'interface, sans alourdir les données métier).
         window.sstDuerpSelected = window.sstDuerpSelected || new Set();
@@ -9248,7 +9270,6 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             }
 
             window.sstDuerpSelected = window.sstDuerpSelected || new Set();
-            window.sstDuerpOpenGroups = window.sstDuerpOpenGroups || new Set();
             if(duerpBulkBar){
                 const filteredIdx = filtered.map(r => risques.indexOf(r));
                 const selectedCount = window.sstDuerpSelected.size;
@@ -9274,7 +9295,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let accId = 'acc-duerp-' + uName.replace(/[^a-zA-Z0-9]/g, '_');
                 // Replié par défaut, sauf si l'utilisateur a explicitement filtré sur cette unité
                 // (dans ce cas une seule unité est de toute façon affichée, autant l'ouvrir directement).
-                let isOpen = !!filterUnite || window.sstDuerpOpenGroups?.has(accId);
+                let isOpen = !!filterUnite || sstIsOpen(accId, false);
                 const zoneLabels = getDuerpCurrentCotationConfig().zones;
                 let nbElevé = groupRisques.filter(r => calculateDuerpCotation(r).zone === 'red').length;
                 let nbMoyen = groupRisques.filter(r => calculateDuerpCotation(r).zone === 'orange').length;
@@ -12426,12 +12447,52 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             return analysisObj;
         }
 
+        // Sélection multiple des analyses AT (état temporaire d'interface, sans alourdir les données
+        // métier). Identifiée par clé stable (comme editAtAnalyseByKey/deleteAtAnalyseByKey) et non
+        // par index, car la liste peut être réordonnée par la synchronisation cloud entre deux rendus.
+        window.sstAtAnalysesSelected = window.sstAtAnalysesSelected || new Set();
+        function toggleAtAnalyseSelection(key, checked) { const k=String(key); if(checked) window.sstAtAnalysesSelected.add(k); else window.sstAtAnalysesSelected.delete(k); loadAt(true); }
+        function toggleAllVisibleAtAnalyses(checked) {
+            const analyses = ensureAllAtAnalysisReferences();
+            const filterService=document.getElementById('filter-at-service')?.value||''; const filterGravite=document.getElementById('filter-at-gravite')?.value||''; const filterYear=document.getElementById('filter-at-year')?.value||'';
+            analyses.filter(a=>(!filterService||a.service===filterService)&&(!filterGravite||a.gravite===filterGravite)&&(!filterYear||sstDateYear(a.date)===filterYear)).forEach(a=>{
+                const key=getAtAnalysisStableKey(a);
+                if(checked) window.sstAtAnalysesSelected.add(key); else window.sstAtAnalysesSelected.delete(key);
+            });
+            loadAt(true);
+        }
+        async function deleteSelectedAtAnalyses() {
+            const keys=Array.from(window.sstAtAnalysesSelected||[]).filter(Boolean);
+            if(!keys.length) return;
+            if(!confirm(`Supprimer les ${keys.length} analyse(s) AT sélectionnée(s) ?`)) return;
+            let analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]');
+            const targets=keys.map(k=>analyses.find(a=>getAtAnalysisStableKey(a)===k)).filter(Boolean);
+            const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            const hasLinkedPap=targets.some(a=>papActions.some(x=>x?.origine==='AT' && ((String(x?.atAnalysisId||'')===String(a?.id||'')&&!!a?.id) || (String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'')&&!!a?._cloudId) || (String(x?.atAnalysisReference||'')===String(a?.reference||'')&&!!a?.reference))));
+            const deletePapLinked=hasLinkedPap ? confirm(`Des actions PAPRIPACT sont liées aux analyses sélectionnées.\n\nOK : supprimer toutes les actions PAPRIPACT liées.\nAnnuler : conserver les actions, mais retirer les liens vers les analyses supprimées.`) : false;
+            let papChanged=false;
+            const sourceAtRefs=[];
+            for(const a of targets){
+                const changed=await sstHandlePapSourceDeletion('AT',a,deletePapLinked); papChanged=papChanged||changed;
+                if(a.sourceAtRef) sourceAtRefs.push(a.sourceAtRef);
+            }
+            const removeKeys=new Set(targets.map(a=>getAtAnalysisStableKey(a)));
+            analyses=analyses.filter(a=>!removeKeys.has(getAtAnalysisStableKey(a)));
+            localStorage.setItem('at_analyses',JSON.stringify(analyses));
+            if(sourceAtRefs.length){ const registre=getAtRegistreData(); registre.forEach(r=>{ if(sourceAtRefs.includes(r.ref)) r.analyseStatut='À réaliser'; }); localStorage.setItem('at_registre',JSON.stringify(registre)); }
+            window.sstAtAnalysesSelected.clear();
+            loadAt(true); loadAtRegistre(); loadPapripactLocalOnly(); loadDashboard();
+            try { if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_analyses','at_registre',...(papChanged?['papripact_actions']:[])); else await sstQueueCloudCommit('at_analyses','at_registre',...(papChanged?['papripact_actions']:[])); }
+            catch(err){ console.warn('Synchronisation suppression groupée analyses AT impossible :',err); alert('Suppression locale effectuée, mais synchronisation cloud non confirmée.'); }
+        }
+
         async function loadAt(skipCloud = false) {
             // Affichage local immédiat : aucune attente Firebase à l'ouverture de l'onglet.
             renderAtCloudUi();
             let analyses=ensureAllAtAnalysisReferences(); const tbody=document.getElementById('table-at-analyses'); if(!tbody) return; tbody.innerHTML='';
             if(!analyses.length){
-                tbody.innerHTML='<tr><td colspan="6" class="p-4 text-center text-slate-500">Aucune analyse d\'AT enregistrée.</td></tr>';
+                tbody.innerHTML='<tr><td colspan="7" class="p-4 text-center text-slate-500">Aucune analyse d\'AT enregistrée.</td></tr>';
+                const bar=document.getElementById('at-analyses-bulk-bar'); if(bar) bar.innerHTML='';
                 if(isCloudAtTenant() && !skipCloud){
                     Promise.resolve().then(async()=>{
                         try { await window.SSTCloud.syncAtAnalysesFromCloud(); renderAtCloudUi(); loadAt(true); }
@@ -12440,15 +12501,29 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 }
                 return;
             }
+            window.sstAtAnalysesSelected = window.sstAtAnalysesSelected || new Set();
             sstPopulateFilterOptions('filter-at-year', analyses.map(a=>sstDateYear(a.date)), 'Toutes les années');
             const filterService=document.getElementById('filter-at-service')?.value||''; const filterGravite=document.getElementById('filter-at-gravite')?.value||''; const filterYear=document.getElementById('filter-at-year')?.value||'';
-            analyses.filter(a=>(!filterService||a.service===filterService)&&(!filterGravite||a.gravite===filterGravite)&&(!filterYear||sstDateYear(a.date)===filterYear)).forEach((a,idx)=>{
+            const filteredAnalyses=analyses.filter(a=>(!filterService||a.service===filterService)&&(!filterGravite||a.gravite===filterGravite)&&(!filterYear||sstDateYear(a.date)===filterYear));
+            const atAnalysesBulkBar=document.getElementById('at-analyses-bulk-bar');
+            if(atAnalysesBulkBar){
+                const visibleKeys=filteredAnalyses.map(a=>getAtAnalysisStableKey(a));
+                const selectedCount=window.sstAtAnalysesSelected.size;
+                const visibleAllSelected=visibleKeys.length>0 && visibleKeys.every(k=>window.sstAtAnalysesSelected.has(k));
+                const selectAllBox=document.getElementById('at-analyses-select-all-visible'); if(selectAllBox) selectAllBox.checked=visibleAllSelected;
+                atAnalysesBulkBar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
+                    <span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span>
+                    <div class="flex items-center gap-3"><button type="button" onclick="deleteSelectedAtAnalyses()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstAtAnalysesSelected.clear();loadAt(true)" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                </div>`;
+            }
+            filteredAnalyses.forEach((a,idx)=>{
                 const status=a.statut||'À réaliser'; const cls=status==='Réalisée'?'bg-green-100 text-green-800 border-green-200':status==='En cours'?'bg-blue-100 text-blue-800 border-blue-200':'bg-amber-100 text-amber-800 border-amber-200';
                 const atReference = ensureAtAnalysisReference(a, analyses);
                 const atRowKey = String(a?._cloudId || a?.id || a?.reference || a?.sourceAtRef || idx);
                 const papActions=JSON.parse(localStorage.getItem('papripact_actions')||'[]').filter(x=>x?.origine==='AT' && (String(x?.atAnalysisId||'')===String(a?.id||'') || String(x?.atAnalysisCloudId||'')===String(a?._cloudId||'') || String(x?.atAnalysisReference||'')===String(atReference||'')));
-                const actionHtml=papActions.length ? `<details class="mt-2 text-left"><summary class="cursor-pointer text-[11px] font-bold text-indigo-700 hover:text-indigo-900">📋 ${papActions.length} action${papActions.length>1?'s':''} PAPRIPACT</summary><div class="mt-2 space-y-1.5">${papActions.map(ac=>{const stable=JSON.stringify(String(ac._cloudId||ac.id||ac.numero||''));const st=ac.statut||'À traiter';const scls=st==='Clôturée'?'bg-green-50 text-green-700 border-green-200':st==='En cours'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200';return `<button type="button" onclick='scrollToPapripactAction(${stable})' class="w-full text-left border rounded-lg bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 px-2.5 py-2 transition"><div class="font-semibold text-xs text-slate-700">N° ${escapeHtml(ac.numero||'?')} — ${escapeHtml(ac.action||'Action')}</div><div class="flex justify-between gap-2 mt-1"><span class="text-[10px] text-slate-500">${escapeHtml(ac.responsable||'À définir')} · ${escapeHtml(ac.delai||'N/C')}</span><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${scls}">${escapeHtml(st)}</span></div></button>`;}).join('')}</div></details>` : `<div class="mt-2 text-[10px] text-slate-400 italic">Aucune action PAPRIPACT liée.</div>`;
-                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b" data-label="Salarié & date"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs" data-label="Unité / Poste">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md" data-label="Déroulé des faits"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center" data-label="Statut"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center" data-label="AT lié">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap sst-td-full"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
+                const atActionsDetailsId = 'at-actions-' + String(a.id||a._cloudId||a.reference||a.sourceAtRef||atRowKey).replace(/[^a-zA-Z0-9]/g,'_');
+                const actionHtml=papActions.length ? `<details ${sstIsOpen(atActionsDetailsId,false)?'open':''} ontoggle="sstSetOpen('${atActionsDetailsId}', this.open)" class="mt-2 text-left"><summary class="cursor-pointer text-[11px] font-bold text-indigo-700 hover:text-indigo-900">📋 ${papActions.length} action${papActions.length>1?'s':''} PAPRIPACT</summary><div class="mt-2 space-y-1.5">${papActions.map(ac=>{const stable=JSON.stringify(String(ac._cloudId||ac.id||ac.numero||''));const st=ac.statut||'À traiter';const scls=st==='Clôturée'?'bg-green-50 text-green-700 border-green-200':st==='En cours'?'bg-blue-50 text-blue-700 border-blue-200':'bg-amber-50 text-amber-700 border-amber-200';return `<button type="button" onclick='scrollToPapripactAction(${stable})' class="w-full text-left border rounded-lg bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 px-2.5 py-2 transition"><div class="font-semibold text-xs text-slate-700">N° ${escapeHtml(ac.numero||'?')} — ${escapeHtml(ac.action||'Action')}</div><div class="flex justify-between gap-2 mt-1"><span class="text-[10px] text-slate-500">${escapeHtml(ac.responsable||'À définir')} · ${escapeHtml(ac.delai||'N/C')}</span><span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${scls}">${escapeHtml(st)}</span></div></button>`;}).join('')}</div></details>` : `<div class="mt-2 text-[10px] text-slate-400 italic">Aucune action PAPRIPACT liée.</div>`;
+                tbody.innerHTML+=`<tr id="at-row-${escapeHtml(atRowKey)}" data-at-analysis-key="${escapeHtml(atRowKey)}" class="hover:bg-slate-50 transition-colors"><td class="p-3 border-b sst-td-full"><input type="checkbox" aria-label="Sélectionner l'analyse de ${escapeHtml(a.salarie||'')}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstAtAnalysesSelected.has(atRowKey)?'checked':''} onchange='toggleAtAnalyseSelection(${JSON.stringify(atRowKey)},this.checked)'></td><td class="p-3 border-b" data-label="Salarié & date"><span class="font-bold text-slate-800">${escapeHtml(a.salarie||'')}</span> ${sstStatutPill(sstResolveStatut(a.salarie, a.statutPersonnel))}<div class="text-xs text-blue-700 font-semibold">${escapeHtml(atReference)}</div><div class="text-xs text-slate-500">${escapeHtml(a.date||'')}</div></td><td class="p-3 border-b text-xs" data-label="Unité / Poste">${escapeHtml(a.service||'N/C')}</td><td class="p-3 border-b text-xs max-w-md" data-label="Déroulé des faits"><div class="truncate" title="${escapeHtml(a.deriveFaits||a.circonstances||'')}">${escapeHtml(a.deriveFaits||a.circonstances||'N/C')}</div><div class="text-[11px] text-slate-500">${a.arbreNoeuds?.length||0} nœud(s) dans l'arbre</div></td><td class="p-3 border-b text-center" data-label="Statut"><span class="px-2 py-0.5 rounded text-xs border ${cls} font-semibold">${escapeHtml(status)}</span></td><td class="p-3 border-b text-center" data-label="AT lié">${escapeHtml(a.sourceAtRef||'Analyse libre')}</td><td class="p-3 border-b text-right whitespace-nowrap sst-td-full"><button onclick='editAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-blue-600 text-xs hover:underline font-semibold mr-2">${status==='Réalisée'?'Voir / Modifier':'Réaliser l’analyse'}</button><button onclick='generateAtAnalysisPdfByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-600 text-xs hover:underline font-semibold mr-2">📄 PDF</button><button onclick='deleteAtAnalyseByKey(${JSON.stringify(String(a.id||a._cloudId||a.reference||a.sourceAtRef||''))})' class="text-red-500 text-xs hover:underline">Supprimer</button>${actionHtml}</td></tr>`;
             });
 
             // Ré-applique une éventuelle surbrillance en attente (navigation depuis le
@@ -12547,6 +12622,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const analyses=JSON.parse(localStorage.getItem('at_analyses')||'[]'); const a=analyses[idx]; if(!a)return;
             const papChanged=await sstHandlePapSourceDeletion('AT',a);
             const sourceAtRef=a.sourceAtRef||''; analyses.splice(idx,1); localStorage.setItem('at_analyses',JSON.stringify(analyses));
+            window.sstAtAnalysesSelected?.delete(getAtAnalysisStableKey(a));
             if(sourceAtRef){const registre=getAtRegistreData();const ri=registre.findIndex(x=>x.ref===sourceAtRef);if(ri!==-1){registre[ri].analyseStatut='À réaliser';localStorage.setItem('at_registre',JSON.stringify(registre));}}
             loadAt(true);loadAtRegistre();loadPapripactLocalOnly();loadDashboard();
             try {if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('at_analyses','at_registre',...(papChanged?['papripact_actions']:[]));else await sstQueueCloudCommit('at_analyses','at_registre',...(papChanged?['papripact_actions']:[]));}
@@ -13379,7 +13455,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const groups=new Map();
             filtered.forEach(item=>{ const key=String(item.t?.secteur||'Secteur non défini'); if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(item); });
             [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],'fr')).forEach(([secteur,items])=>{
-                html += `<details class="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                const secteurDetailsId = 'tournee-secteur-' + secteur.replace(/[^a-zA-Z0-9]/g,'_');
+                html += `<details id="${secteurDetailsId}" ${sstIsOpen(secteurDetailsId,false)?'open':''} ontoggle="sstSetOpen('${secteurDetailsId}', this.open)" class="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
                     <summary class="list-none cursor-pointer px-4 py-3 hover:bg-slate-100 touch-manipulation">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div class="font-bold text-slate-800 text-sm">🏢 ${escapeHtml(secteur)}</div>
@@ -13394,7 +13471,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     const checklist=t.checklist||[];
                     const nbKo=checklist.filter(c=>c.reponse==='KO').length; const nbOk=checklist.filter(c=>c.reponse==='OK').length; const nbSo=checklist.filter(c=>c.reponse==='SO').length; const nbTraite=checklist.filter(c=>c.reponse).length; const nbTotal=checklist.length;
                     const relatedActions=actionsPap.filter(a=>a.origine==='Tournée HSE' && ((a.tourneeReference&&a.tourneeReference===t.reference)||(!a.tourneeReference&&a.tourneeIndex===idx)));
-                    html += `<details id="tournee-details-${idx}" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group">
+                    const tourneeDetailsId = 'tournee-details-' + idx;
+                    html += `<details id="${tourneeDetailsId}" ${sstIsOpen(tourneeDetailsId,false)?'open':''} ontoggle="sstSetOpen('${tourneeDetailsId}', this.open)" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group">
                         <summary class="list-none cursor-pointer px-4 md:px-5 py-4 hover:bg-slate-50 touch-manipulation">
                             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                 <div class="min-w-0">
