@@ -1966,7 +1966,10 @@
                             <div class="border rounded-xl p-5 bg-white">
                                 <h4 class="font-bold text-slate-800 mb-2">📥 Remontées terrain sans connexion (FA / SU)</h4>
                                 <p class="text-xs text-slate-500 mb-4">Générez une affiche/QR à poser en atelier ou à l'accueil : n'importe qui peut proposer une Fiche d'Amélioration ou signaler une Situation d'Urgence sans se connecter. Chaque envoi arrive ici en attente — rien n'est ajouté au PAPRIPACT tant que vous n'avez pas validé la demande.</p>
-                                <button onclick="generatePublicReportQr()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">📱 Générer l'affiche QR</button>
+                                <div data-sst-module="casqueQr">
+                                    <button onclick="generatePublicReportQr()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold">📱 Générer l'affiche QR</button>
+                                </div>
+                                <div data-sst-module-locked="casqueQr" class="hidden rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs p-3">🔒 Cette fonctionnalité est une option. Elle n'est pas incluse dans votre forfait actuel — contactez votre prestataire pour l'activer.</div>
                                 <div class="mt-5 pt-4 border-t">
                                     <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h5 class="font-bold text-slate-800 text-sm">Demandes en attente <span id="sst-pending-reports-count" class="text-xs font-normal text-slate-400"></span></h5><button type="button" onclick="window.loadPendingReports()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div>
                                     <div id="sst-pending-reports-list" class="space-y-2"></div>
@@ -2579,7 +2582,8 @@
             amelioration:"Fiches d'amélioration",
             urgence:"Urgence & Presqu'accident",
             at:'Analyse AT',
-            tournees:'Tournée HSE'
+            tournees:'Tournée HSE',
+            casqueQr:'Étiquettes casque & QR FA/SU sans connexion (option)'
         };
         const SST_MODULE_ORDER = Object.keys(SST_MODULE_LABELS);
 
@@ -2643,8 +2647,27 @@
             return template.permissions.includes('*') || template.permissions.includes(permission);
         }
 
+        // CORRECTIF : cette fonction était appelée à 3 endroits (connexion, rafraîchissement
+        // des modules, démarrage) mais n'avait jamais été définie -> ReferenceError silencieuse
+        // à chaque appel. Convention : un élément data-sst-module="x" est affiché seulement si
+        // le module x est actif pour l'entreprise connectée ; l'élément jumeau optionnel
+        // data-sst-module-locked="x" (même valeur) s'affiche à la place quand il ne l'est pas.
+        function applySstModuleAccess() {
+            const canModule = window.SSTCloud?.canModule;
+            document.querySelectorAll('[data-sst-module]').forEach(el => {
+                const mod = el.getAttribute('data-sst-module');
+                const allowed = canModule ? canModule(mod) : true;
+                el.classList.toggle('hidden', !allowed);
+            });
+            document.querySelectorAll('[data-sst-module-locked]').forEach(el => {
+                const mod = el.getAttribute('data-sst-module-locked');
+                const allowed = canModule ? canModule(mod) : true;
+                el.classList.toggle('hidden', allowed);
+            });
+        }
+
         function moduleMap(companyModules) {
-            const defaults = { dashboard:true, rh:false, infirmiere:false, formations:false, duerp:false, papripact:false, amelioration:false, urgence:false, at:false, tournees:false, settings:true };
+            const defaults = { dashboard:true, rh:false, infirmiere:false, formations:false, duerp:false, papripact:false, amelioration:false, urgence:false, at:false, tournees:false, casqueQr:false, settings:true };
             if(companyModules && typeof companyModules === 'object') Object.keys(defaults).forEach(k => { if(Object.prototype.hasOwnProperty.call(companyModules,k)) defaults[k] = companyModules[k] === true; });
             defaults.dashboard = true;
             defaults.settings = true;
@@ -6783,7 +6806,7 @@
                                     </div>
                                     <div class="flex items-center gap-2 shrink-0">
                                         <button type="button" onclick="toggleFormationEmployee('${salDetailsId}', this)" class="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-semibold px-3 py-1.5 rounded-lg text-[11px] transition">▶ Afficher les formations</button>
-                                        <button onclick="openQrModal(${actualIdx})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg text-[11px]">🏷️ Casque</button>
+                                        ${(window.SSTCloud?.canModule ? window.SSTCloud.canModule('casqueQr') : true) ? `<button onclick="openQrModal(${actualIdx})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg text-[11px]">🏷️ Casque</button>` : ''}
                                         <button onclick="openSalarieModal(${actualIdx})" class="text-blue-600 hover:underline font-semibold px-1 text-xs">Éditer</button>
                                     </div>
                                 </div>
@@ -8029,6 +8052,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         function generatePublicReportQr() {
+            if(window.SSTCloud?.canModule && !window.SSTCloud.canModule('casqueQr')) { alert("Cette fonctionnalité (remontée terrain sans connexion) est une option non incluse dans votre forfait actuel."); return; }
             const payload = buildPublicReportQrPayload();
             if (!payload) { alert("Cette fonction nécessite un espace entreprise en ligne (Firebase). Sélectionnez d'abord l'entreprise concernée si vous êtes administrateur plateforme."); return; }
 
@@ -8373,6 +8397,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         async function openQrModal(idx) {
+            if(window.SSTCloud?.canModule && !window.SSTCloud.canModule('casqueQr')) { alert("Cette fonctionnalité (étiquette casque QR) est une option non incluse dans votre forfait actuel."); return; }
             const salaries = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             const sal = salaries[idx];
             if(!sal) { alert('Salarié introuvable.'); return; }
