@@ -1929,6 +1929,7 @@
                                     <span class="text-[10px] text-slate-400 hidden md:inline">La suppression retire les données Firestore ; les comptes Authentication se suppriment séparément.</span>
                                     </div>
                                     <div id="sst-company-list" class="space-y-2"></div>
+                                    <div id="sst-selected-company-panel" class="hidden mt-4 border-2 border-blue-200 bg-blue-50 rounded-xl p-4 space-y-4"></div>
                                 </div>
                             </div>
                         </div>
@@ -3120,16 +3121,133 @@
             const api=window.SSTFirebaseApi;
             const db=api?.getDb?.();
             if(!api || !db) return;
+            const panel=document.getElementById('sst-selected-company-panel');
+            if(!panel) return;
+            // Un second clic sur la même entreprise referme le panneau au lieu d'en ré-ouvrir un autre.
+            if(window.SST_ADMIN_SELECTED_COMPANY?.id === companyId && !panel.classList.contains('hidden')){
+                panel.classList.add('hidden');
+                panel.innerHTML='';
+                window.SST_ADMIN_SELECTED_COMPANY=null;
+                return;
+            }
             try{
                 const snap=await api.getDoc(api.doc(db,'companies',companyId));
                 if(!snap.exists()) return;
                 const c={id:snap.id,...snap.data()};
                 window.SST_ADMIN_SELECTED_COMPANY=c;
-                const list=document.getElementById('sst-company-list');
-                if(list) list.insertAdjacentHTML('afterbegin',`<div class="border border-blue-200 bg-blue-50 rounded-lg p-3 text-xs mb-3"><div class="font-bold text-slate-800">Entreprise sélectionnée : ${escSstAdmin(c.name||c.id)}</div><div class="mt-2" id="sst-selected-company-modules"></div><button onclick="saveSelectedSstCompanyModules()" class="mt-3 bg-blue-600 text-white px-3 py-2 rounded text-xs font-semibold">Enregistrer les modules</button></div>`);
+                panel.classList.remove('hidden');
+                panel.innerHTML = `
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="font-bold text-slate-800">🏢 ${escSstAdmin(c.name||c.id)}</div>
+                        <button type="button" onclick="document.getElementById('sst-selected-company-panel').classList.add('hidden');window.SST_ADMIN_SELECTED_COMPANY=null;" class="text-xs text-slate-500 hover:text-slate-800 underline">Fermer</button>
+                    </div>
+                    <div class="border rounded-lg p-3 bg-white">
+                        <div class="text-xs font-bold text-slate-700 mb-2">⚙️ Modules activés</div>
+                        <div id="sst-selected-company-modules" class="grid grid-cols-2 md:grid-cols-3 gap-2"></div>
+                        <button onclick="saveSelectedSstCompanyModules()" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-semibold">Enregistrer les modules</button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="border rounded-lg p-3 bg-white">
+                            <div class="text-xs font-bold text-slate-700 mb-2">👤 Ajouter un utilisateur</div>
+                            <div class="space-y-2">
+                                <input id="sel-admin-user-name" class="w-full p-2 border rounded text-xs" placeholder="Nom et prénom">
+                                <input id="sel-admin-user-email" type="email" class="w-full p-2 border rounded text-xs" placeholder="prenom.nom@entreprise.fr">
+                                <select id="sel-admin-user-role" onchange="applySelectedCompanyRolePreset()" class="w-full p-2 border rounded text-xs bg-white"></select>
+                                <div id="sel-admin-user-modules" class="grid grid-cols-2 gap-1"></div>
+                                <div id="sel-admin-user-result" class="hidden rounded border p-2 text-[11px]"></div>
+                                <button onclick="createSstUserForSelectedCompany()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-xs font-semibold">Créer l'utilisateur</button>
+                            </div>
+                        </div>
+                        <div class="border rounded-lg p-3 bg-white">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <div class="text-xs font-bold text-slate-700">👥 Utilisateurs (<span id="sst-selected-company-user-count">0</span>)</div>
+                                <button onclick="renderSstUsersForCompany('${String(c.id).replace(/'/g,"\\'")}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded text-[11px] font-semibold">Actualiser</button>
+                            </div>
+                            <div id="sst-selected-company-users-list" class="space-y-2 max-h-80 overflow-y-auto"></div>
+                        </div>
+                    </div>`;
                 renderSstModuleChecks('sst-selected-company-modules', c.modules||{});
-                await loadPendingReports(c.id);
+                renderSelectedCompanyRoleOptions();
+                await renderSstUsersForCompany(c.id);
             }catch(err){console.error(err);}            
+        };
+
+        function renderSelectedCompanyRoleOptions() {
+            const sel=document.getElementById('sel-admin-user-role');
+            if(!sel) return;
+            const roles=[['companyAdmin','Administrateur entreprise'],['hse','Responsable HSE'],['rh','RH'],['infirmiere','Infirmière'],['manager','Manager'],['employee','Salarié / utilisateur'],['viewerDuerp','Consultation DUERP uniquement'],['viewer','Lecture seule']];
+            sel.innerHTML=roles.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('');
+            applySelectedCompanyRolePreset();
+        }
+        function applySelectedCompanyRolePreset() {
+            const role=document.getElementById('sel-admin-user-role')?.value || 'viewer';
+            const tmpl=roleTemplates[role] || roleTemplates.viewer;
+            const selected={};
+            if(tmpl.modules==='*') SST_MODULE_ORDER.forEach(m=>selected[m]=true);
+            else tmpl.modules.forEach(m=>selected[m]=true);
+            renderSstModuleChecks('sel-admin-user-modules', selected);
+        }
+
+        window.createSstUserForSelectedCompany = async function(){
+            const c=window.SST_ADMIN_SELECTED_COMPANY; if(!c) return;
+            const resultBox=document.getElementById('sel-admin-user-result');
+            const payload={
+                companyId:c.id,
+                email:(document.getElementById('sel-admin-user-email')?.value||'').trim().toLowerCase(),
+                displayName:(document.getElementById('sel-admin-user-name')?.value||'').trim(),
+                role:document.getElementById('sel-admin-user-role')?.value||'viewer',
+                modules:getSstCheckedModules('sel-admin-user-modules')
+            };
+            if(!payload.email || !payload.displayName){ alert('Renseignez le nom et l\'adresse e-mail.'); return; }
+            try{
+                await createSstAuthAccountAndProfile(payload);
+                if(resultBox){resultBox.className='rounded border border-emerald-200 bg-emerald-50 text-emerald-800 p-2 text-[11px]';resultBox.textContent=`Utilisateur ${payload.email} créé.`;resultBox.classList.remove('hidden');}
+                ['sel-admin-user-name','sel-admin-user-email'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+                await renderSstUsersForCompany(c.id);
+            }catch(err){
+                if(resultBox){resultBox.className='rounded border border-red-200 bg-red-50 text-red-700 p-2 text-[11px]';resultBox.textContent=err?.message||'Création impossible.';resultBox.classList.remove('hidden');}
+            }
+        };
+
+        window.renderSstUsersForCompany = async function(companyId){
+            const api=window.SSTFirebaseApi; const db=api?.getDb?.();
+            if(!api || !db) return;
+            const roleLabels={companyAdmin:'Admin entreprise',hse:'Responsable HSE',rh:'RH',infirmiere:'Infirmière',manager:'Manager',employee:'Salarié',viewerDuerp:'Lecture DUERP',viewer:'Lecture seule'};
+            try{
+                const q=api.query(api.collection(db,'users'), api.where('companyId','==',companyId));
+                const snaps=await api.getDocs(q);
+                const users=snaps.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||'').localeCompare(String(b.displayName||b.email||''),'fr'));
+                const list=document.getElementById('sst-selected-company-users-list');
+                const countEl=document.getElementById('sst-selected-company-user-count');
+                if(countEl) countEl.textContent=String(users.length);
+                if(list) list.innerHTML = users.length ? users.map(u=>{
+                    const roleOptions=Object.keys(roleLabels).map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabels[r]}</option>`).join('');
+                    return `<div class="border rounded-lg p-2 bg-slate-50">
+                        <div class="font-bold text-xs text-slate-800 truncate">${escSstAdmin(u.displayName||u.email||'Utilisateur')}</div>
+                        <div class="text-[10px] text-slate-500 truncate">${escSstAdmin(u.email||'')} · ${u.status==='disabled'?'désactivé':'actif'}</div>
+                        <div class="flex items-center gap-2 mt-2">
+                            <select id="role-select-${u.id}" class="flex-1 p-1.5 border rounded text-[11px] bg-white">${roleOptions}</select>
+                            <button onclick="updateSstUserRole('${u.id}','${String(companyId).replace(/'/g,"\\'")}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1.5 rounded text-[11px] font-semibold">OK</button>
+                        </div>
+                    </div>`;
+                }).join('') : '<div class="text-[11px] text-slate-500 p-2 border rounded-lg">Aucun utilisateur.</div>';
+            }catch(err){console.error(err);}
+        };
+
+        window.updateSstUserRole = async function(userId, companyId){
+            const api=window.SSTFirebaseApi; const db=api?.getDb?.();
+            if(!api || !db) return;
+            const sel=document.getElementById(`role-select-${userId}`);
+            const newRole=sel?.value; if(!newRole) return;
+            if(!confirm(`Changer le rôle de cet utilisateur en "${newRole}" ? Ses modules et permissions seront réinitialisés selon ce nouveau rôle.`)) return;
+            const tmpl=roleTemplates[newRole] || roleTemplates.viewer;
+            const modules = tmpl.modules==='*' ? Object.fromEntries(SST_MODULE_ORDER.map(m=>[m,true])) : Object.fromEntries(SST_MODULE_ORDER.map(m=>[m, tmpl.modules.includes(m)]));
+            try{
+                await api.updateDoc(api.doc(db,'users',userId), { role:newRole, modules, permissions:{} });
+                await renderSstUsersForCompany(companyId);
+            }catch(err){
+                alert(err?.message || 'Modification du rôle impossible.');
+            }
         };
 
         window.deleteSstCompany = async function(companyId){
@@ -5167,19 +5285,23 @@
                                         <button onclick="editUnite(${muGlobalIdx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
                                         <button onclick="deleteUnite(${muGlobalIdx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
                                     </div>
-                                </div>`;
+                                </div>
+                                ${mu.responsableEmail ? `<div class="text-[11px] text-indigo-700">🧑‍💼 Responsable : ${escapeHtml(mu.responsableEmail)}</div>` : ''}`;
                         
                         if (subUnits.length > 0) {
                             html += '<div class="ml-6 space-y-2 border-l-2 border-blue-200 pl-4 mt-2">';
                             subUnits.forEach(su => {
                                 let suGlobalIdx = unites.indexOf(su);
                                 html += `
-                                    <div class="flex flex-wrap items-center justify-between p-2 bg-white border rounded text-sm">
-                                        <span class="font-semibold text-slate-700">↳ ${su.nom}</span>
-                                        <div class="space-x-2">
-                                            <button onclick="editUnite(${suGlobalIdx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                                            <button onclick="deleteUnite(${suGlobalIdx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
+                                    <div class="p-2 bg-white border rounded text-sm">
+                                        <div class="flex flex-wrap items-center justify-between">
+                                            <span class="font-semibold text-slate-700">↳ ${su.nom}</span>
+                                            <div class="space-x-2">
+                                                <button onclick="editUnite(${suGlobalIdx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                                                <button onclick="deleteUnite(${suGlobalIdx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
+                                            </div>
                                         </div>
+                                        ${su.responsableEmail ? `<div class="text-[10px] text-indigo-700 mt-1">🧑‍💼 ${escapeHtml(su.responsableEmail)}</div>` : ''}
                                     </div>`;
                             });
                             html += '</div>';
