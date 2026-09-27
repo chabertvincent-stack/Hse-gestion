@@ -437,7 +437,8 @@
                             <p class="text-xs text-slate-500 mb-6">Pilotez ici la structure organisationnelle en arborescence (Unités mères et sous-unités).</p>
 
                             <input type="hidden" id="ut-edit-index" value="">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border items-end">
+                            <input type="hidden" id="ut-prev-responsable-email" value="">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg mb-6 border items-end">
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Nom de l'unité ou sous-unité <span class="text-red-500">*</span></label>
                                     <input type="text" id="ut-nom" placeholder="Ex: Laquage vertical 1..." class="p-2 border rounded w-full text-sm">
@@ -447,6 +448,10 @@
                                     <select id="ut-parent" class="p-2 border rounded w-full text-sm">
                                         <option value="">-- Aucune (Unité principale) --</option>
                                     </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">E-mail du responsable (manager)</label>
+                                    <input type="email" id="ut-responsable-email" placeholder="manager@entreprise.fr" class="p-2 border rounded w-full text-sm">
                                 </div>
                                 <div class="flex gap-2">
                                     <button onclick="saveUnite()" id="ut-submit-btn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm w-full">+ Ajouter l'unité</button>
@@ -2163,6 +2168,19 @@
                             <div id="sst-cloud-full-sync-status" class="text-[11px] text-emerald-800 mt-3"></div>
                         </div>
 
+                        <div class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                            <div class="text-sm font-bold text-slate-800">🧑‍💼 Portée des Managers</div>
+                            <p class="text-xs text-slate-600 mt-1 leading-relaxed">Un manager est rattaché à une ou plusieurs unités de travail (renseigné sur la fiche de l'unité). Il ne peut modifier que les données de ses unités. Ce réglage définit s'il peut aussi <strong>consulter</strong> le reste, ou uniquement ses unités.</p>
+                            <div class="mt-3 flex flex-col md:flex-row md:items-center gap-3">
+                                <select id="sst-manager-strict-mode" class="p-2 border rounded text-sm bg-white w-full md:w-auto">
+                                    <option value="false">Mode transparence — voit tout, modifie seulement ses unités</option>
+                                    <option value="true">Mode strict — ne voit et ne modifie que ses unités</option>
+                                </select>
+                                <button onclick="saveManagerStrictModeFromUi()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold">Enregistrer</button>
+                            </div>
+                            <div id="sst-manager-strict-mode-status" class="text-[11px] text-indigo-800 mt-2"></div>
+                        </div>
+
                         <div class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                 <div>
@@ -2607,8 +2625,8 @@
                 permissions: ['dashboard.read','infirmiere.read','infirmiere.write','exports.write']
             },
             manager: {
-                modules: ['dashboard','amelioration','urgence','at','tournees'],
-                permissions: ['dashboard.read','amelioration.read','amelioration.write','urgence.read','urgence.write','at.read','tournees.read','tournees.write']
+                modules: ['dashboard','papripact','duerp','rh','amelioration','urgence','at','tournees'],
+                permissions: ['dashboard.read','papripact.read','papripact.write','duerp.read','rh.read','amelioration.read','amelioration.write','urgence.read','urgence.write','at.read','tournees.read','tournees.write']
             },
             employee: {
                 modules: ['dashboard','amelioration','urgence'],
@@ -2706,6 +2724,7 @@
                 modules: effectiveModules,
                 permissions: effectivePermissions,
                 status: userData.status || 'active',
+                unitesGerees: Array.isArray(userData.unitesGerees) ? userData.unitesGerees : [],
                 // Paramètres personnels de l'utilisateur (ex. personnalisation du Dashboard).
                 // Ils restent séparés des settings de l'entreprise pour que chaque compte
                 // puisse avoir sa propre configuration sans modifier celle des autres.
@@ -3914,7 +3933,7 @@
             if(tabId === 'formations') switchFormationsSubTab('suivi');
             if(tabId === 'tournees') loadTourneesHse();
             if(tabId === 'admin') loadSstAdminData();
-            if(tabId === 'settings') { loadSstDocumentSettings(); if(typeof window.applyPapripactRegimeUi === 'function') window.applyPapripactRegimeUi(); }
+            if(tabId === 'settings') { loadSstDocumentSettings(); syncManagerStrictModeUi(); if(typeof window.applyPapripactRegimeUi === 'function') window.applyPapripactRegimeUi(); }
 
             // Sur mobile, refermer le menu latéral après avoir choisi un onglet
             if(window.innerWidth < 768) {
@@ -5180,18 +5199,22 @@
             const nomInput = document.getElementById('ut-nom');
             const parentSelect = document.getElementById('ut-parent');
             const editIndexInput = document.getElementById('ut-edit-index');
+            const emailInput = document.getElementById('ut-responsable-email');
+            const prevEmailInput = document.getElementById('ut-prev-responsable-email');
             if (!nomInput) return;
             const nom = nomInput.value.trim();
             const parent = parentSelect ? parentSelect.value : '';
             const editIdx = editIndexInput.value !== '' ? parseInt(editIndexInput.value) : null;
+            const responsableEmail = (emailInput?.value || '').trim().toLowerCase();
+            const previousEmail = (prevEmailInput?.value || '').trim().toLowerCase();
 
             if (!nom) { alert("Veuillez saisir le nom de l'unité."); return; }
             let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
             
             if (editIdx !== null) {
-                unites[editIdx] = { nom, parent };
+                unites[editIdx] = { ...unites[editIdx], nom, parent, responsableEmail };
             } else {
-                unites.push({ nom, parent });
+                unites.push({ nom, parent, responsableEmail });
             }
 
             localStorage.setItem('unites_travail', JSON.stringify(unites));
@@ -5203,6 +5226,48 @@
             } catch(err) {
                 console.warn('Synchronisation cloud des unités impossible :', err);
             }
+            try {
+                await sstSyncManagerUnitAssignment(nom, responsableEmail, previousEmail);
+            } catch(err) {
+                console.warn('Synchronisation du responsable de l\'unité impossible :', err);
+            }
+        }
+
+        // Met à jour la liste "unitesGerees" du profil manager concerné lorsqu'on associe
+        // (ou change) l'e-mail du responsable d'une unité de travail. Purement best-effort :
+        // une erreur ici ne doit jamais empêcher l'enregistrement de l'unité elle-même.
+        async function sstSyncManagerUnitAssignment(uniteName, newEmail, previousEmail) {
+            const ctx = window.SST_APP_CONTEXT;
+            const api = window.SSTFirebaseApi;
+            const db = api?.getDb?.();
+            if (!ctx || !db || !ctx.companyId || ctx.role === 'local-dev') return;
+            if (newEmail === previousEmail) {
+                if (!newEmail) return;
+            }
+            async function findUserDocByEmail(email) {
+                if (!email) return null;
+                const q = api.query(api.collection(db, 'users'), api.where('companyId', '==', String(ctx.companyId)), api.where('email', '==', email));
+                const snap = await api.getDocs(q);
+                return snap.empty ? null : snap.docs[0];
+            }
+            async function addUniteToUser(email) {
+                const userDoc = await findUserDocByEmail(email);
+                if (!userDoc) return;
+                const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
+                if (!current.includes(uniteName)) {
+                    await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: [...current, uniteName] });
+                }
+            }
+            async function removeUniteFromUser(email) {
+                const userDoc = await findUserDocByEmail(email);
+                if (!userDoc) return;
+                const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
+                if (current.includes(uniteName)) {
+                    await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: current.filter(u => u !== uniteName) });
+                }
+            }
+            if (previousEmail && previousEmail !== newEmail) await removeUniteFromUser(previousEmail);
+            if (newEmail) await addUniteToUser(newEmail);
         }
 
         function editUnite(index) {
@@ -5211,6 +5276,8 @@
             if (!u) return;
             document.getElementById('ut-nom').value = u.nom;
             document.getElementById('ut-edit-index').value = index;
+            document.getElementById('ut-responsable-email').value = u.responsableEmail || '';
+            document.getElementById('ut-prev-responsable-email').value = u.responsableEmail || '';
             document.getElementById('ut-submit-btn').innerText = "Modifier l'unité";
             document.getElementById('ut-cancel-btn').classList.remove('hidden');
             // Recharger la liste des parents après avoir posé l'index d'édition.
@@ -5222,6 +5289,8 @@
             document.getElementById('ut-nom').value = '';
             document.getElementById('ut-parent').value = '';
             document.getElementById('ut-edit-index').value = '';
+            document.getElementById('ut-responsable-email').value = '';
+            document.getElementById('ut-prev-responsable-email').value = '';
             document.getElementById('ut-submit-btn').innerText = "+ Ajouter l'unité";
             document.getElementById('ut-cancel-btn').classList.add('hidden');
         }
@@ -5243,6 +5312,10 @@
             loadUnites();
             sstQueueCloudCommit('unites_travail');
             refreshUnitDependentSelects();
+            if (unite.responsableEmail) {
+                try { await sstSyncManagerUnitAssignment(unite.nom, '', unite.responsableEmail); }
+                catch(err) { console.warn('Nettoyage du manager de l\'unité supprimée impossible :', err); }
+            }
         }
 
         function refreshUnitDependentSelects() {
@@ -6709,7 +6782,7 @@
                 } else if(filterStatut === 'EXPIRE') {
                     matchStatut = statuses.includes('EXPIRED');
                 }
-                return matchService && matchNom && matchStatut;
+                return matchService && matchNom && matchStatut && sstManagerCanSeeUnit(sal.service);
             });
 
             if(filtered.length === 0) {
@@ -8766,6 +8839,53 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 access: { lieu: String(a.lieu || ''), contact: String(a.contact || ''), horaires: String(a.horaires || ''), online: a.online === true }
             };
         }
+        // --- Portée des managers par unité de travail ---------------------------------
+        function getCompanyManagerStrictMode() {
+            const ctx = window.SST_APP_CONTEXT;
+            if (ctx?.company?.settings && Object.prototype.hasOwnProperty.call(ctx.company.settings, 'managerStrictMode')) {
+                return ctx.company.settings.managerStrictMode === true;
+            }
+            try { return JSON.parse(localStorage.getItem('sst_local_manager_strict_mode') || 'false') === true; }
+            catch(e) { return false; }
+        }
+        // A utiliser dans tous les filtres de listage (PAPRIPACT, DUERP, RH...) pour
+        // décider si un manager peut VOIR une ligne rattachée à une unité donnée.
+        // Les autres rôles ne sont jamais restreints par cette fonction.
+        function sstManagerCanSeeUnit(uniteName) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx || ctx.role !== 'manager') return true;
+            if (!getCompanyManagerStrictMode()) return true;
+            const units = Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : [];
+            return units.includes(uniteName);
+        }
+        // A utiliser avant toute création/modification/suppression pour décider si un
+        // manager a le droit d'ÉCRIRE sur une unité donnée — restriction qui s'applique
+        // que le mode strict soit activé ou non (seule la LECTURE dépend du mode).
+        function sstManagerCanEditUnit(uniteName) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx || ctx.role !== 'manager') return true;
+            const units = Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : [];
+            return units.includes(uniteName);
+        }
+        function syncManagerStrictModeUi() {
+            const sel = document.getElementById('sst-manager-strict-mode');
+            if (sel) sel.value = getCompanyManagerStrictMode() ? 'true' : 'false';
+        }
+        async function saveManagerStrictModeFromUi() {
+            const ctx = window.SST_APP_CONTEXT;
+            if (ctx && ctx.role !== 'companyAdmin' && ctx.role !== 'platformAdmin' && ctx.role !== 'local-dev') {
+                alert('Seul un administrateur de l\'entreprise peut modifier ce réglage.'); return;
+            }
+            const sel = document.getElementById('sst-manager-strict-mode');
+            const value = sel?.value === 'true';
+            const status = document.getElementById('sst-manager-strict-mode-status');
+            try {
+                await sstSaveCompanySetting('managerStrictMode', value, 'sst_local_manager_strict_mode');
+                if (status) status.textContent = 'Enregistré.';
+            } catch(err) {
+                if (status) status.textContent = `Erreur : ${err?.message || 'enregistrement impossible'}`;
+            }
+        }
         async function sstSaveCompanySetting(settingKey, value, localKey) {
             const ctx = window.SST_APP_CONTEXT; const api = window.SSTFirebaseApi; const db = api?.getDb?.();
             if(!ctx || !db || !ctx.companyId || ctx.role === 'local-dev') {
@@ -9282,7 +9402,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let matchUnite = !filterUnite || r.unite === filterUnite;
                 const calc = calculateDuerpCotation(r);
                 let matchNiveau = !filterNiveau || calc.zone === filterNiveau;
-                return matchUnite && matchNiveau;
+                return matchUnite && matchNiveau && sstManagerCanSeeUnit(r.unite);
             });
 
             const duerpBulkBar = document.getElementById('duerp-bulk-bar');
@@ -9994,7 +10114,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let matchResp = !filterResponsable || a.responsable === filterResponsable;
                 let matchUnite = !filterUnite || a.unite === filterUnite;
                 let matchDelai = !filterDelai || (filterDelai === 'depasse' && sstPapripactDelayOverdue(a));
-                return matchOrigine && matchPrio && matchStatut && matchResp && matchUnite && matchDelai;
+                return matchOrigine && matchPrio && matchStatut && matchResp && matchUnite && matchDelai && sstManagerCanSeeUnit(a.unite);
             });
 
             if(filtered.length === 0) {
