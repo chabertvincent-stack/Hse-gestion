@@ -15061,12 +15061,19 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         async function sstV242HydrateAll(){
             if(!window.SSTCloud?.isCloudTenant?.()) return;
             sstV242EnsureScopedStorage();
+            // Les 15 sources de données étaient auparavant récupérées l'une après l'autre (jusqu'à
+            // 15 allers-retours réseau bout à bout). Elles sont maintenant demandées en parallèle :
+            // le temps d'attente devient celui de la source la plus lente, pas la somme de toutes.
+            const readable = SST_V242_KEYS.filter(sstV242CanReadStorage);
+            const results = await Promise.allSettled(readable.map(async key => {
+                await sstV242SyncKeyFromCloud(key);
+                sstV242SubscribeKey(key);
+            }));
             let done=0;
-            for(const key of SST_V242_KEYS){
-                if(!sstV242CanReadStorage(key)) continue;
-                try { await sstV242SyncKeyFromCloud(key); sstV242SubscribeKey(key); done++; }
-                catch(err){ console.warn(`Synchronisation de ${key} impossible :`,err); }
-            }
+            results.forEach((r,i) => {
+                if(r.status==='fulfilled') done++;
+                else console.warn(`Synchronisation de ${readable[i]} impossible :`, r.reason);
+            });
             const s=document.getElementById('sst-cloud-full-sync-status'); if(s) s.textContent=`${done}/${SST_V242_KEYS.length} sources de données cloud actives.`;
             const s2=document.getElementById('sst-cloud-full-sync-status-admin'); if(s2) s2.textContent=`${done}/${SST_V242_KEYS.length} sources de données cloud actives.`;
         }
