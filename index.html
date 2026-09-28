@@ -5340,7 +5340,10 @@
             const normalized = arr.map(u => {
                 const nom = String(u?.nom || '').trim();
                 const parent = String(u?.parent || '').trim();
-                return { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
+                const responsableEmail = String(u?.responsableEmail || '').trim().toLowerCase();
+                const out = { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
+                if (responsableEmail) out.responsableEmail = responsableEmail;
+                return out;
             }).filter(u => u.nom);
             return normalized.sort((a,b) => {
                 const parentCmp = (a.parent || '').localeCompare((b.parent || ''), 'fr', { sensitivity:'base', numeric:true });
@@ -5350,8 +5353,15 @@
         }
 
         function loadUnites() {
-            let unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
-            localStorage.setItem('unites_travail', JSON.stringify(unites));
+            const rawUnites = localStorage.getItem('unites_travail') || '[]';
+            let unites = normalizeUnitesTravail(JSON.parse(rawUnites));
+            // On ne réécrit que si la normalisation a réellement changé quelque chose, et seulement
+            // si l'utilisateur a le droit d'écrire sur ce module : une simple consultation (lecture
+            // seule) ne doit jamais déclencher une tentative d'écriture refusée.
+            const normalizedJson = JSON.stringify(unites);
+            if (normalizedJson !== JSON.stringify(JSON.parse(rawUnites)) && sstV242CanWriteStorage('unites_travail')) {
+                localStorage.setItem('unites_travail', normalizedJson);
+            }
             const parentSelect = document.getElementById('ut-parent');
             if (parentSelect) {
                 const currentEdit = document.getElementById('ut-edit-index')?.value;
@@ -9083,6 +9093,13 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         // manager a le droit d'ÉCRIRE sur une unité donnée — restriction qui s'applique
         // que le mode strict soit activé ou non (seule la LECTURE dépend du mode).
         // Données personnelles des salariés : un manager ne consulte que les salariés de ses unités.
+        // FA / Situations d'urgence : toujours limitées à l'unité du manager, quel que soit le
+        // mode strict/transparence (données d'incident, pas un simple confort de consultation).
+        function sstManagerUnitScopedOnly(uniteName) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx || ctx.role !== 'manager') return true;
+            return (Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : []).includes(uniteName);
+        }
         function sstManagerCanSeePersonnel(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
@@ -10297,7 +10314,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     && (!filterResponsable || a.responsable===filterResponsable)
                     && (!filterUnite || a.unite===filterUnite)
                     && (!filterDelai || (filterDelai==='depasse' && sstPapripactDelayOverdue(a)));
-                if(match){ if(checked) window.sstPapSelected.add(idx); else window.sstPapSelected.delete(idx); }
+                if(match && sstManagerCanSeeUnit(a.unite)){ if(checked) window.sstPapSelected.add(idx); else window.sstPapSelected.delete(idx); }
             });
             loadPapripactLocalOnly();
         }
@@ -10747,7 +10764,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function toggleAllVisibleFa(checked) {
             const fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]');
             const fr=document.getElementById('filter-fa-redacteur-unite')?.value||'', fs=document.getElementById('filter-fa-secteur')?.value||'', fy=document.getElementById('filter-fa-year')?.value||'';
-            fiches.forEach((f,i)=>{ if((!fr||String(f.unite||'')===fr)&&(!fs||String(f.secteur||'')===fs)&&(!fy||sstDateYear(f.date)===fy)){ if(checked) window.sstFaSelected.add(i); else window.sstFaSelected.delete(i); }});
+            fiches.forEach((f,i)=>{ if((!fr||String(f.unite||'')===fr)&&(!fs||String(f.secteur||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerUnitScopedOnly(f.unite)){ if(checked) window.sstFaSelected.add(i); else window.sstFaSelected.delete(i); }});
             renderFichesAmeliorationLocal();
         }
         async function deleteSelectedFichesAmelioration() {
@@ -10786,7 +10803,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
                 (!filterRedacteurUnite || String(f.unite||'')===filterRedacteurUnite) &&
                 (!filterSecteur || String(f.secteur||'')===filterSecteur) &&
-                (!filterYear || sstDateYear(f.date)===filterYear)
+                (!filterYear || sstDateYear(f.date)===filterYear) &&
+                sstManagerUnitScopedOnly(f.unite)
             );
             // Tri d'affichage uniquement : année croissante, puis numéro FA numérique.
             // Le tableau source et les index d'édition/suppression restent inchangés.
@@ -11062,7 +11080,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function toggleAllVisibleSu(checked) {
             const fiches=JSON.parse(localStorage.getItem('situations_urgence')||'[]');
             const fr=document.getElementById('filter-su-redacteur-unite')?.value||'', fs=document.getElementById('filter-su-secteur')?.value||'', fy=document.getElementById('filter-su-year')?.value||'';
-            fiches.forEach((f,i)=>{ if((!fr||String(f.uniteRedacteur||'')===fr)&&(!fs||String(f.unite||'')===fs)&&(!fy||sstDateYear(f.date)===fy)){ if(checked) window.sstSuSelected.add(i); else window.sstSuSelected.delete(i); }});
+            fiches.forEach((f,i)=>{ if((!fr||String(f.uniteRedacteur||'')===fr)&&(!fs||String(f.unite||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerUnitScopedOnly(f.unite)){ if(checked) window.sstSuSelected.add(i); else window.sstSuSelected.delete(i); }});
             loadSituationsUrgence();
         }
         async function deleteSelectedSituationsUrgence() {
@@ -11099,7 +11117,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
                 (!filterRedacteurUnite || String(f.uniteRedacteur||'')===filterRedacteurUnite) &&
                 (!filterSecteur || String(f.unite||'')===filterSecteur) &&
-                (!filterYear || sstDateYear(f.date)===filterYear)
+                (!filterYear || sstDateYear(f.date)===filterYear) &&
+                sstManagerUnitScopedOnly(f.unite)
             );
             if(!filteredFiches.length){ container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`; return; }
             const selectedCount=window.sstSuSelected.size;
@@ -14525,8 +14544,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             return lvl==='units' || lvl==='write';
         }
         // --- Garde centrale : bloque toute écriture locale non autorisée avant qu'elle parte vers le cloud ---
-        let sstLastGestureAt = 0, sstLastDenyAlertAt = 0;
-        ['click','keydown','submit','change'].forEach(evt => document.addEventListener(evt, () => { sstLastGestureAt = Date.now(); }, true));
+        let sstLastDenyAlertAt = 0;
         function sstV248RecordsOf(raw){ try { const v = JSON.parse(raw); return Array.isArray(v) ? v : null; } catch(e){ return null; } }
         function sstV248GuardWrite(key, newRaw, oldRaw){
             if(sstV242SuppressSync) return true;
@@ -14551,13 +14569,13 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 }
             }
             if(allowed) return true;
-            const recent = (Date.now()-sstLastGestureAt) < 1500;
-            if(recent && (Date.now()-sstLastDenyAlertAt) > 1500){
+            console.warn(`Écriture locale ignorée (droits insuffisants) : ${key}`);
+            if((Date.now()-sstLastDenyAlertAt) > 800){
                 sstLastDenyAlertAt = Date.now();
                 alert(lvl==='units'
                     ? "Action refusée : vous ne pouvez modifier que les éléments des unités dont vous êtes responsable (votre e-mail doit être renseigné sur l'unité), et vous ne pouvez pas supprimer."
                     : "Action refusée : vous disposez d'un accès en lecture seule sur ce module.");
-            } else { console.warn(`Écriture locale ignorée (droits insuffisants) : ${key}`); }
+            }
             return false;
         }
         function sstV242StableId(key,item,index){
