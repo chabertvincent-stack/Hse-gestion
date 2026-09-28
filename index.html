@@ -1962,7 +1962,7 @@
                                 </div>
 
                                 <div class="border rounded-xl p-5 bg-white">
-                                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-800">👥 Utilisateurs de l'entreprise</h4><button onclick="loadSstCompanyUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div>
+                                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><h4 class="font-bold text-slate-800">👥 Utilisateurs de l'entreprise</h4><div class="flex gap-2"><button onclick="recalculateSstAccessForCompany(window.SST_APP_CONTEXT?.companyId)" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-3 py-1.5 rounded text-xs font-semibold" title="Réappliquer les droits par défaut de chaque rôle">Recalculer les droits</button><button onclick="loadSstCompanyUsers()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded text-xs font-semibold">Actualiser</button></div></div>
                                     <div id="sst-company-users-list" class="space-y-2"></div>
                                 </div>
                             </div>
@@ -2626,8 +2626,8 @@
                 permissions: ['dashboard.read','infirmiere.read','infirmiere.write','exports.write']
             },
             manager: {
-                modules: ['dashboard','papripact','duerp','rh','amelioration','urgence','at','tournees'],
-                permissions: ['dashboard.read','papripact.read','papripact.write','duerp.read','rh.read','amelioration.read','amelioration.write','urgence.read','urgence.write','at.read','tournees.read','tournees.write']
+                modules: ['dashboard','papripact','duerp','rh','formations','amelioration','urgence','at','tournees'],
+                permissions: ['dashboard.read','papripact.read','papripact.write','duerp.read','rh.read','formations.read','amelioration.read','amelioration.write','urgence.read','urgence.write','at.read','tournees.read']
             },
             employee: {
                 modules: ['dashboard','amelioration','urgence'],
@@ -2662,6 +2662,40 @@
         function roleAllowsPermission(role, permission) {
             const template = roleTemplates[role] || roleTemplates.viewer;
             return template.permissions.includes('*') || template.permissions.includes(permission);
+        }
+
+        // --- Niveaux d'accès par module : none | read | units | write ---------------
+        //  none  : module invisible
+        //  read  : consultation uniquement
+        //  units : modification limitée aux éléments des unités dont l'utilisateur est responsable
+        //  write : modification complète (suppression comprise)
+        const SST_ACCESS_LEVELS = ['none','read','units','write'];
+        const SST_UNIT_SCOPED_MODULES = ['papripact','amelioration','urgence'];
+        function roleDefaultAccess(role) {
+            const out = {};
+            const tmpl = roleTemplates[role] || roleTemplates.viewer;
+            Object.keys(SST_MODULE_LABELS).forEach(m => {
+                if (role === 'platformAdmin' || role === 'companyAdmin') { out[m] = 'write'; return; }
+                const inModule = tmpl.modules === '*' || tmpl.modules.includes(m);
+                if (!inModule) { out[m] = 'none'; return; }
+                let lvl = roleAllowsPermission(role, `${m}.write`) ? 'write' : 'read';
+                if (role === 'manager' && lvl === 'write' && SST_UNIT_SCOPED_MODULES.includes(m)) lvl = 'units';
+                out[m] = lvl;
+            });
+            return out;
+        }
+        // respectTicks=true  (création) : un module décoché reste à 'none'.
+        // respectTicks=false (recalcul)  : les droits par défaut du rôle l'emportent ; un module
+        //                                   coché en plus du rôle est conservé en lecture.
+        function buildSstUserAccess(role, tickedModules, respectTicks) {
+            const def = roleDefaultAccess(role);
+            const access = {};
+            Object.keys(def).forEach(m => {
+                const ticked = tickedModules && tickedModules[m] === true;
+                if (respectTicks) access[m] = ticked ? (def[m] !== 'none' ? def[m] : 'read') : 'none';
+                else access[m] = def[m] !== 'none' ? def[m] : (ticked ? 'read' : 'none');
+            });
+            return access;
         }
 
         // CORRECTIF : cette fonction était appelée à 3 endroits (connexion, rafraîchissement
@@ -2715,6 +2749,26 @@
             effectivePermissions['settings.read'] = true;
             effectivePermissions['settings.write'] = role === 'companyAdmin' || role === 'platformAdmin';
             if(userPermissions) Object.keys(userPermissions).forEach(k => { if(Object.prototype.hasOwnProperty.call(effectivePermissions,k)) effectivePermissions[k] = userPermissions[k] === true; });
+            // Niveaux d'accès (source de vérité, identique aux règles Firebase).
+            // Profil ancien sans champ "access" : repli prudent — manager et consultation en lecture seule.
+            const explicitAccess = userData.access && typeof userData.access === 'object' ? userData.access : null;
+            const access = {};
+            Object.keys(effectiveModules).forEach(m => {
+                if (m === 'dashboard' || m === 'settings') { access[m] = effectiveModules[m] ? 'read' : 'none'; return; }
+                if (!effectiveModules[m]) { access[m] = 'none'; return; }
+                if (role === 'platformAdmin' || role === 'companyAdmin') { access[m] = 'write'; return; }
+                if (explicitAccess) { const v = explicitAccess[m]; access[m] = SST_ACCESS_LEVELS.includes(v) ? v : 'none'; }
+                else access[m] = ['manager','viewer','viewerDuerp'].includes(role) ? 'read' : 'write';
+                if (access[m] === 'none') effectiveModules[m] = false;
+            });
+            Object.keys(access).forEach(m => {
+                if (m === 'dashboard' || m === 'settings') return;
+                const lvl = access[m];
+                effectivePermissions[`${m}.read`] = lvl !== 'none';
+                effectivePermissions[`${m}.write`] = lvl === 'write';
+                effectivePermissions[`${m}.writeUnits`] = lvl === 'units';
+                effectivePermissions[`${m}.delete`] = lvl === 'write';
+            });
             return {
                 uid: authUser?.uid || userData.uid || '',
                 email: authUser?.email || userData.email || '',
@@ -2724,6 +2778,7 @@
                 role,
                 modules: effectiveModules,
                 permissions: effectivePermissions,
+                access,
                 status: userData.status || 'active',
                 unitesGerees: Array.isArray(userData.unitesGerees) ? userData.unitesGerees : [],
                 // Paramètres personnels de l'utilisateur (ex. personnalisation du Dashboard).
@@ -2984,6 +3039,7 @@
                     companyId,
                     role: cleanRole(role),
                     modules: modules || {},
+                    access: buildSstUserAccess(cleanRole(role), modules || {}, true),
                     permissions: existingProfile.permissions || {},
                     status: 'active',
                     updatedAt: serverTimestamp()
@@ -3010,6 +3066,7 @@
                 companyId,
                 role: cleanRole(role),
                 modules: modules || {},
+                access: buildSstUserAccess(cleanRole(role), modules || {}, true),
                 permissions: {},
                 status: 'active',
                 createdAt: serverTimestamp(),
@@ -3161,7 +3218,7 @@
                         <div class="border rounded-lg p-3 bg-white">
                             <div class="flex items-center justify-between gap-2 mb-2">
                                 <div class="text-xs font-bold text-slate-700">👥 Utilisateurs (<span id="sst-selected-company-user-count">0</span>)</div>
-                                <button onclick="renderSstUsersForCompany('${String(c.id).replace(/'/g,"\\'")}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded text-[11px] font-semibold">Actualiser</button>
+                                <div class="flex gap-1"><button onclick="recalculateSstAccessForCompany('${String(c.id).replace(/'/g,"\\'")}')" class="bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-1 rounded text-[11px] font-semibold" title="Réappliquer les droits par défaut de chaque rôle">Recalculer les droits</button><button onclick="renderSstUsersForCompany('${String(c.id).replace(/'/g,"\\'")}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded text-[11px] font-semibold">Actualiser</button></div>
                             </div>
                             <div id="sst-selected-company-users-list" class="space-y-2 max-h-80 overflow-y-auto"></div>
                         </div>
@@ -3209,6 +3266,30 @@
             }
         };
 
+        // Réapplique les droits par défaut du rôle à tous les utilisateurs non-administrateurs d'une entreprise
+        // (utile pour les profils créés avant l'introduction des niveaux d'accès).
+        window.recalculateSstAccessForCompany = async function(companyId){
+            const ctx=window.SST_APP_CONTEXT;
+            if(!ctx || (ctx.role!=='platformAdmin' && ctx.role!=='companyAdmin')){ alert('Réservé aux administrateurs.'); return; }
+            const api=window.SSTFirebaseApi; const db=api?.getDb?.();
+            if(!api || !db || !companyId) return;
+            if(!confirm('Réappliquer les droits par défaut de leur rôle à tous les utilisateurs de cette entreprise (hors administrateurs) ? Les droits personnalisés seront remplacés.')) return;
+            try{
+                const snaps=await api.getDocs(api.query(api.collection(db,'users'), api.where('companyId','==',companyId)));
+                let done=0;
+                for(const d of snaps.docs){
+                    const u=d.data(); const role=cleanRole(u.role);
+                    if(role==='platformAdmin' || role==='companyAdmin') continue;
+                    const access=buildSstUserAccess(role, u.modules||{}, false);
+                    const modules=Object.fromEntries(SST_MODULE_ORDER.map(m=>[m, access[m] !== 'none']));
+                    await api.updateDoc(api.doc(db,'users',d.id), { access, modules });
+                    done++;
+                }
+                alert(`${done} utilisateur(s) mis à jour. Ils doivent se reconnecter pour que les changements soient pris en compte.`);
+                if(typeof window.renderSstUsersForCompany==='function' && document.getElementById('sst-selected-company-users-list')) await window.renderSstUsersForCompany(companyId);
+            }catch(err){ alert(err?.message || 'Mise à jour impossible.'); }
+        };
+
         window.renderSstUsersForCompany = async function(companyId){
             const api=window.SSTFirebaseApi; const db=api?.getDb?.();
             if(!api || !db) return;
@@ -3240,10 +3321,10 @@
             const sel=document.getElementById(`role-select-${userId}`);
             const newRole=sel?.value; if(!newRole) return;
             if(!confirm(`Changer le rôle de cet utilisateur en "${newRole}" ? Ses modules et permissions seront réinitialisés selon ce nouveau rôle.`)) return;
-            const tmpl=roleTemplates[newRole] || roleTemplates.viewer;
-            const modules = tmpl.modules==='*' ? Object.fromEntries(SST_MODULE_ORDER.map(m=>[m,true])) : Object.fromEntries(SST_MODULE_ORDER.map(m=>[m, tmpl.modules.includes(m)]));
+            const access = buildSstUserAccess(newRole, {}, false);
+            const modules = Object.fromEntries(SST_MODULE_ORDER.map(m=>[m, access[m] !== 'none']));
             try{
-                await api.updateDoc(api.doc(db,'users',userId), { role:newRole, modules, permissions:{} });
+                await api.updateDoc(api.doc(db,'users',userId), { role:newRole, modules, access, permissions:{} });
                 await renderSstUsersForCompany(companyId);
             }catch(err){
                 alert(err?.message || 'Modification du rôle impossible.');
@@ -4003,6 +4084,23 @@
             return d.toISOString().split('T')[0];
         }
 
+        // Bandeau d'information sur le niveau d'accès de l'utilisateur pour le module affiché.
+        function sstApplyAccessBanner(tabId, moduleId) {
+            const tab = document.getElementById('tab-' + tabId);
+            if(!tab) return;
+            tab.querySelectorAll(':scope > .sst-access-banner').forEach(el => el.remove());
+            if(!moduleId || moduleId === 'dashboard' || !window.SST_APP_CONTEXT || window.SST_APP_CONTEXT.role === 'local-dev') return;
+            const lvl = sstAccessLevel(moduleId);
+            let msg = '';
+            if(lvl === 'read') msg = '👁️ Accès en consultation : vous pouvez consulter ce module mais pas le modifier.';
+            else if(lvl === 'units') msg = '✏️ Vous pouvez modifier uniquement les éléments des unités dont vous êtes responsable.';
+            if(!msg) return;
+            const div = document.createElement('div');
+            div.className = 'sst-access-banner rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 px-4 py-2 text-xs font-semibold';
+            div.textContent = msg;
+            tab.insertBefore(div, tab.firstChild);
+        }
+
         function toggleSidebar() {
             document.getElementById('sidebar')?.classList.toggle('-translate-x-full');
             document.getElementById('sidebar-overlay')?.classList.toggle('hidden');
@@ -4022,6 +4120,7 @@
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             let targetContent = document.getElementById('tab-' + tabId);
             if(targetContent) targetContent.classList.remove('hidden');
+            sstApplyAccessBanner(tabId, moduleId);
             
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.remove('bg-slate-700', 'text-white');
@@ -6904,7 +7003,7 @@
                 } else if(filterStatut === 'EXPIRE') {
                     matchStatut = statuses.includes('EXPIRED');
                 }
-                return matchService && matchNom && matchStatut && sstManagerCanSeeUnit(sal.service);
+                return matchService && matchNom && matchStatut && sstManagerCanSeePersonnel(sal.service);
             });
 
             if(filtered.length === 0) {
@@ -8983,6 +9082,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         // A utiliser avant toute création/modification/suppression pour décider si un
         // manager a le droit d'ÉCRIRE sur une unité donnée — restriction qui s'applique
         // que le mode strict soit activé ou non (seule la LECTURE dépend du mode).
+        // Données personnelles des salariés : un manager ne consulte que les salariés de ses unités.
+        function sstManagerCanSeePersonnel(uniteName) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx || ctx.role !== 'manager') return true;
+            return (Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : []).includes(uniteName);
+        }
         function sstManagerCanEditUnit(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
@@ -14337,6 +14442,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 Storage.prototype.setItem = function(key,val){
                     const k=String(key);
                     if(this === window.localStorage && SST_V242_STORAGE[k] && sstV242CompanyNamespace){
+                        if(!sstV248GuardWrite(k, String(val), sstNativeGetItem.call(this, sstV242PhysicalKey(k)))) return;
                         sstNativeSetItem.call(this, sstV242PhysicalKey(k), String(val));
                         if(!sstV242SuppressSync){ sstV247MarkDirty(k); sstV242MutationRevision.set(k,(sstV242MutationRevision.get(k)||0)+1); sstV242ScheduleSync(k); }
                         return;
@@ -14346,6 +14452,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 Storage.prototype.removeItem = function(key){
                     const k=String(key);
                     if(this === window.localStorage && SST_V242_STORAGE[k] && sstV242CompanyNamespace){
+                        if(!sstV248GuardWrite(k, null, sstNativeGetItem.call(this, sstV242PhysicalKey(k)))) return;
                         sstNativeRemoveItem.call(this, sstV242PhysicalKey(k));
                         if(!sstV242SuppressSync){ sstV247MarkDirty(k); sstV242MutationRevision.set(k,(sstV242MutationRevision.get(k)||0)+1); sstV242ScheduleSync(k); }
                         return;
@@ -14372,14 +14479,86 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const moduleId=SST_V242_STORAGE[key]?.module;
             return moduleId ? has(moduleId) : false;
         }
+        // Politique d'écriture par clé de stockage : modules concernés et champ « unité » de l'enregistrement.
+        // (Doit rester identique aux règles Firebase.)
+        const SST_V248_KEY_POLICY = {
+            unites_travail:            { modules:['rh','formations'] },
+            catalogue_formations:      { modules:['rh','formations'] },
+            profils_postes:            { modules:['rh','formations'] },
+            training_sessions:         { modules:['formations'] },
+            salaries_formations:       { modules:['formations','infirmiere'], unitField:'service' },
+            duerp_risques:             { modules:['duerp'],        unitField:'unite' },
+            papripact_actions:         { modules:['papripact'],    unitField:'unite' },
+            papripact_next_action_num: { modules:['papripact'],    counter:true },
+            fiches_amelioration:       { modules:['amelioration'], unitField:'unite' },
+            situations_urgence:        { modules:['urgence'],      unitField:'unite' },
+            at_analyses:               { modules:['at'] },
+            at_registre:               { modules:['at'] },
+            at_heures_travaillees:     { modules:['at'] },
+            tournees_hse:              { modules:['tournees'] },
+            tournees_modeles:          { modules:['tournees'] }
+        };
+        function sstAccessLevel(moduleId){
+            const ctx=window.SST_APP_CONTEXT;
+            if(!ctx) return 'none';
+            if(ctx.role==='local-dev' || ctx.role==='platformAdmin' || ctx.role==='companyAdmin') return 'write';
+            const v=ctx.access && ctx.access[moduleId];
+            return ['none','read','units','write'].includes(v) ? v : 'none';
+        }
+        function sstBestLevel(modules){
+            const order=['none','read','units','write'];
+            return modules.map(sstAccessLevel).reduce((a,b)=>order.indexOf(b)>order.indexOf(a)?b:a,'none');
+        }
+        function sstUserUnits(){ const u=window.SST_APP_CONTEXT?.unitesGerees; return Array.isArray(u)?u:[]; }
+        // Niveau effectif d'écriture sur une clé ('units' n'a de sens que pour les clés rattachées à une unité).
+        function sstStorageWriteLevel(key){
+            const pol=SST_V248_KEY_POLICY[key]; if(!pol) return 'write';
+            const lvl=sstBestLevel(pol.modules);
+            if(lvl==='units' && !pol.unitField && !pol.counter) return 'read';
+            return lvl;
+        }
         function sstV242CanWriteStorage(key){
             const ctx=window.SST_APP_CONTEXT;
             if(!ctx || ctx.role==='local-dev') return false;
             if(sstV242RoleOrAdmin()) return true;
-            if(key==='salaries_formations') return ctx.modules?.formations===true || ctx.modules?.infirmiere===true;
-            if(key==='unites_travail' || key==='profils_postes' || key==='catalogue_formations' || key==='training_sessions') return ctx.modules?.rh===true || ctx.modules?.formations===true;
-            const moduleId=SST_V242_STORAGE[key]?.module;
-            return moduleId ? ctx.modules?.[moduleId]===true : false;
+            const lvl=sstStorageWriteLevel(key);
+            return lvl==='units' || lvl==='write';
+        }
+        // --- Garde centrale : bloque toute écriture locale non autorisée avant qu'elle parte vers le cloud ---
+        let sstLastGestureAt = 0, sstLastDenyAlertAt = 0;
+        ['click','keydown','submit','change'].forEach(evt => document.addEventListener(evt, () => { sstLastGestureAt = Date.now(); }, true));
+        function sstV248RecordsOf(raw){ try { const v = JSON.parse(raw); return Array.isArray(v) ? v : null; } catch(e){ return null; } }
+        function sstV248GuardWrite(key, newRaw, oldRaw){
+            if(sstV242SuppressSync) return true;
+            const ctx=window.SST_APP_CONTEXT;
+            if(!ctx || ctx.role==='local-dev' || ctx.role==='platformAdmin' || ctx.role==='companyAdmin') return true;
+            const pol=SST_V248_KEY_POLICY[key]; if(!pol) return true;
+            const lvl=sstStorageWriteLevel(key);
+            if(lvl==='write') return true;
+            if(lvl==='units' && pol.counter) return true;
+            let allowed=false;
+            if(lvl==='units' && pol.unitField){
+                const oldArr=sstV248RecordsOf(oldRaw)||[]; const newArr=newRaw===null?[]:(sstV248RecordsOf(newRaw)||null);
+                if(newArr){
+                    const units=sstUserUnits();
+                    const count=new Map();
+                    oldArr.forEach(r=>{const k=JSON.stringify(r);count.set(k,(count.get(k)||0)+1);});
+                    newArr.forEach(r=>{const k=JSON.stringify(r);count.set(k,(count.get(k)||0)-1);});
+                    allowed=true;
+                    count.forEach((n,k)=>{ if(n!==0){ let r=null; try{r=JSON.parse(k);}catch(e){} if(!r || !units.includes(String(r[pol.unitField]||''))) allowed=false; } });
+                    // Un manager ne supprime jamais : une suppression laisse une ligne en moins côté nouveau tableau.
+                    if(allowed && newArr.length<oldArr.length) allowed=false;
+                }
+            }
+            if(allowed) return true;
+            const recent = (Date.now()-sstLastGestureAt) < 1500;
+            if(recent && (Date.now()-sstLastDenyAlertAt) > 1500){
+                sstLastDenyAlertAt = Date.now();
+                alert(lvl==='units'
+                    ? "Action refusée : vous ne pouvez modifier que les éléments des unités dont vous êtes responsable (votre e-mail doit être renseigné sur l'unité), et vous ne pouvez pas supprimer."
+                    : "Action refusée : vous disposez d'un accès en lecture seule sur ce module.");
+            } else { console.warn(`Écriture locale ignorée (droits insuffisants) : ${key}`); }
+            return false;
         }
         function sstV242StableId(key,item,index){
             if(item && typeof item==='object'){
