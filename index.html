@@ -5466,6 +5466,43 @@
             loadProfilsPostesUnitesSelect();
         }
 
+        // Renommage en cascade d'une unité de travail : toutes les collections qui la
+        // référencent stockent son NOM (pas un identifiant), donc sans cette cascade un
+        // simple renommage cassait silencieusement les liens DUERP/PAPRIPACT/FA/SU/RH/AT/
+        // profils de postes/tournées déjà créés avec l'ancien nom.
+        function sstCascadeUniteRename(oldNom, newNom) {
+            if(!oldNom || !newNom || oldNom === newNom) return { changed: 0, keys: [] };
+            let changed = 0;
+            const touchedKeys = [];
+            const patch = (key, fields) => {
+                try {
+                    let raw = localStorage.getItem(key);
+                    let arr = JSON.parse(raw || '[]');
+                    if(!Array.isArray(arr)) return;
+                    let touched = false;
+                    const next = arr.map(item => {
+                        if(!item || typeof item !== 'object') return item;
+                        let copy = null;
+                        fields.forEach(f => {
+                            if(item[f] === oldNom) { if(!copy) copy = {...item}; copy[f] = newNom; touched = true; changed++; }
+                        });
+                        return copy || item;
+                    });
+                    if(touched) { localStorage.setItem(key, JSON.stringify(next)); touchedKeys.push(key); }
+                } catch(e) { console.warn(`Renommage en cascade (${key}) impossible :`, e); }
+            };
+            patch('duerp_risques', ['unite']);
+            patch('papripact_actions', ['unite']);
+            patch('fiches_amelioration', ['unite','secteur']);
+            patch('situations_urgence', ['unite','secteur']);
+            patch('salaries_formations', ['service']);
+            patch('at_registre', ['service']);
+            patch('at_analyses', ['service']);
+            patch('profils_postes', ['unite']);
+            patch('tournees_hse', ['secteur']);
+            return { changed, keys: touchedKeys };
+        }
+
         async function saveUnite() {
             const nomInput = document.getElementById('ut-nom');
             const parentSelect = document.getElementById('ut-parent');
@@ -5481,7 +5518,8 @@
 
             if (!nom) { alert("Veuillez saisir le nom de l'unité."); return; }
             let unites = JSON.parse(localStorage.getItem('unites_travail') || '[]');
-            
+            const oldNom = editIdx !== null ? (unites[editIdx]?.nom || '') : '';
+
             if (editIdx !== null) {
                 unites[editIdx] = { ...unites[editIdx], nom, parent, responsableEmail };
             } else {
@@ -5489,13 +5527,24 @@
             }
 
             localStorage.setItem('unites_travail', JSON.stringify(unites));
+            // Renommage : propager le nouveau nom partout où l'ancien était utilisé, avant de
+            // rafraîchir l'interface, pour que les écrans qui se rechargent tout de suite après
+            // affichent déjà les liens corrigés.
+            let cascade = { changed: 0, keys: [] };
+            if (oldNom && oldNom !== nom) {
+                cascade = sstCascadeUniteRename(oldNom, nom);
+            }
             // Rafraîchir l'interface immédiatement : une erreur cloud ne doit jamais bloquer la sauvegarde locale.
             resetUniteForm();
             loadUnites();
             try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('unites_travail');
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('unites_travail', ...cascade.keys);
+                else if(cascade.keys.length) sstQueueCloudCommit(...cascade.keys);
             } catch(err) {
                 console.warn('Synchronisation cloud des unités impossible :', err);
+            }
+            if (cascade.changed > 0) {
+                alert(`Unité renommée : ${cascade.changed} fiche(s) mise(s) à jour avec le nouveau nom dans le DUERP, le PAPRIPACT, les FA/SU, les fiches salariés, le registre AT et les tournées HSE.`);
             }
             try {
                 await sstSyncManagerUnitAssignment(nom, responsableEmail, previousEmail);
@@ -6329,6 +6378,39 @@
             });
         }
 
+        // Une formation du catalogue est référencée par son NOM dans deux endroits : chaque
+        // fiche salarié (sal.formations[].intitule) et les profils de poste qui l'exigent
+        // (profils_postes[].formations, un tableau de noms).
+        function sstCascadeFormationRename(oldNom, newNom) {
+            if(!oldNom || !newNom || oldNom === newNom) return { changed: 0, keys: [] };
+            let changed = 0; const touchedKeys = [];
+            try {
+                let sal = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
+                let touched = false;
+                sal = sal.map(s => {
+                    if(!s || !Array.isArray(s.formations)) return s;
+                    let arrTouched = false;
+                    const forms = s.formations.map(f => {
+                        if(f && f.intitule === oldNom) { arrTouched = true; changed++; return {...f, intitule: newNom}; }
+                        return f;
+                    });
+                    return arrTouched ? (touched = true, {...s, formations: forms}) : s;
+                });
+                if(touched) { localStorage.setItem('salaries_formations', JSON.stringify(sal)); touchedKeys.push('salaries_formations'); }
+            } catch(e) { console.warn('Renommage en cascade (formations salariés) impossible :', e); }
+            try {
+                let profils = JSON.parse(localStorage.getItem('profils_postes') || '[]');
+                let touched = false;
+                profils = profils.map(p => {
+                    if(!p || !Array.isArray(p.formations) || !p.formations.includes(oldNom)) return p;
+                    touched = true; changed++;
+                    return {...p, formations: p.formations.map(f => f === oldNom ? newNom : f)};
+                });
+                if(touched) { localStorage.setItem('profils_postes', JSON.stringify(profils)); touchedKeys.push('profils_postes'); }
+            } catch(e) { console.warn('Renommage en cascade (profils de poste) impossible :', e); }
+            return { changed, keys: touchedKeys };
+        }
+
         async function saveCatalogueFormation() {
             const nom = document.getElementById('cat-nom').value.trim();
             const validite = parseInt(document.getElementById('cat-validite').value);
@@ -6337,6 +6419,7 @@
 
             if(!nom) { alert("Veuillez saisir le nom de la formation."); return; }
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
+            const oldNom = editIdx !== "" ? (catalogue[parseInt(editIdx)]?.nom || '') : '';
 
             if(editIdx !== "") {
                 catalogue[parseInt(editIdx)] = { nom, validite, necessiteAuth };
@@ -6345,13 +6428,17 @@
             }
 
             localStorage.setItem('catalogue_formations', JSON.stringify(catalogue));
+            let cascade = { changed: 0, keys: [] };
+            if(oldNom && oldNom !== nom) cascade = sstCascadeFormationRename(oldNom, nom);
             resetCatalogueForm();
             loadCatalogueFormations();
             try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('catalogue_formations');
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('catalogue_formations', ...cascade.keys);
+                else if(cascade.keys.length) sstQueueCloudCommit(...cascade.keys);
             } catch(err) {
                 console.warn('Synchronisation cloud du référentiel formations impossible :', err);
             }
+            if(cascade.changed > 0) alert(`Formation renommée : ${cascade.changed} référence(s) mise(s) à jour (fiches salariés et profils de poste).`);
         }
 
         function editCatalogueFormation(idx) {
@@ -6477,6 +6564,23 @@
             container.innerHTML = html;
         }
 
+        // Même logique que sstCascadeUniteRename : un poste est référencé par son NOM dans
+        // les fiches salariés (sal.poste).
+        function sstCascadePosteRename(oldNom, newNom) {
+            if(!oldNom || !newNom || oldNom === newNom) return { changed: 0, keys: [] };
+            let changed = 0; const touchedKeys = [];
+            try {
+                let sal = JSON.parse(localStorage.getItem('salaries_formations') || '[]');
+                let touched = false;
+                sal = sal.map(s => {
+                    if(s && s.poste === oldNom) { touched = true; changed++; return {...s, poste: newNom}; }
+                    return s;
+                });
+                if(touched) { localStorage.setItem('salaries_formations', JSON.stringify(sal)); touchedKeys.push('salaries_formations'); }
+            } catch(e) { console.warn('Renommage en cascade (poste) impossible :', e); }
+            return { changed, keys: touchedKeys };
+        }
+
         async function saveProfilPoste() {
             const nom = document.getElementById('poste-nom').value.trim();
             const unite = document.getElementById('poste-unite').value;
@@ -6488,6 +6592,7 @@
             let chks = document.querySelectorAll('input[name="poste-form-chk"]:checked');
             let formations = Array.from(chks).map(c => c.value);
             let profils = JSON.parse(localStorage.getItem('profils_postes') || '[]');
+            const oldNom = editIdx !== "" ? (profils[parseInt(editIdx)]?.nom || '') : '';
 
             if(editIdx !== "") {
                 profils[parseInt(editIdx)] = { nom, unite, formations };
@@ -6496,13 +6601,17 @@
             }
 
             localStorage.setItem('profils_postes', JSON.stringify(profils));
+            let cascade = { changed: 0, keys: [] };
+            if(oldNom && oldNom !== nom) cascade = sstCascadePosteRename(oldNom, nom);
             resetPosteForm();
             loadProfilsPostes();
             try {
-                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('profils_postes');
+                if(window.SSTCloud?.isCloudTenant?.()) await sstV247CommitKeys('profils_postes', ...cascade.keys);
+                else if(cascade.keys.length) sstQueueCloudCommit(...cascade.keys);
             } catch(err) {
                 console.warn('Synchronisation cloud des profils de poste impossible :', err);
             }
+            if(cascade.changed > 0) alert(`Poste renommé : ${cascade.changed} fiche(s) salarié(s) mise(s) à jour avec le nouveau nom.`);
         }
 
         function editProfilPoste(idx) {
