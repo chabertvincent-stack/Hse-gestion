@@ -3244,6 +3244,10 @@
             else tmpl.modules.forEach(m=>selected[m]=true);
             renderSstModuleChecks('sel-admin-user-modules', selected);
         }
+        // CORRECTIF (audit) : appelée par onchange="applySelectedCompanyRolePreset()" (attribut HTML,
+        // donc portée globale) mais définie dans le script type="module" (portée privée au module) ->
+        // ReferenceError à chaque changement de rôle dans le formulaire de création d'utilisateur.
+        window.applySelectedCompanyRolePreset = applySelectedCompanyRolePreset;
 
         window.createSstUserForSelectedCompany = async function(){
             const c=window.SST_ADMIN_SELECTED_COMPANY; if(!c) return;
@@ -3744,6 +3748,11 @@
         window.showAuthLoading = showAuthLoading;
         window.sstV242Db = sstV242Db;
         window.sstV242Fb = sstV242Fb;
+        // CORRECTIF (audit 28/09) : sstQueueCloudCommit est appelée ~18 fois depuis le script
+        // principal (suppressions de sessions, unités, profils, PAPRIPACT, AT...) mais n'était
+        // pas exposée : chaque appel non protégé levait une ReferenceError qui interrompait la
+        // fonction appelante (fenêtre de session qui ne se ferme pas, calendrier non rafraîchi).
+        window.sstQueueCloudCommit = sstQueueCloudCommit;
         window.updateAccountUi = updateAccountUi;
         window.sstEnforcePapripactDependency = sstEnforcePapripactDependency;
 
@@ -9189,7 +9198,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         // --- Risque élevé sans action : alerte, bandeau, notification ---
         function getDuerpLinkedActions(r, riskId, idx, actionsPap) {
-            return actionsPap.filter(a => a.duerpRiskId === riskId || a.duerpIndex === idx || (a.origine === 'DUERP' && a.unite === r.unite && String(a.action || '').includes(r.danger)));
+            return actionsPap.filter(a => a.duerpRiskId === riskId || (!a.duerpRiskId && a.duerpIndex === idx) || (!a.duerpRiskId && a.origine === 'DUERP' && a.unite === r.unite && String(a.action || '').includes(r.danger)));
         }
         function sstDuerpRisksNeedingAction() {
             const policy = getDuerpPolicy(); if(policy.alertMode === 'off') return [];
@@ -9755,7 +9764,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     const valueText = calc.active.map(c=>getDuerpCriterionValue(r,c)).join('×');
 
                     // LIEN EXPLICITE PAPRIPACT - ISO 45001 (par riskId ou index)
-                    let linkedActions = actionsPap.filter(a => a.duerpRiskId === riskId || a.duerpIndex === actualIdx || (a.origine === 'DUERP' && a.unite === r.unite && a.action.includes(r.danger)));
+                    let linkedActions = actionsPap.filter(a => a.duerpRiskId === riskId || (!a.duerpRiskId && a.duerpIndex === actualIdx) || (!a.duerpRiskId && a.origine === 'DUERP' && a.unite === r.unite && a.action.includes(r.danger)));
                     let actionsHtml = '';
                     if(linkedActions.length > 0) {
                         const renderPapCard = (la) => {
@@ -9764,9 +9773,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             if(la.statut === 'Clôturée') stBadge = "bg-green-50 text-green-700 border-green-200";
                             return `
                                 <div onclick='scrollToPapripactAction(${JSON.stringify(String(la._cloudId||la.id||la.numero||""))})' class="p-1.5 rounded border text-[11px] mb-1 bg-white shadow-2xs cursor-pointer hover:border-blue-500 transition" title="Cliquer pour accéder à cette action dans le PAPRIPACT">
-                                    <span class="font-bold text-slate-800 block hover:text-blue-600">${la.action}</span>
+                                    <span class="font-bold text-slate-800 block hover:text-blue-600">${escapeHtml(la.action)}</span>
                                     <div class="flex flex-wrap justify-between items-center mt-1">
-                                        <span class="text-[10px] text-slate-500">Resp: ${la.responsable || 'À définir'}</span>
+                                        <span class="text-[10px] text-slate-500">Resp: ${escapeHtml(la.responsable || 'À définir')}</span>
                                         <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold border ${stBadge}">${la.statut}</span>
                                     </div>
                                 </div>`;
@@ -9789,7 +9798,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <td class="p-3 border-b sst-td-full" data-duerp-write><input type="checkbox" aria-label="Sélectionner ${riskId}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstDuerpSelected.has(actualIdx)?'checked':''} onchange="toggleDuerpSelection(${actualIdx},this.checked)"></td>
                             <td class="p-3 border-b" data-label="Réf. & Danger">
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
-                                <div class="text-xs text-slate-600">${r.danger}</div>
+                                <div class="text-xs text-slate-600">${escapeHtml(r.danger)}</div>
                             </td>
                             <td class="p-3 border-b text-xs" data-label="Dommage potentiel">${sstDuerpListHtml(r.dommage)}</td>
                             <td class="p-3 border-b text-xs" data-label="Mesures actuelles">${sstDuerpListHtml(r.prevention)}</td>
@@ -10479,16 +10488,16 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                                 <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${badgeOrigine}">${origineLabel}</span>
                                 ${refBadge}
                             </div>
-                            <div class="font-bold text-slate-800 text-xs mt-1">${a.unite || 'Toutes unités'}</div>
+                            <div class="font-bold text-slate-800 text-xs mt-1">${escapeHtml(a.unite || 'Toutes unités')}</div>
                         </td>
                         <td class="p-3 border-b max-w-sm" data-label="Action">
-                            <div class="font-bold text-slate-800 text-xs mb-0.5">${a.action}</div>
+                            <div class="font-bold text-slate-800 text-xs mb-0.5">${escapeHtml(a.action)}</div>
                         </td>
                         <td class="p-3 border-b text-center" data-label="Hiérarchie / Type">
                             <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${a.type || 'Technique'}</span>
                         </td>
                         <td class="p-3 border-b text-center font-bold text-xs" data-label="Priorité">${displayPrio}</td>
-                        <td class="p-3 border-b font-semibold text-slate-700" data-label="Responsable">${a.responsable || 'À définir'}</td>
+                        <td class="p-3 border-b font-semibold text-slate-700" data-label="Responsable">${escapeHtml(a.responsable || 'À définir')}</td>
                         <td class="p-3 border-b" data-label="Calendrier">${datesDisplay}</td>
                         <td class="p-3 border-b text-right font-bold text-slate-800" data-label="Ressources (€)">${a.cout ? a.cout + ' €' : '-'}</td>
                         <td class="p-3 border-b text-center" data-label="Statut">
