@@ -1347,7 +1347,7 @@
                             <table class="w-full text-left border-separate border-spacing-0 text-xs sst-responsive-table">
                                 <thead>
                                     <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider border-b">
-                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b w-8"><input type="checkbox" id="pap-select-all-header" class="rounded border-slate-300 w-4 h-4 cursor-pointer" onchange="toggleAllVisiblePap(this.checked)" title="Tout sélectionner"></th>
+                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b w-8" data-sst-key-write-full="papripact_actions"><input type="checkbox" id="pap-select-all-header" class="rounded border-slate-300 w-4 h-4 cursor-pointer" onchange="toggleAllVisiblePap(this.checked)" title="Tout sélectionner"></th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">N° / Origine / Réf. / Unité</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Intitulé de l'Action</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b text-center">Hiérarchie / Type</th>
@@ -4101,6 +4101,36 @@
             tab.insertBefore(div, tab.firstChild);
         }
 
+        // Masque proprement les boutons Modifier/Supprimer selon le niveau d'accès réel de
+        // l'utilisateur sur la clé de stockage concernée (même moteur que les règles Firebase) :
+        //  - [data-sst-key-write]      : visible dès le niveau "units" (modification limitée)
+        //  - [data-sst-key-write-full] : visible seulement au niveau "write" (jamais en "units")
+        function sstApplyStorageWriteGates(root) {
+            const scope = root || document;
+            scope.querySelectorAll('[data-sst-key-write]').forEach(el => {
+                const lvl = sstStorageWriteLevel(el.getAttribute('data-sst-key-write'));
+                el.classList.toggle('hidden', lvl === 'none' || lvl === 'read');
+            });
+            scope.querySelectorAll('[data-sst-key-write-full]').forEach(el => {
+                el.classList.toggle('hidden', sstStorageWriteLevel(el.getAttribute('data-sst-key-write-full')) !== 'write');
+            });
+        }
+        // Les écrans (PAPRIPACT, FA, SU, référentiels RH...) régénèrent leur contenu par innerHTML,
+        // ce qui efface à chaque fois les classes posées manuellement. Plutôt que d'ajouter un appel
+        // à la fin de chaque fonction d'affichage (nombreuses, et amenées à évoluer), on observe le
+        // conteneur principal et on réapplique le masquage dès qu'un écran se redessine.
+        (function sstWatchStorageWriteGates(){
+            const mainEl = document.querySelector('main');
+            if(!mainEl) return;
+            let pending = false;
+            const observer = new MutationObserver(() => {
+                if(pending) return;
+                pending = true;
+                requestAnimationFrame(() => { pending = false; sstApplyStorageWriteGates(mainEl); });
+            });
+            observer.observe(mainEl, { childList: true, subtree: true });
+        })();
+
         function toggleSidebar() {
             document.getElementById('sidebar')?.classList.toggle('-translate-x-full');
             document.getElementById('sidebar-overlay')?.classList.toggle('hidden');
@@ -4824,6 +4854,7 @@
                 await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
                 await new Promise(resolve=>setTimeout(resolve,70));
             }
+            console.warn(`Action PAPRIPACT liée introuvable ou hors de votre périmètre : ${ref}`);
             return false;
         }
 
@@ -6091,7 +6122,7 @@
                         fiches.push({ code, redacteur: d.redacteur, date: d.date, unite: d.unite, secteur: d.secteur, faits: d.faits, axes: d.axes });
                         actions.push({
                             origine: 'FA', sourceType: 'FA', sourceReference: code, faCode: code,
-                            unite: d.secteur || d.unite || '', action: d.axes, type: 'Technique', priorite: '', statut: 'À traiter',
+                            unite: d.unite || '', action: d.axes, type: 'Technique', priorite: '', statut: 'À traiter',
                             responsable: '', dateCreation: d.date, delai: '', dateCloture: '', cout: '',
                             commentaires: `Action générée automatiquement depuis la Fiche d'Amélioration ${code} (import en masse, rédacteur : ${d.redacteur})`
                         });
@@ -6282,8 +6313,8 @@
                         <td class="p-3 border-b" data-label="Validité">${validiteText}</td>
                         <td class="p-3 border-b" data-label="Autorisation requise">${f.necessiteAuth ? '<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs">Oui</span>' : 'Non'}</td>
                         <td class="p-3 border-b text-right space-x-2 sst-td-full">
-                            <button onclick="editCatalogueFormation(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                            <button onclick="deleteCatalogueFormation(${idx})" class="text-red-500 text-xs hover:underline">Supprimer</button>
+                            <button onclick="editCatalogueFormation(${idx})" data-sst-key-write-full="catalogue_formations" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                            <button onclick="deleteCatalogueFormation(${idx})" data-sst-key-write-full="catalogue_formations" class="text-red-500 text-xs hover:underline">Supprimer</button>
                         </td>
                     </tr>`;
             });
@@ -6420,8 +6451,8 @@
                                     <p class="text-[11px] text-slate-500 mt-0.5">Unité : ${uniteName}</p>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0">
-                                    <button onclick="editProfilPoste(${p._idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                                    <button onclick="deleteProfilPoste(${p._idx})" class="text-red-500 text-xs hover:underline">Supprimer</button>
+                                    <button onclick="editProfilPoste(${p._idx})" data-sst-key-write-full="profils_postes" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                                    <button onclick="deleteProfilPoste(${p._idx})" data-sst-key-write-full="profils_postes" class="text-red-500 text-xs hover:underline">Supprimer</button>
                                 </div>
                             </div>
                             <div class="mt-3 pt-3 border-t">
@@ -7109,7 +7140,7 @@
                                     <div class="flex items-center gap-2 shrink-0">
                                         <button type="button" onclick="toggleFormationEmployee('${salDetailsId}', this)" class="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-semibold px-3 py-1.5 rounded-lg text-[11px] transition">▶ Afficher les formations</button>
                                         ${(window.SSTCloud?.canModule ? window.SSTCloud.canModule('casqueQr') : true) ? `<button onclick="openQrModal(${actualIdx})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg text-[11px]">🏷️ Casque</button>` : ''}
-                                        <button onclick="openSalarieModal(${actualIdx})" class="text-blue-600 hover:underline font-semibold px-1 text-xs">Éditer</button>
+                                        <button onclick="openSalarieModal(${actualIdx})" data-sst-key-write-full="salaries_formations" class="text-blue-600 hover:underline font-semibold px-1 text-xs">Éditer</button>
                                     </div>
                                 </div>
                             </div>
@@ -10374,8 +10405,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const papToolbar=document.getElementById('pap-bulk-toolbar');
             if(papToolbar){
                 papToolbar.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
-                    <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${papVisibleAllSelected?'checked':''} onchange="toggleAllVisiblePap(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
-                    <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${papSelectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedPapripactActions()" ${papSelectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${papSelectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstPapSelected.clear();loadPapripactLocalOnly()" ${papSelectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                    <label data-sst-key-write-full="papripact_actions" class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${papVisibleAllSelected?'checked':''} onchange="toggleAllVisiblePap(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                    <div data-sst-key-write-full="papripact_actions" class="flex items-center gap-3"><span class="text-xs text-slate-500">${papSelectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedPapripactActions()" ${papSelectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${papSelectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstPapSelected.clear();loadPapripactLocalOnly()" ${papSelectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
                 </div>`;
             }
             const papSelectAllHeader=document.getElementById('pap-select-all-header');
@@ -10441,7 +10472,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
                 tbody.innerHTML += `
                     <tr id="pap-row-${idx}" data-pap-action-key="${escapeHtml(papActionKey)}" class="hover:bg-slate-50 transition-colors">
-                        <td class="p-3 border-b text-center sst-td-full"><input type="checkbox" aria-label="Sélectionner l'action N°${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
+                        <td class="p-3 border-b text-center sst-td-full" data-sst-key-write-full="papripact_actions"><input type="checkbox" aria-label="Sélectionner l'action N°${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
                         <td class="p-3 border-b" data-label="N° / Origine / Unité">
                             <div class="flex items-center flex-wrap gap-1 mb-1">
                                 <span class="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border bg-slate-100 text-slate-700 border-slate-300">N° ${String(a.numero || idx + 1)}</span>
@@ -10464,11 +10495,14 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <span class="inline-block px-2.5 py-1 rounded text-xs font-bold border ${badgeStatut}">${a.statut}</span>
                         </td>
                         <td class="p-3 border-b text-right whitespace-nowrap sst-td-full">
-                            <button onclick="editPapripactAction(${idx})" class="text-blue-600 text-xs font-semibold hover:underline">Modifier</button>
+                            ${(sstStorageWriteLevel('papripact_actions')==='write' || (sstStorageWriteLevel('papripact_actions')==='units' && sstManagerCanEditUnit(a.unite)))
+                                ? `<button onclick="editPapripactAction(${idx})" class="text-blue-600 text-xs font-semibold hover:underline">Modifier</button>`
+                                : `<span class="text-[10px] text-slate-400 italic">Lecture seule</span>`}
                         </td>
                     </tr>`;
             });
             updatePapripactCloudUi();
+            sstApplyStorageWriteGates(document.getElementById('tab-papripact'));
         }
 
         async function loadPapripact() {
@@ -10826,8 +10860,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const selectedCount=(window.sstFaSelected||new Set()).size;
             const visibleAllSelected=filteredFiches.length>0 && filteredFiches.every(({idx})=>window.sstFaSelected.has(idx));
             container.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
-                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleFa(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
-                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedFichesAmelioration()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstFaSelected.clear();renderFichesAmeliorationLocal()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                <label data-sst-key-write-full="fiches_amelioration" class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleFa(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                <div data-sst-key-write-full="fiches_amelioration" class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedFichesAmelioration()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstFaSelected.clear();renderFichesAmeliorationLocal()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
             </div>`;
             filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
@@ -10855,7 +10889,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <div class="flex items-center gap-3">
                                 <span class="text-xs text-slate-400 font-semibold">Rédigé le : ${f.date}</span>
                                 <button onclick="editFicheAmelioration(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                                <button onclick="deleteFicheAmelioration(${idx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
+                                <button onclick="deleteFicheAmelioration(${idx})" data-sst-key-write-full="fiches_amelioration" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
                             </div>
                         </div>
                         <div class="text-xs space-y-2 text-slate-700">
@@ -10985,7 +11019,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     sourceType: 'FA',
                     sourceReference: codeFA,
                     faCode: codeFA,
-                    unite: secteur || unite || '',
+                    unite: unite || '',  // Corrigé : la même unité que la fiche, pour que la liaison FA <-> PAPRIPACT reste visible au filtrage par unité.
                     action: axes,
                     type: 'Technique',
                     priorite: '',
@@ -11124,8 +11158,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const selectedCount=window.sstSuSelected.size;
             const visibleAllSelected=filteredFiches.every(({idx})=>window.sstSuSelected.has(idx));
             container.innerHTML = `<div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border rounded-lg px-3 py-2 text-sm">
-                <label class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleSu(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
-                <div class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedSituationsUrgence()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstSuSelected.clear();loadSituationsUrgence()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
+                <label data-sst-key-write-full="situations_urgence" class="inline-flex items-center gap-2 text-slate-600 cursor-pointer"><input type="checkbox" class="rounded border-slate-300" ${visibleAllSelected?'checked':''} onchange="toggleAllVisibleSu(this.checked)"><span>Tout sélectionner (résultats affichés)</span></label>
+                <div data-sst-key-write-full="situations_urgence" class="flex items-center gap-3"><span class="text-xs text-slate-500">${selectedCount} sélectionnée(s)</span><button type="button" onclick="deleteSelectedSituationsUrgence()" ${selectedCount?'':'disabled'} class="px-3 py-1.5 rounded-md text-xs font-semibold ${selectedCount?'bg-red-600 text-white hover:bg-red-700':'bg-slate-200 text-slate-400 cursor-not-allowed'}">Supprimer la sélection</button><button type="button" onclick="window.sstSuSelected.clear();loadSituationsUrgence()" ${selectedCount?'':'disabled'} class="text-xs text-slate-500 hover:text-slate-800 underline">Vider</button></div>
             </div>`;
             filteredFiches.forEach(({f,idx}) => {
                 let displayCode = f.code || 'N/C';
@@ -11139,7 +11173,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <div class="flex flex-wrap justify-between items-start border-b border-amber-100 pb-2"><div>
                             <div class="flex items-center gap-2 flex-wrap"><input type="checkbox" aria-label="Sélectionner ${displayCode}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstSuSelected.has(idx)?'checked':''} onchange="toggleSuSelection(${idx},this.checked)" title="Sélectionner cette situation">${suPapBadgeHtml}${suStatutBadgeHtml}<h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur||''}</h4></div>
                             <p class="text-xs text-slate-500 mt-1">${f.uniteRedacteur ? `Unité du rédacteur : ${f.uniteRedacteur} | ` : ''}Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p></div>
-                            <div class="flex items-center gap-3"><span class="text-xs text-slate-400 font-semibold">Date : ${f.date||''}</span><button onclick="editSituationUrgence(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button><button onclick="deleteSituationUrgence(${idx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button></div>
+                            <div class="flex items-center gap-3"><span class="text-xs text-slate-400 font-semibold">Date : ${f.date||''}</span><button onclick="editSituationUrgence(${idx})" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button><button onclick="deleteSituationUrgence(${idx})" data-sst-key-write-full="situations_urgence" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button></div>
                         </div><div class="text-xs space-y-2 text-slate-700"><div><span class="font-bold text-slate-900">Situation constatée :</span> ${f.faits||''}</div><div><span class="font-bold text-amber-700">Actions correctives / préventives :</span> ${f.axes || 'Aucune action immédiate renseignée'}</div></div>
                     </div>`;
             });
