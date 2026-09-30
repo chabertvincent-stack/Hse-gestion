@@ -6363,16 +6363,17 @@
                 tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500">Aucune formation dans le catalogue.</td></tr>`;
                 return;
             }
-            catalogue.forEach((f, idx) => {
+            catalogue.forEach((f) => {
                 let validiteText = f.validite == 0 ? "Illimitée" : `${f.validite} mois`;
+                const nomJs = JSON.stringify(String(f.nom || ''));
                 tbody.innerHTML += `
                     <tr class="hover:bg-slate-50">
-                        <td class="p-3 border-b font-bold text-slate-800" data-label="Formation">${f.nom}</td>
+                        <td class="p-3 border-b font-bold text-slate-800" data-label="Formation">${escapeHtml(f.nom)}</td>
                         <td class="p-3 border-b" data-label="Validité">${validiteText}</td>
                         <td class="p-3 border-b" data-label="Autorisation requise">${f.necessiteAuth ? '<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs">Oui</span>' : 'Non'}</td>
                         <td class="p-3 border-b text-right space-x-2 sst-td-full">
-                            <button onclick="editCatalogueFormation(${idx})" data-sst-key-write-full="catalogue_formations" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
-                            <button onclick="deleteCatalogueFormation(${idx})" data-sst-key-write-full="catalogue_formations" class="text-red-500 text-xs hover:underline">Supprimer</button>
+                            <button onclick='editCatalogueFormation(${nomJs})' data-sst-key-write-full="catalogue_formations" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                            <button onclick='deleteCatalogueFormation(${nomJs})' data-sst-key-write-full="catalogue_formations" class="text-red-500 text-xs hover:underline">Supprimer</button>
                         </td>
                     </tr>`;
             });
@@ -6415,15 +6416,25 @@
             const nom = document.getElementById('cat-nom').value.trim();
             const validite = parseInt(document.getElementById('cat-validite').value);
             const necessiteAuth = document.getElementById('cat-necessite-auth').checked;
-            const editIdx = document.getElementById('cat-edit-index').value;
+            // CORRECTIF : ce champ contenait auparavant l'index de la ligne dans le tableau
+            // TRIÉ affiché à l'écran, alors que "catalogue" ci-dessous est le tableau BRUT (ordre
+            // de création). Les deux ordres ne coïncident presque jamais dès qu'on a plus d'une
+            // formation, donc "Modifier" chargeait une formation, mais "Enregistrer" écrasait
+            // une AUTRE ligne du tableau brut : la formation visée n'était jamais celle
+            // réellement modifiée, et une autre était silencieusement corrompue. On identifie
+            // maintenant la formation par son nom (déjà la clé utilisée partout ailleurs dans
+            // l'appli pour la retrouver), qui ne dépend d'aucun tri d'affichage.
+            const oldNom = document.getElementById('cat-edit-index').value;
 
             if(!nom) { alert("Veuillez saisir le nom de la formation."); return; }
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
-            const oldNom = editIdx !== "" ? (catalogue[parseInt(editIdx)]?.nom || '') : '';
 
-            if(editIdx !== "") {
-                catalogue[parseInt(editIdx)] = { nom, validite, necessiteAuth };
+            if(oldNom) {
+                const pos = catalogue.findIndex(f => f?.nom === oldNom);
+                if(pos === -1) { alert("Cette formation n'existe plus (elle a peut-être été supprimée ou renommée ailleurs entre-temps)."); resetCatalogueForm(); loadCatalogueFormations(); return; }
+                catalogue[pos] = { nom, validite, necessiteAuth };
             } else {
+                if(catalogue.some(f => f?.nom === nom)) { alert("Une formation porte déjà ce nom."); return; }
                 catalogue.push({ nom, validite, necessiteAuth });
             }
 
@@ -6441,14 +6452,14 @@
             if(cascade.changed > 0) alert(`Formation renommée : ${cascade.changed} référence(s) mise(s) à jour (fiches salariés et profils de poste).`);
         }
 
-        function editCatalogueFormation(idx) {
+        function editCatalogueFormation(nom) {
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
-            let f = catalogue[idx];
+            let f = catalogue.find(x => x?.nom === nom);
             if(!f) return;
             document.getElementById('cat-nom').value = f.nom;
             document.getElementById('cat-validite').value = f.validite;
             document.getElementById('cat-necessite-auth').checked = !!f.necessiteAuth;
-            document.getElementById('cat-edit-index').value = idx;
+            document.getElementById('cat-edit-index').value = f.nom;
             document.getElementById('cat-submit-btn').innerText = "Modifier";
             document.getElementById('cat-cancel-btn').classList.remove('hidden');
         }
@@ -6462,9 +6473,9 @@
             document.getElementById('cat-cancel-btn').classList.add('hidden');
         }
 
-        function deleteCatalogueFormation(idx) {
+        function deleteCatalogueFormation(nom) {
             let catalogue = JSON.parse(localStorage.getItem('catalogue_formations') || '[]');
-            catalogue.splice(idx, 1);
+            catalogue = catalogue.filter(f => f?.nom !== nom);
             localStorage.setItem('catalogue_formations', JSON.stringify(catalogue));
             loadCatalogueFormations();
         }
@@ -15421,41 +15432,57 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const list = [];
 
             // FORMATIONS : reprend la logique du module existant, sans la modifier.
+            // CORRECTIF : une date de réalisation jamais renseignée (diff===null) était
+            // ignorée par "if(diff===null || diff>90) return" -> aucune alerte n'apparaissait
+            // pour une formation "Manquante", alors que c'est justement le cas le plus urgent.
+            // On croise aussi avec les formations requises par le poste (comme la matrice de
+            // suivi) pour repérer une formation jamais enregistrée du tout, pas seulement
+            // celles dont la date est vide dans un enregistrement existant.
             if(sstNotifCan('formations')) {
                 const salaries = sstNotifRead('salaries_formations', []);
+                const profils = sstNotifRead('profils_postes', []);
+                const requiredFor = poste => { const p = Array.isArray(profils) ? profils.find(x => x?.nom === poste) : null; return Array.isArray(p?.formations) ? p.formations : []; };
                 if(Array.isArray(salaries)) salaries.forEach(sal => {
-                    (sal?.formations || []).forEach(f => {
+                    const recorded = Array.isArray(sal?.formations) ? sal.formations : [];
+                    const required = requiredFor(sal?.poste);
+                    const names = required.length ? required : [...new Set(recorded.map(f => f?.intitule).filter(Boolean))];
+                    names.forEach(name => {
+                        const f = recorded.find(x => x?.intitule === name);
                         const diff = sstNotifDiffDays(f?.dateFin);
-                        if(diff === null || diff > 90) return;
-                        const expired = diff < 0;
+                        if(diff !== null && diff > 90) return;
+                        const missing = diff === null;
+                        const expired = !missing && diff < 0;
                         sstNotifAdd(list, {
-                            severity: expired ? 'danger' : 'warning',
+                            severity: (missing || expired) ? 'danger' : 'warning',
                             category: 'Formation',
-                            title: `${sal?.nom || 'Salarié'} — ${f?.intitule || 'Formation'}`,
-                            detail: expired ? `Formation expirée depuis le ${sstNotifDateLabel(f?.dateFin)}.` : `Formation à renouveler d'ici le ${sstNotifDateLabel(f?.dateFin)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`,
+                            title: `${sal?.nom || 'Salarié'} — ${name || 'Formation'}`,
+                            detail: missing ? `Formation jamais réalisée ou date non renseignée — à planifier.` : (expired ? `Formation expirée depuis le ${sstNotifDateLabel(f?.dateFin)}.` : `Formation à renouveler d'ici le ${sstNotifDateLabel(f?.dateFin)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`),
                             module: 'Formations',
                             target: { tab: 'formations', subtab: 'suivi' },
-                            sortDate: diff
+                            sortDate: missing ? -1 : diff
                         });
                     });
                 });
             }
 
             // VISITES MÉDICALES : données visibles uniquement avec le module infirmière.
+            // CORRECTIF : même bug — une visite jamais renseignée (diff===null) ne remontait
+            // aucune alerte, comme si tout allait bien.
             if(sstNotifCan('infirmiere')) {
                 const salaries = sstNotifRead('salaries_formations', []);
                 if(Array.isArray(salaries)) salaries.forEach(sal => {
                     const diff = sstNotifDiffDays(sal?.visite);
-                    if(diff === null || diff > 90) return;
-                    const expired = diff < 0;
+                    if(diff !== null && diff > 90) return;
+                    const missing = diff === null;
+                    const expired = !missing && diff < 0;
                     sstNotifAdd(list, {
-                        severity: expired ? 'danger' : 'warning',
+                        severity: (missing || expired) ? 'danger' : 'warning',
                         category: 'Visite médicale',
                         title: `${sal?.nom || 'Salarié'} — visite médicale`,
-                        detail: expired ? `Visite médicale expirée depuis le ${sstNotifDateLabel(sal?.visite)}.` : `Visite médicale à renouveler d'ici le ${sstNotifDateLabel(sal?.visite)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`,
+                        detail: missing ? `Visite médicale jamais renseignée — à planifier.` : (expired ? `Visite médicale expirée depuis le ${sstNotifDateLabel(sal?.visite)}.` : `Visite médicale à renouveler d'ici le ${sstNotifDateLabel(sal?.visite)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`),
                         module: 'Espace infirmière',
                         target: { tab: 'infirmiere', subtab: 'medical' },
-                        sortDate: diff
+                        sortDate: missing ? -1 : diff
                     });
                 });
             }
