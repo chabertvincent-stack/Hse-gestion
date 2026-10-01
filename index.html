@@ -1004,7 +1004,7 @@
                                 <p class="text-xs text-slate-500 mt-1">Évaluation des risques professionnels.</p>
                             </div>
                             <div class="flex flex-wrap gap-2">
-                                <button onclick="toggleDuerpCotationPanel()" class="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-900 font-semibold text-sm">⚙️ Ma grille de cotation</button>
+                                <button onclick="toggleDuerpCotationPanel()" data-duerp-write class="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-900 font-semibold text-sm">⚙️ Ma grille de cotation</button>
                                 <span id="duerp-viewer-badge" class="hidden self-center text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-300">👁️ Lecture seule</span>
                                 <button onclick="downloadDuerpTemplate()" data-duerp-write class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📥 Modèle Excel</button>
                                 <label data-duerp-write class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold text-sm cursor-pointer">
@@ -1012,7 +1012,7 @@
                                     <input type="file" id="import-duerp-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="importDuerpFile(event)">
                                 </label>
                                 <button onclick="exportDuerpXlsx()" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-semibold text-sm">📊 Exporter en Excel</button>
-                                <button onclick="openDuerpAccessModal()" class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📄 Avis d'accès</button>
+                                <button onclick="openDuerpAccessModal()" data-duerp-write class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📄 Avis d'accès</button>
                                 <button onclick="openDuerpModal()" data-duerp-write class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un risque</button>
                             </div>
                         </div>
@@ -9435,6 +9435,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         // --- Avis d'accès au DUERP (affichage) ---
         function openDuerpAccessModal() {
+            // CORRECTIF : bouton déjà masqué en lecture seule (data-duerp-write), même garde
+            // que pour la grille de cotation.
+            if(sstDuerpReadOnly()) { alert("Vous n'avez pas accès à l'avis d'accès au DUERP."); return; }
             const a = getDuerpPolicy().access;
             document.getElementById('duerp-access-lieu').value = a.lieu; document.getElementById('duerp-access-contact').value = a.contact;
             document.getElementById('duerp-access-horaires').value = a.horaires; document.getElementById('duerp-access-online').checked = a.online === true;
@@ -9680,6 +9683,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         function toggleDuerpCotationPanel() {
+            // CORRECTIF : le bouton était déjà masqué en lecture seule (data-duerp-write),
+            // mais rien n'empêchait la fonction elle-même de s'exécuter (ex. si le bouton
+            // restait affiché avant la mise à jour du rôle, ou via un ancien favori/raccourci).
+            if(sstDuerpReadOnly()) { alert("Vous n'avez pas accès à la configuration de la grille de cotation."); return; }
             const panel=document.getElementById('duerp-cotation-panel');
             if(!panel) return;
             const willOpen=panel.classList.contains('hidden');
