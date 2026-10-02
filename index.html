@@ -2680,7 +2680,7 @@
         //  read  : consultation uniquement
         //  units : modification limitée aux éléments des unités dont l'utilisateur est responsable
         //  write : modification complète (suppression comprise)
-        const SST_ACCESS_LEVELS = ['none','read','units','write'];
+        const SST_ACCESS_LEVELS = ['none','read','units','edit','write'];
         const SST_UNIT_SCOPED_MODULES = ['papripact','amelioration','urgence'];
         function roleDefaultAccess(role) {
             const out = {};
@@ -2776,7 +2776,7 @@
                 if (m === 'dashboard' || m === 'settings') return;
                 const lvl = access[m];
                 effectivePermissions[`${m}.read`] = lvl !== 'none';
-                effectivePermissions[`${m}.write`] = lvl === 'write';
+                effectivePermissions[`${m}.write`] = lvl === 'write' || lvl === 'edit';
                 effectivePermissions[`${m}.writeUnits`] = lvl === 'units';
                 effectivePermissions[`${m}.delete`] = lvl === 'write';
             });
@@ -3453,9 +3453,82 @@
             }
         };
 
+
+        // --- Grille de droits par utilisateur (module x niveau) -------------------------------------
+        const SST_LEVEL_LABELS = { none:'⛔ Bloqué', read:'👁️ Voir', units:'✏️ Modifier (mes unités)', edit:'✏️ Modifier (sans supprimer)', write:'🗑️ Modifier + supprimer' };
+        window.sstOpenAccessMatrix = function(userId){
+            const ctx = window.SST_APP_CONTEXT;
+            if(!ctx || (ctx.role!=='companyAdmin' && ctx.role!=='platformAdmin')){ alert('Réservé aux administrateurs.'); return; }
+            const u = (window.SST_USERS_CACHE||{})[userId];
+            if(!u){ alert('Utilisateur introuvable : rechargez la liste.'); return; }
+            const role = cleanRole(u.role);
+            const isAdmin = ['platformAdmin','companyAdmin'].includes(role);
+            const cur = (u.access && typeof u.access==='object') ? u.access : roleDefaultAccess(role);
+            const rows = SST_MODULE_ORDER.map(m => {
+                const scoped = SST_UNIT_SCOPED_MODULES.includes(m);
+                const levels = ['none','read'].concat(scoped?['units']:[]).concat(['edit','write']);
+                const v = SST_ACCESS_LEVELS.includes(cur[m]) ? cur[m] : 'none';
+                const val = levels.includes(v) ? v : (v==='units' ? 'read' : 'none');
+                return `<tr class="border-b"><td class="py-2 pr-3 text-xs font-semibold text-slate-700">${escSstAdmin(SST_MODULE_LABELS[m])}</td><td class="py-2"><select data-mod="${m}" ${isAdmin?'disabled':''} class="sst-matrix-sel p-1.5 border rounded text-xs bg-white w-full">${levels.map(l=>`<option value="${l}" ${l===val?'selected':''}>${SST_LEVEL_LABELS[l]}</option>`).join('')}</select></td></tr>`;
+            }).join('');
+            document.getElementById('sst-matrix-modal')?.remove();
+            const div = document.createElement('div');
+            div.id = 'sst-matrix-modal';
+            div.className = 'fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-3';
+            div.innerHTML = `<div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4">
+                <div class="flex items-start justify-between gap-2 mb-1"><div><div class="font-bold text-slate-800">🔐 Droits par module</div><div class="text-xs text-slate-500">${escSstAdmin(u.displayName||u.email||'')} · rôle : ${escSstAdmin(role)}</div></div><button type="button" onclick="document.getElementById('sst-matrix-modal').remove()" class="text-slate-500 text-xl leading-none">✕</button></div>
+                ${isAdmin?'<div class="text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 p-2 my-2">Un administrateur a toujours tous les droits : modifiez le rôle pour restreindre ce compte.</div>':''}
+                <div class="text-[11px] text-slate-500 my-2">« Mes unités » : le salarié modifie uniquement les éléments des unités dont son e-mail est renseigné comme manager (sous-unités comprises). La suppression est réservée au niveau « Modifier + supprimer ».</div>
+                <table class="w-full">${rows}</table>
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <button type="button" onclick="sstMatrixPreset('role','${userId}')" class="px-2 py-1 rounded border text-[11px]">Défauts du rôle</button>
+                    <button type="button" onclick="sstMatrixPreset('read','${userId}')" class="px-2 py-1 rounded border text-[11px]">Lecture : DUERP, PAPRIPACT, FA, SU</button>
+                    <button type="button" onclick="sstMatrixPreset('none','${userId}')" class="px-2 py-1 rounded border text-[11px]">Tout bloquer</button>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button type="button" onclick="document.getElementById('sst-matrix-modal').remove()" class="px-3 py-2 rounded border text-xs">Annuler</button>
+                    <button type="button" ${isAdmin?'disabled':''} onclick="sstSaveAccessMatrix('${userId}')" class="px-3 py-2 rounded bg-blue-600 text-white text-xs font-semibold disabled:opacity-40">Enregistrer</button>
+                </div></div>`;
+            document.body.appendChild(div);
+        };
+        window.sstMatrixPreset = function(kind, userId){
+            const u = (window.SST_USERS_CACHE||{})[userId]; if(!u) return;
+            const base = kind==='role' ? roleDefaultAccess(cleanRole(u.role)) : {};
+            document.querySelectorAll('#sst-matrix-modal .sst-matrix-sel').forEach(sel => {
+                const m = sel.dataset.mod; let v = 'none';
+                if(kind==='role') v = base[m] || 'none';
+                else if(kind==='read') v = SST_EMPLOYEE_READ_MODULES.includes(m) ? 'read' : 'none';
+                if(![...sel.options].some(o=>o.value===v)) v = v==='units' ? 'read' : 'none';
+                sel.value = v;
+            });
+        };
+        window.sstSaveAccessMatrix = async function(userId){
+            const ctx = window.SST_APP_CONTEXT;
+            if(!ctx || (ctx.role!=='companyAdmin' && ctx.role!=='platformAdmin')) return;
+            const api = window.SSTFirebaseApi; const db = api?.getDb?.();
+            const u = (window.SST_USERS_CACHE||{})[userId];
+            if(!api || !db || !u) return;
+            if(['platformAdmin','companyAdmin'].includes(cleanRole(u.role))) return;
+            const access = {};
+            document.querySelectorAll('#sst-matrix-modal .sst-matrix-sel').forEach(sel => { access[sel.dataset.mod] = sel.value; });
+            // PAPRIPACT reste nécessaire dès qu'un module qui y crée des actions est accessible.
+            if(SST_MODULES_NEEDING_PAPRIPACT.some(m => access[m] && access[m]!=='none') && access.papripact==='none'){
+                access.papripact = 'read';
+                alert('PAPRIPACT passe en « Voir » : les modules choisis y créent des actions et perdraient leur lien sans lui.');
+            }
+            const modules = Object.fromEntries(SST_MODULE_ORDER.map(m => [m, access[m] !== 'none']));
+            try{
+                await api.updateDoc(api.doc(db,'users',userId), { access, modules, permissions:{} });
+                u.access = access; u.modules = modules; u.permissions = {};
+                document.getElementById('sst-matrix-modal')?.remove();
+                alert('Droits enregistrés. La personne doit se reconnecter pour qu\'ils soient pris en compte.');
+                if(typeof window.loadSstCompanyUsers==='function' && document.getElementById('sst-company-users-list')) await window.loadSstCompanyUsers();
+            }catch(err){ alert(err?.message || 'Enregistrement des droits impossible (règles Firestore ?).'); }
+        };
+
         window.loadSstCompanyUsers = async function(){
             const ctx=window.SST_APP_CONTEXT; if(!ctx?.companyId||!firebaseDb) return;
-            try{const q=query(collection(firebaseDb,'users'),where('companyId','==',ctx.companyId));const snaps=await getDocs(q);const users=snaps.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||'').localeCompare(String(b.displayName||b.email||''),'fr'));const list=document.getElementById('sst-company-users-list');if(list) list.innerHTML=users.length?users.map(u=>`<div class="border rounded-lg p-3 bg-slate-50"><div class="flex flex-wrap items-center justify-between gap-2"><div><div class="font-bold text-sm text-slate-800">${escSstAdmin(u.displayName||u.email||'Utilisateur')}</div><div class="text-[11px] text-slate-500">${escSstAdmin(u.email||'')}</div></div><span class="px-2 py-1 rounded-full text-[10px] font-bold ${u.status==='disabled'?'bg-red-100 text-red-700':'bg-emerald-100 text-emerald-700'}">${escSstAdmin(u.role||'viewer')}</span></div><div class="text-[11px] text-slate-600 mt-2">${Object.values(u.modules||{}).filter(Boolean).length} module(s) · ${u.status==='disabled'?'désactivé':'actif'}</div></div>`).join(''):'<div class="text-xs text-slate-500 p-3 border rounded-lg">Aucun utilisateur.</div>';}catch(err){console.error(err);}
+            try{const q=query(collection(firebaseDb,'users'),where('companyId','==',ctx.companyId));const snaps=await getDocs(q);const users=snaps.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.displayName||a.email||'').localeCompare(String(b.displayName||b.email||''),'fr'));window.SST_USERS_CACHE=Object.assign(window.SST_USERS_CACHE||{},Object.fromEntries(users.map(u=>[u.id,u])));const list=document.getElementById('sst-company-users-list');if(list) list.innerHTML=users.length?users.map(u=>`<div class="border rounded-lg p-3 bg-slate-50"><div class="flex flex-wrap items-center justify-between gap-2"><div><div class="font-bold text-sm text-slate-800">${escSstAdmin(u.displayName||u.email||'Utilisateur')}</div><div class="text-[11px] text-slate-500">${escSstAdmin(u.email||'')}</div></div><span class="px-2 py-1 rounded-full text-[10px] font-bold ${u.status==='disabled'?'bg-red-100 text-red-700':'bg-emerald-100 text-emerald-700'}">${escSstAdmin(u.role||'viewer')}</span></div><div class="flex items-center justify-between gap-2 mt-2"><div class="text-[11px] text-slate-600">${Object.values(u.modules||{}).filter(Boolean).length} module(s) · ${u.status==='disabled'?'désactivé':'actif'}</div><button type="button" onclick="sstOpenAccessMatrix('${u.id}')" class="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold">🔐 Droits</button></div></div>`).join(''):'<div class="text-xs text-slate-500 p-3 border rounded-lg">Aucun utilisateur.</div>';}catch(err){console.error(err);}
         };
 
         async function initializeCloud() {
@@ -3624,7 +3697,7 @@
             if (!sstV242Db()) throw new Error('Firestore n’est pas disponible.');
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role === 'local-dev' || !ctx.companyId) throw new Error('Aucune entreprise cloud n’est associée à cet utilisateur.');
-            if (!window.SSTCloud.can(`${moduleId}.delete`) && !window.SSTCloud.can(`${moduleId}.write`)) throw new Error('Vous n’avez pas le droit de supprimer dans ce module.');
+            if (!window.SSTCloud.can(`${moduleId}.delete`)) throw new Error('Vous n’avez pas le droit de supprimer dans ce module.');
             const cleanId = String(recordId || '').replace(/\//g, '_');
             if (!cleanId) return;
             await sstV242Fb().deleteDoc(sstV242Fb().doc(sstV242Db(), 'companies', String(ctx.companyId), 'modules', String(moduleId), 'records', cleanId));
@@ -4143,6 +4216,7 @@
             let msg = '';
             if(lvl === 'read') msg = '👁️ Accès en consultation : vous pouvez consulter ce module mais pas le modifier.';
             else if(lvl === 'units') msg = '✏️ Vous pouvez modifier uniquement les éléments des unités dont vous êtes responsable.';
+            else if(lvl === 'edit') msg = '✏️ Vous pouvez modifier ce module mais pas y supprimer d\'éléments.';
             if(!msg) return;
             const div = document.createElement('div');
             div.className = 'sst-access-banner rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 px-4 py-2 text-xs font-semibold';
@@ -4154,8 +4228,39 @@
         // l'utilisateur sur la clé de stockage concernée (même moteur que les règles Firebase) :
         //  - [data-sst-key-write]      : visible dès le niveau "units" (modification limitée)
         //  - [data-sst-key-write-full] : visible seulement au niveau "write" (jamais en "units")
+        // Masquage générique des boutons d'action (modifier / ajouter / supprimer) selon le droit réel du
+        // module, y compris pour les boutons créés dynamiquement et sans attribut data-sst-key-write.
+        // Lecture (read) : tous les boutons d'écriture masqués. Units / Modifier : boutons de suppression
+        // masqués. Modifier + supprimer : rien n'est masqué. Les garde-fous d'écriture restent la vraie protection.
+        const SST_ACT_WRITE = /^(save|edit|add|create|reset|delete|remove(Participant|Tournee|AtRegistre)|tm(Add|Del|Edit|Move|Save|New|Duplicate|Reset)|reinscrire|markAbsent|validateSession|delivrer|setTourneeReponse|show(Tournee|Fa|Su)Form|sstChip|sstConfirmImport|sstSalarieFicheEdit|openNew|openDuerpModal|openDuerpPapModal|openPapFromDuerp|openTourneePapModal|openAtModal|openAtRegistreModal|openSessionModal|openAutorisationModal|openInfirmiereModal|openSalarieModal|applyPosteFormations|createActionFrom)/;
+        const SST_ACT_DELETE = /^(delete[A-Z]|deleteSelected|tmDelete$|removeParticipantFromSession)/;
+        const SST_ACT_TABS = ['rh','infirmiere','formations','duerp','papripact','amelioration','urgence','at','tournees'];
+        function sstApplyModuleActionGates(root) {
+            const ctx = window.SST_APP_CONTEXT;
+            if (!ctx || ctx.role === 'local-dev') return;
+            if (!document.getElementById('sst-act-gate-style')) {
+                const st = document.createElement('style'); st.id = 'sst-act-gate-style';
+                st.textContent = '[data-sst-act-hidden="1"]{display:none !important}';
+                document.head.appendChild(st);
+            }
+            SST_ACT_TABS.forEach(m => {
+                const tab = document.getElementById('tab-' + m);
+                if (!tab) return;
+                const lvl = sstAccessLevel(m);
+                tab.querySelectorAll('button[onclick],a[onclick]').forEach(el => {
+                    const fn = ((el.getAttribute('onclick') || '').trim().match(/^(?:window\.)?([A-Za-z_$][\w$]*)\(/) || [])[1] || '';
+                    let hide = false;
+                    if (fn) {
+                        if (lvl === 'read' || lvl === 'none') hide = SST_ACT_WRITE.test(fn);
+                        else if (lvl === 'units' || lvl === 'edit') hide = SST_ACT_DELETE.test(fn);
+                    }
+                    if (hide) el.setAttribute('data-sst-act-hidden', '1'); else el.removeAttribute('data-sst-act-hidden');
+                });
+            });
+        }
         function sstApplyStorageWriteGates(root) {
             const scope = root || document;
+            try { sstApplyModuleActionGates(scope); } catch(e) { console.warn('Masquage des boutons impossible :', e); }
             scope.querySelectorAll('[data-sst-key-write]').forEach(el => {
                 const lvl = sstStorageWriteLevel(el.getAttribute('data-sst-key-write'));
                 el.classList.toggle('hidden', lvl === 'none' || lvl === 'read');
@@ -10731,7 +10836,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <span class="inline-block px-2.5 py-1 rounded text-xs font-bold border ${badgeStatut}">${a.statut}</span>
                         </td>
                         <td class="p-3 border-b text-right whitespace-nowrap sst-td-full">
-                            ${(sstStorageWriteLevel('papripact_actions')==='write' || (sstStorageWriteLevel('papripact_actions')==='units' && sstManagerCanEditUnit(a.unite)))
+                            ${(sstStorageWriteLevel('papripact_actions')==='write' || sstStorageWriteLevel('papripact_actions')==='edit' || (sstStorageWriteLevel('papripact_actions')==='units' && sstManagerCanEditUnit(a.unite)))
                                 ? `<button onclick="editPapripactAction(${idx})" class="text-blue-600 text-xs font-semibold hover:underline">Modifier</button>`
                                 : `<span class="text-[10px] text-slate-400 italic">Lecture seule</span>`}
                         </td>
@@ -14793,10 +14898,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(!ctx) return 'none';
             if(ctx.role==='local-dev' || ctx.role==='platformAdmin' || ctx.role==='companyAdmin') return 'write';
             const v=ctx.access && ctx.access[moduleId];
-            return ['none','read','units','write'].includes(v) ? v : 'none';
+            return ['none','read','units','edit','write'].includes(v) ? v : 'none';
         }
         function sstBestLevel(modules){
-            const order=['none','read','units','write'];
+            const order=['none','read','units','edit','write'];
             return modules.map(sstAccessLevel).reduce((a,b)=>order.indexOf(b)>order.indexOf(a)?b:a,'none');
         }
         function sstUserUnits(){ return sstManagerUnits(window.SST_APP_CONTEXT); }
@@ -14812,7 +14917,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(!ctx || ctx.role==='local-dev') return false;
             if(sstV242RoleOrAdmin()) return true;
             const lvl=sstStorageWriteLevel(key);
-            return lvl==='units' || lvl==='write';
+            return lvl==='units' || lvl==='edit' || lvl==='write';
         }
         // --- Garde centrale : bloque toute écriture locale non autorisée avant qu'elle parte vers le cloud ---
         let sstLastDenyAlertAt = 0;
@@ -14825,6 +14930,15 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const lvl=sstStorageWriteLevel(key);
             if(lvl==='write') return true;
             if(lvl==='units' && pol.counter) return true;
+            if(lvl==='edit'){
+                // Modifier sans supprimer : on refuse toute écriture qui retire des lignes.
+                if(pol.counter) return true;
+                const oldE=sstV248RecordsOf(oldRaw), newE=newRaw===null?null:sstV248RecordsOf(newRaw);
+                if(newRaw!==null && !(oldE && newE && newE.length<oldE.length)) return true;
+                console.warn(`Suppression ignorée (droit « modifier sans supprimer ») : ${key}`);
+                if((Date.now()-sstLastDenyAlertAt) > 800){ sstLastDenyAlertAt = Date.now(); alert("Action refusée : vous pouvez modifier ce module mais pas y supprimer d'éléments."); }
+                return false;
+            }
             let allowed=false;
             if(lvl==='units' && pol.unitField){
                 const oldArr=sstV248RecordsOf(oldRaw)||[]; const newArr=newRaw===null?[]:(sstV248RecordsOf(newRaw)||null);
