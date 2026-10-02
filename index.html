@@ -5432,6 +5432,54 @@
             });
         }
 
+        // Ligne "Manager" d'une unité : libellé explicite + état du lien avec le compte utilisateur.
+        function sstManagerLineHtml(u) {
+            if (!u || !u.responsableEmail) {
+                return '<div class="text-xs text-amber-600 mt-1">⚠ Aucun manager défini pour cette unité</div>';
+            }
+            return `<div class="text-xs text-indigo-800 mt-1">🧑‍💼 Manager : <strong>${escapeHtml(u.responsableEmail)}</strong> <span class="sst-mgr-badge text-[11px] ml-1" data-email="${escapeHtml(u.responsableEmail)}" data-unit="${escapeHtml(u.nom)}"></span></div>`;
+        }
+        // Vérifie, pour chaque manager affiché, qu'un compte existe avec cet e-mail, qu'il a le rôle
+        // manager et que l'unité figure dans ses unités gérées. Best-effort : silencieux en cas d'échec.
+        async function sstRefreshManagerBadges() {
+            const badges = document.querySelectorAll('.sst-mgr-badge');
+            if (!badges.length) return;
+            const ctx = window.SST_APP_CONTEXT, api = window.SSTFirebaseApi, db = api?.getDb?.();
+            if (!ctx || !db || !ctx.companyId || ctx.role === 'local-dev') return;
+            let map = {};
+            try {
+                const snap = await api.getDocs(api.query(api.collection(db, 'users'), api.where('companyId', '==', String(ctx.companyId))));
+                snap.docs.forEach(d => {
+                    const x = d.data() || {};
+                    const e = String(x.email || '').trim().toLowerCase();
+                    if (e) map[e] = { role: x.role, units: Array.isArray(x.unitesGerees) ? x.unitesGerees : [] };
+                });
+            } catch(err) { return; }
+            badges.forEach(b => {
+                const acc = map[b.dataset.email];
+                let txt, cls;
+                if (!acc) { txt = '⚠ aucun compte avec cet e-mail'; cls = 'text-amber-600'; }
+                else if (acc.role !== 'manager') { txt = `⚠ compte trouvé mais rôle « ${acc.role} » (pas manager)`; cls = 'text-amber-600'; }
+                else if (!acc.units.includes(b.dataset.unit)) { txt = '⚠ compte non lié à cette unité (Resynchroniser)'; cls = 'text-amber-600'; }
+                else { txt = '✓ compte lié'; cls = 'text-green-700'; }
+                b.textContent = txt;
+                b.className = 'sst-mgr-badge text-[11px] ml-1 ' + cls;
+            });
+        }
+        // Rattache à nouveau chaque manager saisi à ses unités (utile si l'e-mail a été saisi avant
+        // la création du compte, ou si le rattachement avait échoué silencieusement).
+        async function sstResyncAllManagers() {
+            const unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+            let ok = 0, ko = 0;
+            for (const u of unites) {
+                if (!u.responsableEmail) continue;
+                try { await sstSyncManagerUnitAssignment(u.nom, u.responsableEmail, u.responsableEmail); ok++; }
+                catch(err) { ko++; console.warn('Resynchronisation manager impossible pour', u.nom, err); }
+            }
+            await sstRefreshManagerBadges();
+            alert(ko ? `Resynchronisation terminée : ${ok} unité(s) traitée(s), ${ko} en échec (droits insuffisants ?).` : `Resynchronisation terminée : ${ok} unité(s) traitée(s). Vérifie les pastilles à côté de chaque manager.`);
+        }
+
         function loadUnites() {
             const rawUnites = localStorage.getItem('unites_travail') || '[]';
             let unites = normalizeUnitesTravail(JSON.parse(rawUnites));
@@ -5475,7 +5523,7 @@
                                         <button onclick="deleteUnite(${muGlobalIdx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
                                     </div>
                                 </div>
-                                ${mu.responsableEmail ? `<div class="text-[11px] text-indigo-700">🧑‍💼 Responsable : ${escapeHtml(mu.responsableEmail)}</div>` : ''}`;
+                                ${sstManagerLineHtml(mu)}`;
                         
                         if (subUnits.length > 0) {
                             html += '<div class="ml-6 space-y-2 border-l-2 border-blue-200 pl-4 mt-2">';
@@ -5490,7 +5538,7 @@
                                                 <button onclick="deleteUnite(${suGlobalIdx})" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
                                             </div>
                                         </div>
-                                        ${su.responsableEmail ? `<div class="text-[10px] text-indigo-700 mt-1">🧑‍💼 ${escapeHtml(su.responsableEmail)}</div>` : ''}
+                                        ${sstManagerLineHtml(su)}
                                     </div>`;
                             });
                             html += '</div>';
@@ -5499,7 +5547,8 @@
                     });
 
                     html += '</div>';
-                    listeDiv.innerHTML = html;
+                    listeDiv.innerHTML = `<div class="flex justify-end mb-2"><button onclick="sstResyncAllManagers()" class="text-xs px-3 py-1 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50">🔄 Resynchroniser les managers</button></div>` + html;
+                    sstRefreshManagerBadges();
                 }
             }
             updateAllUnitSelects(unites);
@@ -9271,6 +9320,17 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             };
         }
         // --- Portée des managers par unité de travail ---------------------------------
+        // Un manager d'une unité mère couvre aussi ses sous-unités (héritage descendant, 1 niveau
+        // comme dans l'arborescence : unité principale > sous-unité).
+        function sstExpandUnitsWithChildren(names) {
+            const base = Array.isArray(names) ? names : [];
+            let all = [];
+            try { all = JSON.parse(localStorage.getItem('unites_travail') || '[]'); } catch(e) { all = []; }
+            const out = new Set(base);
+            all.forEach(u => { if (u && u.nom && u.parent && base.includes(u.parent)) out.add(u.nom); });
+            return Array.from(out);
+        }
+        function sstManagerUnits(ctx) { return sstExpandUnitsWithChildren(ctx && ctx.unitesGerees); }
         function getCompanyManagerStrictMode() {
             const ctx = window.SST_APP_CONTEXT;
             if (ctx?.company?.settings && Object.prototype.hasOwnProperty.call(ctx.company.settings, 'managerStrictMode')) {
@@ -9286,7 +9346,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
             if (!getCompanyManagerStrictMode()) return true;
-            const units = Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : [];
+            const units = sstManagerUnits(ctx);
             return units.includes(uniteName);
         }
         // A utiliser avant toute création/modification/suppression pour décider si un
@@ -9298,17 +9358,17 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function sstManagerUnitScopedOnly(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
-            return (Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : []).includes(uniteName);
+            return sstManagerUnits(ctx).includes(uniteName);
         }
         function sstManagerCanSeePersonnel(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
-            return (Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : []).includes(uniteName);
+            return sstManagerUnits(ctx).includes(uniteName);
         }
         function sstManagerCanEditUnit(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
             if (!ctx || ctx.role !== 'manager') return true;
-            const units = Array.isArray(ctx.unitesGerees) ? ctx.unitesGerees : [];
+            const units = sstManagerUnits(ctx);
             return units.includes(uniteName);
         }
         function syncManagerStrictModeUi() {
@@ -14739,7 +14799,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const order=['none','read','units','write'];
             return modules.map(sstAccessLevel).reduce((a,b)=>order.indexOf(b)>order.indexOf(a)?b:a,'none');
         }
-        function sstUserUnits(){ const u=window.SST_APP_CONTEXT?.unitesGerees; return Array.isArray(u)?u:[]; }
+        function sstUserUnits(){ return sstManagerUnits(window.SST_APP_CONTEXT); }
         // Niveau effectif d'écriture sur une clé ('units' n'a de sens que pour les clés rattachées à une unité).
         function sstStorageWriteLevel(key){
             const pol=SST_V248_KEY_POLICY[key]; if(!pol) return 'write';
