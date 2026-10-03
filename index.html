@@ -15306,7 +15306,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             // avançait quand même son instantané local et levait le drapeau "à synchroniser",
             // donc plus aucune tentative n'était refaite — jusqu'à ce qu'un autre appareil (ou
             // un rechargement) relise Firestore et voie encore l'ancienne fiche.
-            const failures=[];
+            const failures=[]; const changes=[];
             for(const [id,v] of curMap){
                 const old=prevMap.get(id);
                 const contentChanged=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item));
@@ -15316,6 +15316,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                         await sstV242Fb().setDoc(sstV242RecordPath(key,id),{
                             payload:sstV242Clean(v.item), order:v.index, updatedBy:window.SST_APP_CONTEXT?.uid||'', updatedAt:sstV242Fb().serverTimestamp()
                         },{merge:true});
+                        changes.push({op: old?'update':'create', id, order:v.index, before: old?sstV242Clean(old.item):null, after:sstV242Clean(v.item)});
                     } catch(err){
                         console.warn(`Écriture Firestore (${key}/${id}) impossible :`, err);
                         failures.push({id, op:'write', err});
@@ -15333,10 +15334,11 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             }
             for(const [id] of prevMap){
                 if(!curMap.has(id)){
-                    try { await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); }
+                    try { await sstV242Fb().deleteDoc(sstV242RecordPath(key,id)); const o=prevMap.get(id); changes.push({op:'delete', id, order:o.index, before:sstV242Clean(o.item), after:null}); }
                     catch(err){ console.warn(`Suppression Firestore (${key}/${id}) impossible :`, err); failures.push({id, op:'delete', err}); }
                 }
             }
+            try { if(typeof window.sstAuditLog==='function') window.sstAuditLog(key, changes); } catch(e){}
             return failures;
         }
         async function sstV242SyncPublicHelmetRecords(previous, current){
@@ -16426,6 +16428,196 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     setInterval(enhanceAll, 1500);
     window.sstEnhanceTables = enhanceAll;
     window.__sstSortHelpers = { parseCell: parseCell, compare: compare };
+})();
+</script>
+
+<script>
+/* V2.142 — Journal des modifications (qui a fait quoi), corbeille et restauration */
+(function () {
+    'use strict';
+    var LABELS = {
+        duerp_risques: 'DUERP', papripact_actions: 'PAPRIPACT', fiches_amelioration: 'Fiches d’amélioration',
+        situations_urgence: 'Situations d’urgence', at_analyses: 'Analyse AT', at_registre: 'Registre AT',
+        tournees_hse: 'Tournées HSE', tournees_modeles: 'Modèles de tournées', unites_travail: 'Unités de travail',
+        profils_postes: 'Profils de postes', catalogue_formations: 'Référentiel de formations',
+        training_sessions: 'Sessions de formation', salaries_formations: 'Salariés / formations'
+    };
+    var SKIP = ['papripact_next_action_num', 'at_heures_travaillees'];
+    var REDACT = ['salaries_formations'];           // contenu potentiellement médical : on ne journalise que les noms de champs
+    var OPS = { create: 'Création', update: 'Modification', delete: 'Suppression', restore: 'Restauration', bulk: 'Modifications groupées' };
+    var sinceTs = 0, lastKey = '';
+
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+    function ctx() { return window.SST_APP_CONTEXT || null; }
+    function fb() { return window.SSTFirebaseApi; }
+    function labelOf(item) {
+        if (!item || typeof item !== 'object') return 'enregistrement';
+        var v = item.action || item.danger || item.nom || item.faits || item.titre || item.objet || item.libelle || item.theme || item.numero || item.id || '';
+        v = String(v).replace(/\s+/g, ' ').trim();
+        return (v || 'enregistrement').slice(0, 90);
+    }
+    function changedFields(a, b) {
+        var out = [], k = {}; a = a || {}; b = b || {};
+        Object.keys(a).concat(Object.keys(b)).forEach(function (x) { k[x] = 1; });
+        Object.keys(k).forEach(function (x) { if (x !== '_cloudId' && JSON.stringify(a[x]) !== JSON.stringify(b[x])) out.push(x); });
+        return out;
+    }
+    function write(entry) {
+        var c = ctx(), f = fb();
+        if (!c || !f || !f.getDb || !c.companyId) return Promise.resolve();
+        var id = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        return f.setDoc(f.doc(f.getDb(), 'companies', String(c.companyId), 'audit_log', id), entry)
+            .catch(function (err) { console.warn('Journal : écriture impossible', err); });
+    }
+    function who() { var c = ctx() || {}; return { byUid: c.uid || '', byEmail: c.email || '', byName: c.displayName || '' }; }
+
+    // Appelée par la synchronisation cloud après chaque écriture réussie.
+    window.sstAuditLog = function (key, changes) {
+        try {
+            var c = ctx();
+            if (!changes || !changes.length || SKIP.indexOf(key) >= 0) return;
+            if (!c || !c.uid || c.role === 'local-dev' || !(window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant())) return;
+            var base = Object.assign({ key: key, ts: Date.now() }, who());
+            if (changes.length > 30) {
+                write(Object.assign({}, base, { op: 'bulk', rid: '', unit: '', order: 0, label: changes.length + ' modification(s) groupée(s) (import ou synchronisation)', before: null, after: null, noRestore: true }));
+                return;
+            }
+            changes.forEach(function (ch) {
+                var item = ch.after || ch.before || {};
+                var e = Object.assign({}, base, { op: ch.op, rid: String(ch.id), order: ch.order || 0, label: labelOf(item), unit: String(item.unite || item.service || '').slice(0, 80), before: null, after: null, noRestore: false });
+                if (REDACT.indexOf(key) >= 0) {
+                    e.noRestore = true;
+                    e.fields = ch.op === 'update' ? changedFields(ch.before, ch.after) : [];
+                } else {
+                    var b = ch.before ? JSON.stringify(ch.before) : null, a = ch.after ? JSON.stringify(ch.after) : null;
+                    if ((b && b.length > 150000) || (a && a.length > 150000)) { e.noRestore = true; } else { e.before = b; e.after = a; }
+                    if (ch.op === 'update') e.fields = changedFields(ch.before, ch.after);
+                }
+                write(e);
+            });
+        } catch (err) { console.warn('Journal :', err); }
+    };
+
+    // ---------- Dernière visite (pour « entre deux sessions ») ----------
+    function initSession() {
+        var c = ctx(); if (!c || !c.uid || c.uid === 'local') return false;
+        lastKey = 'sst_last_visit_' + c.uid;
+        try { sinceTs = Number(localStorage.getItem(lastKey) || 0); } catch (e) { sinceTs = 0; }
+        var tick = function () { try { localStorage.setItem(lastKey, String(Date.now())); } catch (e) {} };
+        tick(); setInterval(tick, 30000);
+        window.addEventListener('pagehide', tick);
+        return true;
+    }
+
+    // ---------- Interface ----------
+    var entries = [], loaded = false;
+    function canSee() { var c = ctx(); return !!(c && ['platformAdmin', 'companyAdmin', 'hse', 'rh'].indexOf(c.role) >= 0); }
+    function installButton() {
+        if (!canSee() || document.getElementById('sst-journal-nav')) return;
+        var nav = document.querySelector('#sidebar nav, aside nav, nav');
+        var ref = document.querySelector('button[onclick*="switchTab(\'settings\'"]');
+        if (!ref) return;
+        var b = document.createElement('button');
+        b.id = 'sst-journal-nav'; b.type = 'button';
+        b.className = ref.className.replace(/\btab-btn\b/, '').trim();
+        b.textContent = '🕘 Journal des modifications';
+        b.addEventListener('click', function () { openJournal(); });
+        ref.parentNode.insertBefore(b, ref);
+    }
+    function fmtDate(ts) { try { return new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }); } catch (e) { return ''; } }
+    function sinceFromPeriod(p) {
+        var now = Date.now(), d = 86400000;
+        if (p === 'visit') return sinceTs || (now - 7 * d);
+        if (p === 'today') { var t = new Date(); t.setHours(0, 0, 0, 0); return t.getTime(); }
+        if (p === '7') return now - 7 * d;
+        if (p === '30') return now - 30 * d;
+        return 0;
+    }
+    async function load() {
+        var c = ctx(), f = fb();
+        var snap = await f.getDocs(f.query(f.collection(f.getDb(), 'companies', String(c.companyId), 'audit_log'), f.where('ts', '>=', Date.now() - 365 * 86400000)));
+        entries = snap.docs.map(function (d) { var x = d.data(); x._id = d.id; return x; }).sort(function (a, b) { return b.ts - a.ts; });
+        loaded = true;
+    }
+    function closeJournal() { var m = document.getElementById('sst-journal'); if (m) m.remove(); }
+    async function openJournal() {
+        if (!canSee()) return;
+        closeJournal();
+        var d = document.createElement('div');
+        d.id = 'sst-journal'; d.className = 'fixed inset-0 z-[9999] bg-slate-100 overflow-y-auto';
+        d.innerHTML = '<div class="max-w-3xl mx-auto p-3 pb-16">' +
+            '<div class="flex items-start justify-between gap-2 mb-2"><div><div class="text-lg font-bold text-slate-800">🕘 Journal des modifications</div><div class="text-xs text-slate-500">Qui a fait quoi, et quand. Les suppressions et modifications peuvent être annulées.</div></div><button type="button" id="sst-j-close" class="px-3 py-2 rounded border bg-white text-sm">Fermer</button></div>' +
+            '<div class="bg-white rounded-lg border p-3 space-y-2 mb-3">' +
+            '<div class="grid grid-cols-2 gap-2">' +
+            '<select id="sst-j-period" class="p-2 border rounded text-sm bg-white"><option value="visit">Depuis ma dernière visite</option><option value="today">Aujourd’hui</option><option value="7" selected>7 derniers jours</option><option value="30">30 derniers jours</option><option value="all">Tout (12 mois)</option></select>' +
+            '<select id="sst-j-op" class="p-2 border rounded text-sm bg-white"><option value="">Toutes les actions</option><option value="create">Créations</option><option value="update">Modifications</option><option value="delete">🗑️ Suppressions (corbeille)</option><option value="restore">Restaurations</option></select>' +
+            '<select id="sst-j-key" class="p-2 border rounded text-sm bg-white"><option value="">Tous les modules</option></select>' +
+            '<select id="sst-j-user" class="p-2 border rounded text-sm bg-white"><option value="">Tous les utilisateurs</option></select></div>' +
+            '<input id="sst-j-q" type="search" placeholder="Rechercher (texte, unité…)" class="w-full p-2 border rounded text-sm"></div>' +
+            '<div id="sst-j-list" class="space-y-2"><div class="text-sm text-slate-500 p-4 text-center">Chargement…</div></div></div>';
+        document.body.appendChild(d);
+        d.querySelector('#sst-j-close').addEventListener('click', closeJournal);
+        try { await load(); } catch (err) {
+            d.querySelector('#sst-j-list').innerHTML = '<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded p-3">Lecture du journal impossible : ' + esc(err && err.message || err) + '<br>Vérifiez que les règles Firestore ont été mises à jour (collection audit_log).</div>';
+            return;
+        }
+        var keys = {}, users = {};
+        entries.forEach(function (e) { keys[e.key] = 1; users[e.byEmail || e.byUid] = e.byName || e.byEmail || e.byUid; });
+        d.querySelector('#sst-j-key').innerHTML += Object.keys(keys).sort().map(function (k) { return '<option value="' + esc(k) + '">' + esc(LABELS[k] || k) + '</option>'; }).join('');
+        d.querySelector('#sst-j-user').innerHTML += Object.keys(users).sort().map(function (k) { return '<option value="' + esc(k) + '">' + esc(users[k]) + '</option>'; }).join('');
+        ['sst-j-period', 'sst-j-op', 'sst-j-key', 'sst-j-user'].forEach(function (id) { d.querySelector('#' + id).addEventListener('change', render); });
+        d.querySelector('#sst-j-q').addEventListener('input', render);
+        render();
+    }
+    function render() {
+        var d = document.getElementById('sst-journal'); if (!d) return;
+        var since = sinceFromPeriod(d.querySelector('#sst-j-period').value), op = d.querySelector('#sst-j-op').value,
+            key = d.querySelector('#sst-j-key').value, user = d.querySelector('#sst-j-user').value, q = d.querySelector('#sst-j-q').value.trim().toLowerCase();
+        var list = entries.filter(function (e) {
+            if (e.ts < since) return false; if (op && e.op !== op) return false; if (key && e.key !== key) return false;
+            if (user && (e.byEmail || e.byUid) !== user) return false;
+            if (q && (e.label + ' ' + e.unit + ' ' + (e.byName || '') + ' ' + (e.byEmail || '')).toLowerCase().indexOf(q) < 0) return false;
+            return true;
+        });
+        var box = d.querySelector('#sst-j-list');
+        if (!list.length) { box.innerHTML = '<div class="text-sm text-slate-500 bg-white border rounded p-4 text-center">Aucune modification sur cette période.</div>'; return; }
+        var color = { create: 'bg-green-100 text-green-800', update: 'bg-blue-100 text-blue-800', delete: 'bg-red-100 text-red-800', restore: 'bg-purple-100 text-purple-800', bulk: 'bg-slate-200 text-slate-700' };
+        box.innerHTML = list.slice(0, 300).map(function (e) {
+            var canRestore = !e.noRestore && ((e.op === 'delete' && e.before) || (e.op === 'update' && e.before) || (e.op === 'create' && e.rid));
+            var btn = canRestore ? '<button type="button" data-restore="' + esc(e._id) + '" class="px-2 py-1 rounded bg-slate-800 text-white text-xs font-semibold">' + (e.op === 'create' ? 'Annuler la création' : (e.op === 'delete' ? 'Restaurer' : 'Revenir à l’ancienne valeur')) + '</button>' : '';
+            var det = (e.fields && e.fields.length) ? '<button type="button" data-detail="' + esc(e._id) + '" class="px-2 py-1 rounded border text-xs">Détail</button>' : '';
+            return '<div class="bg-white border rounded-lg p-3" data-entry="' + esc(e._id) + '"><div class="flex flex-wrap items-center gap-2 text-xs"><span class="px-2 py-0.5 rounded font-semibold ' + (color[e.op] || '') + '">' + esc(OPS[e.op] || e.op) + '</span><span class="text-slate-600">' + esc(LABELS[e.key] || e.key) + '</span><span class="text-slate-400 ml-auto">' + esc(fmtDate(e.ts)) + '</span></div>' +
+                '<div class="text-sm font-semibold text-slate-800 mt-1">' + esc(e.label) + '</div>' +
+                '<div class="text-xs text-slate-500">par ' + esc(e.byName || e.byEmail || '?') + (e.byEmail && e.byName ? ' (' + esc(e.byEmail) + ')' : '') + (e.unit ? ' · unité : ' + esc(e.unit) : '') + (e.fields && e.fields.length ? ' · champs : ' + esc(e.fields.slice(0, 6).join(', ')) : '') + '</div>' +
+                '<div class="flex gap-2 mt-2">' + det + btn + '</div><div class="hidden mt-2 text-xs bg-slate-50 border rounded p-2" data-detailbox="' + esc(e._id) + '"></div></div>';
+        }).join('') + (list.length > 300 ? '<div class="text-xs text-slate-500 text-center">300 premières lignes affichées : affinez les filtres.</div>' : '');
+        box.querySelectorAll('[data-restore]').forEach(function (b) { b.addEventListener('click', function () { restore(b.getAttribute('data-restore')); }); });
+        box.querySelectorAll('[data-detail]').forEach(function (b) { b.addEventListener('click', function () { detail(b.getAttribute('data-detail')); }); });
+    }
+    function byId(id) { return entries.filter(function (e) { return e._id === id; })[0]; }
+    function detail(id) {
+        var e = byId(id), box = document.querySelector('[data-detailbox="' + id + '"]'); if (!e || !box) return;
+        if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+        var b = {}, a = {}; try { b = e.before ? JSON.parse(e.before) : {}; a = e.after ? JSON.parse(e.after) : {}; } catch (x) {}
+        function s(v) { var t = typeof v === 'object' ? JSON.stringify(v) : String(v == null ? '' : v); return t.length > 160 ? t.slice(0, 160) + '…' : t; }
+        box.innerHTML = (e.fields || []).map(function (f) { return '<div><b>' + esc(f) + '</b> : <span class="text-red-700 line-through">' + esc(s(b[f])) + '</span> → <span class="text-green-700">' + esc(s(a[f])) + '</span></div>'; }).join('') || 'Pas de détail disponible.';
+        box.classList.remove('hidden');
+    }
+    async function restore(id) {
+        var e = byId(id), c = ctx(), f = fb(); if (!e || !c || !f) return;
+        var msg = e.op === 'delete' ? 'Restaurer « ' + e.label + ' » ?' : (e.op === 'update' ? 'Remettre « ' + e.label + ' » dans son état d’avant cette modification ? Les modifications faites depuis seront perdues.' : 'Supprimer « ' + e.label + ' » (annuler sa création) ?');
+        if (!window.confirm(msg)) return;
+        try {
+            var ref = f.doc(f.getDb(), 'companies', String(c.companyId), 'sync', e.key, 'records', String(e.rid).replace(/\//g, '_'));
+            if (e.op === 'create') { await f.deleteDoc(ref); }
+            else { await f.setDoc(ref, { payload: JSON.parse(e.before), order: e.order || 0, updatedBy: c.uid || '', updatedAt: f.serverTimestamp() }); }
+            await write(Object.assign({ key: e.key, ts: Date.now(), op: 'restore', rid: e.rid, order: e.order || 0, label: (e.op === 'create' ? 'Annulation de la création : ' : 'Restauration : ') + e.label, unit: e.unit || '', before: null, after: null, noRestore: true }, who()));
+            alert('Fait. Les données se mettent à jour automatiquement ; si l’écran n’a pas changé, rechargez la page.');
+            await load(); render();
+        } catch (err) { alert('Opération impossible : ' + (err && err.message || err)); }
+    }
+    window.sstOpenJournal = openJournal;
+    var boot = setInterval(function () { if (initSession()) { clearInterval(boot); setInterval(installButton, 2000); installButton(); } }, 1000);
 })();
 </script>
 
