@@ -5549,8 +5549,18 @@
                 const responsableEmail = String(u?.responsableEmail || '').trim().toLowerCase();
                 const out = { nom, parent: (parent && names.has(parent) && parent !== nom) ? parent : '' };
                 if (responsableEmail) out.responsableEmail = responsableEmail;
+                // L'identifiant cloud doit survivre à la normalisation : sans lui, chaque modification
+                // d'une unité (ex. ajout du manager) changeait son identité côté serveur.
+                if (u && u._cloudId) out._cloudId = u._cloudId;
                 return out;
-            }).filter(u => u.nom);
+            }).filter(u => u.nom).reduce((acc, u) => {
+                // Un nom d'unité est unique : en cas de doublon (ancienne version d'une fiche restée
+                // dans le cloud), on garde celle qui porte un manager.
+                const i = acc.findIndex(x => x.nom === u.nom);
+                if (i < 0) acc.push(u);
+                else if (!acc[i].responsableEmail && u.responsableEmail) acc[i] = u;
+                return acc;
+            }, []);
             return normalized.sort((a,b) => {
                 const parentCmp = (a.parent || '').localeCompare((b.parent || ''), 'fr', { sensitivity:'base', numeric:true });
                 if (parentCmp !== 0) return parentCmp;
@@ -5599,7 +5609,7 @@
             let ok = 0, ko = 0;
             const emails = Array.from(new Set(unites.map(u => String(u.responsableEmail || '').trim()).filter(Boolean)));
             for (const em of emails) {
-                try { await sstRecomputeManagerUnits(em); ok++; }
+                try { await sstRecomputeManagerUnits(em, true); ok++; }
                 catch(err) { ko++; console.warn('Resynchronisation manager impossible pour', em, err); }
             }
             await sstRefreshManagerBadges();
@@ -5768,6 +5778,16 @@
             } catch(err) {
                 console.warn('Synchronisation du responsable de l\'unité impossible :', err);
             }
+            if (responsableEmail) {
+                setTimeout(() => {
+                    try {
+                        const u = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]')).find(x => x.nom === nom);
+                        if (!u || u.responsableEmail !== responsableEmail) {
+                            alert("⚠ L'e-mail du manager n'a pas été conservé pour l'unité « " + nom + " » (synchronisation cloud refusée ou interrompue). Vérifiez votre connexion et vos droits, puis saisissez-le à nouveau.");
+                        }
+                    } catch(e) {}
+                }, 4000);
+            }
         }
 
         // Met à jour la liste "unitesGerees" du profil manager concerné lorsqu'on associe
@@ -5776,7 +5796,7 @@
         // Recalcule la liste des unités gérées (unitesGerees) d'un manager à partir de la liste des unités :
         // les unités où son e-mail est renseigné + leurs sous-unités. Les règles Firestore ne lisent que ce
         // champ : l'héritage mère -> sous-unités doit donc y être écrit explicitement.
-        async function sstRecomputeManagerUnits(email) {
+        async function sstRecomputeManagerUnits(email, additive) {
             const ctx = window.SST_APP_CONTEXT;
             const api = window.SSTFirebaseApi;
             const db = api?.getDb?.();
@@ -5795,6 +5815,7 @@
             if (!snap) return;
             const userDoc = snap.docs[0];
             const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
+            if (additive) current.forEach(n => wanted.add(n));
             const next = Array.from(wanted);
             const same = current.length === next.length && next.every(n => current.includes(n));
             if (!same) await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: next });
@@ -7143,7 +7164,7 @@
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-500">Poste</div><div class="text-sm font-extrabold text-slate-800 mt-1">${escapeHtml(sal.poste || 'Non renseigné')}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-500">Unité de travail</div><div class="text-sm font-extrabold text-slate-800 mt-1">${escapeHtml(sal.service || 'Non renseignée')}</div></div>
                     <div class="rounded-xl border bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-500">Formations à jour</div><div class="text-sm font-extrabold text-slate-800 mt-1">${trainingOk} / ${trainingCount}</div></div>
-                    <div class="rounded-xl border p-3"><div class="text-[10px] uppercase font-bold text-slate-500">Suivi médical</div><div class="mt-1">${sstFichePill(medicalStatus.label,medicalStatus.cls)}</div></div>
+                    <div class="rounded-xl border p-3"><div class="text-[10px] uppercase font-bold text-slate-500">Suivi médical</div><div class="mt-1">${sstEmployeeModuleAccess('infirmiere') ? sstFichePill(medicalStatus.label,medicalStatus.cls) : '<span class="text-xs text-slate-400 italic">Non affiché</span>'}</div></div>
                 </div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     ${sstFicheSection('Identité & affectation','👤',`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs"><div><div class="text-slate-500">Nom et prénom</div><div class="font-bold text-slate-800 mt-0.5">${escapeHtml(sal.nom || 'Non renseigné')}</div></div><div><div class="text-slate-500">Poste</div><div class="font-bold text-slate-800 mt-0.5">${escapeHtml(sal.poste || 'Non renseigné')}</div></div><div><div class="text-slate-500">Unité</div><div class="font-bold text-slate-800 mt-0.5">${escapeHtml(sal.service || 'Non renseignée')}</div></div><div><div class="text-slate-500">Profil de poste</div><div class="font-bold text-slate-800 mt-0.5">${profile ? '✅ Profil trouvé' : '⚠️ Aucun profil trouvé'}</div></div></div>`)}
