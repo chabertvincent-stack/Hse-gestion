@@ -2732,6 +2732,8 @@
                 const allowed = canModule ? canModule(mod) : true;
                 el.classList.toggle('hidden', allowed);
             });
+            // Menu latéral et onglets : masque tout module non accessible à cet utilisateur.
+            if (typeof window.applySstModuleAccess === 'function') window.applySstModuleAccess();
         }
 
         function moduleMap(companyModules) {
@@ -4259,7 +4261,8 @@
             SST_ACT_TABS.forEach(m => {
                 const tab = document.getElementById('tab-' + m);
                 if (!tab) return;
-                const lvl = sstAccessLevel(m);
+                let lvl = sstAccessLevel(m);
+                if (lvl === 'units' && ctx.role === 'manager' && !sstManagerUnits(ctx).length) lvl = 'read';
                 tab.querySelectorAll('button[onclick],a[onclick]').forEach(el => {
                     const fn = ((el.getAttribute('onclick') || '').trim().match(/^(?:window\.)?([A-Za-z_$][\w$]*)\(/) || [])[1] || '';
                     let hide = false;
@@ -9482,10 +9485,9 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         // Les autres rôles ne sont jamais restreints par cette fonction.
         function sstManagerCanSeeUnit(uniteName) {
             const ctx = window.SST_APP_CONTEXT;
-            if (!ctx || ctx.role !== 'manager') return true;
-            if (!getCompanyManagerStrictMode()) return true;
-            const units = sstManagerUnits(ctx);
-            return units.includes(uniteName);
+            // DUERP et PAPRIPACT sont visibles en entier par tous les managers (comme par un salarié) ;
+            // seule la modification est limitée à leurs unités (voir sstManagerCanEditUnit).
+            return true;
         }
         // A utiliser avant toute création/modification/suppression pour décider si un
         // manager a le droit d'ÉCRIRE sur une unité donnée — restriction qui s'applique
@@ -10863,7 +10865,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     && (!filterResponsable || a.responsable===filterResponsable)
                     && (!filterUnite || a.unite===filterUnite)
                     && (!filterDelai || (filterDelai==='depasse' && sstPapripactDelayOverdue(a)));
-                if(match && sstManagerCanSeeUnit(a.unite)){ if(checked) window.sstPapSelected.add(idx); else window.sstPapSelected.delete(idx); }
+                if(match && sstManagerCanEditUnit(a.unite)){ if(checked) window.sstPapSelected.add(idx); else window.sstPapSelected.delete(idx); }
             });
             loadPapripactLocalOnly();
         }
