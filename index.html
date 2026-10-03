@@ -15277,6 +15277,12 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             }
             return remote.exists;
         }
+        // Représentation JSON indépendante de l'ordre des clés (Firestore ne garantit pas l'ordre des champs).
+        function sstV243StableJson(value){
+            if(Array.isArray(value)) return '['+value.map(sstV243StableJson).join(',')+']';
+            if(value && typeof value==='object') return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+sstV243StableJson(value[k])).join(',')+'}';
+            return JSON.stringify(value===undefined?null:value);
+        }
         async function sstV242WriteArrayDiff(key, previous, current){
             const prev=Array.isArray(previous)?previous:[];
             const cur=Array.isArray(current)?current:[];
@@ -15309,7 +15315,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const failures=[]; const changes=[];
             for(const [id,v] of curMap){
                 const old=prevMap.get(id);
-                const contentChanged=!old || JSON.stringify(sstV242Clean(old.item))!==JSON.stringify(sstV242Clean(v.item));
+                const contentChanged=!old || sstV243StableJson(sstV242Clean(old.item))!==sstV243StableJson(sstV242Clean(v.item));
                 const indexChanged=!!old && old.index!==v.index;
                 if(contentChanged){
                     try {
@@ -16432,7 +16438,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 </script>
 
 <script>
-/* V2.142 — Journal des modifications (qui a fait quoi), corbeille et restauration */
+/* V2.143 — Journal des modifications, corbeille, restauration et bouton Annuler / Rétablir */
 (function () {
     'use strict';
     var LABELS = {
@@ -16456,11 +16462,27 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         v = String(v).replace(/\s+/g, ' ').trim();
         return (v || 'enregistrement').slice(0, 90);
     }
+    function norm(v) {
+        if (v === undefined || v === null || v === false) return '';
+        if (typeof v === 'string') return v.trim();
+        if (Array.isArray(v)) return v.length ? v.map(norm) : '';
+        if (typeof v === 'object') {
+            var o = {}, n = 0;
+            Object.keys(v).sort().forEach(function (k) { if (k === '_cloudId') return; var x = norm(v[k]); if (x !== '') { o[k] = x; n++; } });
+            return n ? o : '';
+        }
+        return v;
+    }
     function changedFields(a, b) {
         var out = [], k = {}; a = a || {}; b = b || {};
         Object.keys(a).concat(Object.keys(b)).forEach(function (x) { k[x] = 1; });
-        Object.keys(k).forEach(function (x) { if (x !== '_cloudId' && JSON.stringify(a[x]) !== JSON.stringify(b[x])) out.push(x); });
+        Object.keys(k).forEach(function (x) { if (x !== '_cloudId' && JSON.stringify(norm(a[x])) !== JSON.stringify(norm(b[x]))) out.push(x); });
         return out;
+    }
+    function refOf(item) {
+        if (!item || typeof item !== 'object') return '';
+        var v = (item.numero !== undefined && item.numero !== null && item.numero !== '') ? 'N°' + item.numero : (item.code || item.riskId || item.reference || item.ref || '');
+        return String(v).slice(0, 40);
     }
     function write(entry) {
         var c = ctx(), f = fb();
@@ -16477,14 +16499,18 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             var c = ctx();
             if (!changes || !changes.length || SKIP.indexOf(key) >= 0) return;
             if (!c || !c.uid || c.role === 'local-dev' || !(window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant())) return;
+            // Ignore les « modifications » sans changement réel (normalisation automatique des données à l'ouverture).
+            changes = changes.filter(function (ch) { return ch.op !== 'update' || changedFields(ch.before, ch.after).length > 0; });
+            if (!changes.length) return;
             var base = Object.assign({ key: key, ts: Date.now() }, who());
+            if (changes.length <= 30) pushUndo(key, changes);
             if (changes.length > 30) {
-                write(Object.assign({}, base, { op: 'bulk', rid: '', unit: '', order: 0, label: changes.length + ' modification(s) groupée(s) (import ou synchronisation)', before: null, after: null, noRestore: true }));
+                write(Object.assign({}, base, { op: 'bulk', rid: '', ref: '', unit: '', order: 0, label: changes.length + ' modification(s) groupée(s) (import ou synchronisation)', before: null, after: null, noRestore: true }));
                 return;
             }
             changes.forEach(function (ch) {
                 var item = ch.after || ch.before || {};
-                var e = Object.assign({}, base, { op: ch.op, rid: String(ch.id), order: ch.order || 0, label: labelOf(item), unit: String(item.unite || item.service || '').slice(0, 80), before: null, after: null, noRestore: false });
+                var e = Object.assign({}, base, { op: ch.op, rid: String(ch.id), order: ch.order || 0, ref: refOf(item), label: labelOf(item), unit: String(item.unite || item.service || '').slice(0, 80), before: null, after: null, noRestore: false });
                 if (REDACT.indexOf(key) >= 0) {
                     e.noRestore = true;
                     e.fields = ch.op === 'update' ? changedFields(ch.before, ch.after) : [];
@@ -16497,6 +16523,89 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             });
         } catch (err) { console.warn('Journal :', err); }
     };
+
+
+    // ---------- Annuler / Rétablir (dernières actions de cette session) ----------
+    var undoStack = [], redoStack = [], groupTs = 0, lastUserTs = 0, busy = false, toastTimer = null;
+    document.addEventListener('click', userAct, true); document.addEventListener('keydown', userAct, true);
+    document.addEventListener('touchend', userAct, true); document.addEventListener('change', userAct, true);
+    function userAct(e) { if (e && e.target && e.target.closest && e.target.closest('#auth-gate')) return; lastUserTs = Date.now(); }
+    function pushUndo(key, changes) {
+        // Seules les actions faites à la main (pas la normalisation automatique) entrent dans la pile.
+        if (Date.now() - lastUserTs > 12000) return;
+        var now = Date.now(), items = changes.map(function (ch) {
+            var it = ch.after || ch.before || {};
+            return { key: key, op: ch.op, id: String(ch.id), order: ch.order || 0, before: ch.before || null, after: ch.after || null, ref: refOf(it), label: labelOf(it) };
+        });
+        if (undoStack.length && now - groupTs < 1500) undoStack[undoStack.length - 1].items = undoStack[undoStack.length - 1].items.concat(items);
+        else undoStack.push({ items: items });
+        if (undoStack.length > 30) undoStack.shift();
+        groupTs = now; redoStack = [];
+        refreshUndoUi();
+        var g = undoStack[undoStack.length - 1], f = g.items[0];
+        toast('Enregistré : ' + (OPS[f.op] || f.op).toLowerCase() + ' — ' + (f.ref ? f.ref + ' ' : '') + f.label + (g.items.length > 1 ? ' (+' + (g.items.length - 1) + ')' : ''));
+    }
+    function recordRef(it) { var f = fb(), c = ctx(); return f.doc(f.getDb(), 'companies', String(c.companyId), 'sync', it.key, 'records', String(it.id).replace(/\//g, '_')); }
+    async function applyItem(it, target) {
+        var f = fb(), c = ctx(), ref = recordRef(it);
+        if (target === null) await f.deleteDoc(ref);
+        else await f.setDoc(ref, { payload: target, order: it.order || 0, updatedBy: c.uid || '', updatedAt: f.serverTimestamp() });
+    }
+    async function runGroup(g, dir) {
+        var items = dir === 'undo' ? g.items.slice().reverse() : g.items.slice();
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i], target = dir === 'undo' ? it.before : it.after;
+            await applyItem(it, target);
+        }
+        var f0 = g.items[0];
+        write(Object.assign({ key: f0.key, ts: Date.now(), op: 'restore', rid: f0.id, ref: f0.ref || '', order: f0.order || 0, label: (dir === 'undo' ? 'Annulation : ' : 'Rétablissement : ') + f0.label + (g.items.length > 1 ? ' (+' + (g.items.length - 1) + ')' : ''), unit: '', before: null, after: null, noRestore: true }, who()));
+    }
+    async function undo() {
+        if (busy || !undoStack.length) return; busy = true;
+        var g = undoStack[undoStack.length - 1];
+        try { await runGroup(g, 'undo'); undoStack.pop(); redoStack.push(g); toast('Action annulée.'); }
+        catch (err) { alert('Annulation impossible : ' + (err && err.message || err)); }
+        busy = false; refreshUndoUi();
+    }
+    async function redo() {
+        if (busy || !redoStack.length) return; busy = true;
+        var g = redoStack[redoStack.length - 1];
+        try { await runGroup(g, 'redo'); redoStack.pop(); undoStack.push(g); toast('Action rétablie.'); }
+        catch (err) { alert('Rétablissement impossible : ' + (err && err.message || err)); }
+        busy = false; refreshUndoUi();
+    }
+    function toast(msg, withUndo) {
+        var t = document.getElementById('sst-undo-toast');
+        if (!t) {
+            t = document.createElement('div'); t.id = 'sst-undo-toast';
+            t.className = 'fixed left-1/2 -translate-x-1/2 bottom-24 z-[9998] bg-slate-800 text-white text-xs rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 max-w-[92vw]';
+            document.body.appendChild(t);
+        }
+        t.innerHTML = '<span class="truncate">' + esc(msg) + '</span>' + (undoStack.length ? '<button type="button" class="font-bold underline whitespace-nowrap">Annuler</button>' : '');
+        var b = t.querySelector('button'); if (b) b.addEventListener('click', undo);
+        t.style.display = 'flex'; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.style.display = 'none'; }, 9000);
+    }
+    function refreshUndoUi() {
+        var box = document.getElementById('sst-undo-fab');
+        if (!box) {
+            box = document.createElement('div'); box.id = 'sst-undo-fab';
+            box.className = 'fixed left-3 bottom-4 z-[9997] flex gap-2';
+            box.innerHTML = '<button type="button" data-u class="w-11 h-11 rounded-full bg-slate-800 text-white text-xl shadow-lg" title="Annuler la dernière action (Ctrl+Z)">↶</button><button type="button" data-r class="w-11 h-11 rounded-full bg-slate-600 text-white text-xl shadow-lg" title="Rétablir (Ctrl+Y)">↷</button>';
+            box.querySelector('[data-u]').addEventListener('click', undo); box.querySelector('[data-r]').addEventListener('click', redo);
+            document.body.appendChild(box);
+        }
+        box.querySelector('[data-u]').style.display = undoStack.length ? '' : 'none';
+        box.querySelector('[data-r]').style.display = redoStack.length ? '' : 'none';
+        box.style.display = (undoStack.length || redoStack.length) ? 'flex' : 'none';
+    }
+    document.addEventListener('keydown', function (e) {
+        var t = e.target, tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        var k = String(e.key).toLowerCase();
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+        else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    });
 
     // ---------- Dernière visite (pour « entre deux sessions ») ----------
     function initSession() {
@@ -16537,6 +16646,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         var c = ctx(), f = fb();
         var snap = await f.getDocs(f.query(f.collection(f.getDb(), 'companies', String(c.companyId), 'audit_log'), f.where('ts', '>=', Date.now() - 365 * 86400000)));
         entries = snap.docs.map(function (d) { var x = d.data(); x._id = d.id; return x; }).sort(function (a, b) { return b.ts - a.ts; });
+        entries.forEach(function (e) {
+            if (e.op === 'update' && e.before && e.after) { try { e.fields = changedFields(JSON.parse(e.before), JSON.parse(e.after)); } catch (x) {} }
+        });
+        entries = entries.filter(function (e) { return !(e.op === 'update' && (!e.fields || !e.fields.length)); });
         loaded = true;
     }
     function closeJournal() { var m = document.getElementById('sst-journal'); if (m) m.remove(); }
@@ -16576,7 +16689,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         var list = entries.filter(function (e) {
             if (e.ts < since) return false; if (op && e.op !== op) return false; if (key && e.key !== key) return false;
             if (user && (e.byEmail || e.byUid) !== user) return false;
-            if (q && (e.label + ' ' + e.unit + ' ' + (e.byName || '') + ' ' + (e.byEmail || '')).toLowerCase().indexOf(q) < 0) return false;
+            if (q && ((e.ref || '') + ' ' + e.label + ' ' + e.unit + ' ' + (e.byName || '') + ' ' + (e.byEmail || '')).toLowerCase().indexOf(q) < 0) return false;
             return true;
         });
         var box = d.querySelector('#sst-j-list');
@@ -16587,7 +16700,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             var btn = canRestore ? '<button type="button" data-restore="' + esc(e._id) + '" class="px-2 py-1 rounded bg-slate-800 text-white text-xs font-semibold">' + (e.op === 'create' ? 'Annuler la création' : (e.op === 'delete' ? 'Restaurer' : 'Revenir à l’ancienne valeur')) + '</button>' : '';
             var det = (e.fields && e.fields.length) ? '<button type="button" data-detail="' + esc(e._id) + '" class="px-2 py-1 rounded border text-xs">Détail</button>' : '';
             return '<div class="bg-white border rounded-lg p-3" data-entry="' + esc(e._id) + '"><div class="flex flex-wrap items-center gap-2 text-xs"><span class="px-2 py-0.5 rounded font-semibold ' + (color[e.op] || '') + '">' + esc(OPS[e.op] || e.op) + '</span><span class="text-slate-600">' + esc(LABELS[e.key] || e.key) + '</span><span class="text-slate-400 ml-auto">' + esc(fmtDate(e.ts)) + '</span></div>' +
-                '<div class="text-sm font-semibold text-slate-800 mt-1">' + esc(e.label) + '</div>' +
+                '<div class="text-sm font-semibold text-slate-800 mt-1">' + (e.ref ? '<span class="inline-block bg-slate-800 text-white text-xs rounded px-1.5 py-0.5 mr-1">' + esc(e.ref) + '</span>' : '') + esc(e.label) + '</div>' +
                 '<div class="text-xs text-slate-500">par ' + esc(e.byName || e.byEmail || '?') + (e.byEmail && e.byName ? ' (' + esc(e.byEmail) + ')' : '') + (e.unit ? ' · unité : ' + esc(e.unit) : '') + (e.fields && e.fields.length ? ' · champs : ' + esc(e.fields.slice(0, 6).join(', ')) : '') + '</div>' +
                 '<div class="flex gap-2 mt-2">' + det + btn + '</div><div class="hidden mt-2 text-xs bg-slate-50 border rounded p-2" data-detailbox="' + esc(e._id) + '"></div></div>';
         }).join('') + (list.length > 300 ? '<div class="text-xs text-slate-500 text-center">300 premières lignes affichées : affinez les filtres.</div>' : '');
@@ -16611,7 +16724,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             var ref = f.doc(f.getDb(), 'companies', String(c.companyId), 'sync', e.key, 'records', String(e.rid).replace(/\//g, '_'));
             if (e.op === 'create') { await f.deleteDoc(ref); }
             else { await f.setDoc(ref, { payload: JSON.parse(e.before), order: e.order || 0, updatedBy: c.uid || '', updatedAt: f.serverTimestamp() }); }
-            await write(Object.assign({ key: e.key, ts: Date.now(), op: 'restore', rid: e.rid, order: e.order || 0, label: (e.op === 'create' ? 'Annulation de la création : ' : 'Restauration : ') + e.label, unit: e.unit || '', before: null, after: null, noRestore: true }, who()));
+            await write(Object.assign({ key: e.key, ts: Date.now(), op: 'restore', rid: e.rid, ref: e.ref || '', order: e.order || 0, label: (e.op === 'create' ? 'Annulation de la création : ' : 'Restauration : ') + e.label, unit: e.unit || '', before: null, after: null, noRestore: true }, who()));
             alert('Fait. Les données se mettent à jour automatiquement ; si l’écran n’a pas changé, rechargez la page.');
             await load(); render();
         } catch (err) { alert('Opération impossible : ' + (err && err.message || err)); }
