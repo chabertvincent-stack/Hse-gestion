@@ -16260,5 +16260,170 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             setTimeout(() => { try { sstOnboardingMaybeAutoShow(); } catch (e) {} }, 400);
         });
     </script>
+<script>
+/* V2.139 — Filtres conservés pendant la session, tri des tableaux, éléments réservés aux non-managers */
+(function () {
+    'use strict';
+    // ---------- 1. Filtres conservés d'un onglet à l'autre (mémoire de la session, vidée à la déconnexion) ----------
+    var mem = {}, restoring = false;
+    var FILTER_SEL = '[id^="filter-"],[id^="rh-filter-"],#rh-search-nom,#search-formation-nom';
+    function onFilterEvent(e) {
+        if (restoring) return;
+        var el = e.target;
+        if (el && el.id && el.matches && el.matches(FILTER_SEL)) mem[el.id] = el.value;
+    }
+    document.addEventListener('change', onFilterEvent, true);
+    document.addEventListener('input', onFilterEvent, true);
+    function restoreFilters() {
+        restoring = true;
+        try {
+            Object.keys(mem).forEach(function (id) {
+                var el = document.getElementById(id);
+                if (!el || el.value === mem[id]) return;
+                if (el.tagName === 'SELECT' && !Array.prototype.some.call(el.options, function (o) { return o.value === mem[id]; })) return;
+                el.value = mem[id];
+                try { el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); } catch (e) {}
+            });
+        } finally { restoring = false; }
+    }
+    function scheduleRestore() { setTimeout(restoreFilters, 60); setTimeout(restoreFilters, 600); }
+
+    // ---------- 2. Éléments réservés aux non-managers (référentiel de formations, profils de poste) ----------
+    function isManager() { var c = window.SST_APP_CONTEXT; return !!(c && c.role === 'manager'); }
+    function hideForManager() {
+        if (!isManager()) return;
+        ['subtab-rh-catalogue-btn', 'subtab-rh-postes-btn'].forEach(function (id) {
+            var b = document.getElementById(id); if (b) b.classList.add('hidden');
+        });
+    }
+    function wrap(name, fn) {
+        var orig = window[name];
+        if (typeof orig !== 'function' || orig.__sstWrapped) return;
+        var w = function () { return fn.call(this, orig, arguments); };
+        w.__sstWrapped = true;
+        window[name] = w;
+    }
+    wrap('switchTab', function (orig, args) { var r = orig.apply(this, args); hideForManager(); scheduleRestore(); return r; });
+    wrap('switchRhSubTab', function (orig, args) {
+        var a = Array.prototype.slice.call(args);
+        if (isManager() && (a[0] === 'catalogue' || a[0] === 'postes')) a[0] = 'salaries';
+        var r = orig.apply(this, a); hideForManager(); scheduleRestore(); return r;
+    });
+    wrap('switchFormationsSubTab', function (orig, args) { var r = orig.apply(this, args); scheduleRestore(); return r; });
+    wrap('switchInfSubTab', function (orig, args) { var r = orig.apply(this, args); scheduleRestore(); return r; });
+
+    // ---------- 3. Tri des tableaux (clic sur l'en-tête, ou liste « Trier par » sur téléphone) ----------
+    var sortState = {}, applying = false;
+    function parseCell(txt) {
+        var t = String(txt || '').replace(/\u00a0/g, ' ').trim(), m;
+        if (!t) return [2, ''];
+        if ((m = t.match(/(\d{2})\/(\d{2})\/(\d{4})/))) return [1, Number(m[3] + m[2] + m[1])];
+        if ((m = t.match(/(\d{4})-(\d{2})-(\d{2})/))) return [1, Number(m[1] + m[2] + m[3])];
+        if ((m = t.match(/^-?\d[\d\s]*([.,]\d+)?/)) && m[0].length >= t.length * 0.6) return [1, parseFloat(m[0].replace(/\s/g, '').replace(',', '.'))];
+        return [0, t.toLowerCase()];
+    }
+    function compare(a, b) {
+        if (a[0] === 2 && b[0] === 2) return 0;
+        if (a[0] === 2) return 1;           // cellules vides toujours en dernier
+        if (b[0] === 2) return -1;
+        if (a[0] === 1 && b[0] === 1) return a[1] - b[1];
+        return String(a[1]).localeCompare(String(b[1]), 'fr', { numeric: true, sensitivity: 'base' });
+    }
+    function tableKey(t) {
+        var tb = t.tBodies[0];
+        if (tb && tb.id) return tb.id;
+        if (t.id) return t.id;
+        var tab = t.closest('.tab-content'), all = tab ? tab.querySelectorAll('table') : [t];
+        return (tab ? tab.id : 'x') + '#' + Array.prototype.indexOf.call(all, t);
+    }
+    function headCells(t) { return t.tHead && t.tHead.rows[0] ? Array.prototype.slice.call(t.tHead.rows[0].cells) : []; }
+    function sortable(th) { var x = (th.textContent || '').trim(); return x.length > 0 && !/^actions?$/i.test(x); }
+    function applySort(t) {
+        var st = sortState[tableKey(t)], tb = t.tBodies[0];
+        if (!tb) return;
+        var n = headCells(t).length, rows = Array.prototype.slice.call(tb.rows);
+        if (!rows.length || rows.some(function (r) { return r.cells.length !== n; })) return;
+        rows.forEach(function (r, i) { if (r.dataset.sstOrig === undefined) r.dataset.sstOrig = String(i); });
+        var items = rows.map(function (r, i) {
+            return { r: r, i: Number(r.dataset.sstOrig), v: st && st.col >= 0 ? parseCell(r.cells[st.col].innerText || r.cells[st.col].textContent) : null };
+        });
+        items.sort(function (x, y) {
+            var c = st && st.col >= 0 ? compare(x.v, y.v) * (st.dir === 'desc' && x.v[0] !== 2 && y.v[0] !== 2 ? -1 : 1) : 0;
+            return c || (x.i - y.i);
+        });
+        applying = true;
+        try { items.forEach(function (o) { tb.appendChild(o.r); }); } finally { setTimeout(function () { applying = false; }, 0); }
+        paintHeaders(t);
+    }
+    function paintHeaders(t) {
+        var st = sortState[tableKey(t)];
+        headCells(t).forEach(function (th, i) {
+            var s = th.querySelector('.sst-sort-ind');
+            if (!s) return;
+            s.textContent = st && st.col === i ? (st.dir === 'desc' ? ' ▼' : ' ▲') : '';
+        });
+        var bar = t.__sstBar;
+        if (bar) {
+            var sel = bar.querySelector('select'), btn = bar.querySelector('button');
+            sel.value = st && st.col >= 0 ? String(st.col) : '';
+            btn.textContent = st && st.dir === 'desc' ? 'Z → A' : 'A → Z';
+            btn.disabled = !(st && st.col >= 0);
+        }
+    }
+    function setSort(t, col, dir) {
+        sortState[tableKey(t)] = { col: col, dir: dir || 'asc' };
+        applySort(t);
+    }
+    function enhance(t) {
+        if (t.__sstSort) return;
+        var heads = headCells(t), tb = t.tBodies[0];
+        if (!tb || heads.filter(sortable).length < 2) return;
+        t.__sstSort = true;
+        heads.forEach(function (th, i) {
+            if (!sortable(th)) return;
+            th.style.cursor = 'pointer';
+            th.title = 'Trier cette colonne (clic : A → Z, second clic : Z → A)';
+            var s = document.createElement('span'); s.className = 'sst-sort-ind'; th.appendChild(s);
+            th.addEventListener('click', function (e) {
+                if (e.target.closest && e.target.closest('input,button,select,a')) return;
+                var st = sortState[tableKey(t)];
+                setSort(t, i, st && st.col === i && st.dir === 'asc' ? 'desc' : 'asc');
+            });
+        });
+        var bar = document.createElement('div');
+        bar.className = 'sst-sortbar flex items-center gap-2 text-xs text-slate-600 mb-2';
+        var opts = '<option value="">Ordre d’origine</option>';
+        heads.forEach(function (th, i) { if (sortable(th)) opts += '<option value="' + i + '">' + (th.textContent || '').replace(/[▲▼]/g, '').replace(/\s+/g, ' ').trim().replace(/</g, '&lt;') + '</option>'; });
+        bar.innerHTML = '<span>Trier par</span><select class="border rounded px-2 py-1 bg-white max-w-[55%]">' + opts + '</select><button type="button" class="border rounded px-2 py-1 bg-white font-semibold">A → Z</button>';
+        bar.querySelector('select').addEventListener('change', function (e) {
+            var v = e.target.value; var st = sortState[tableKey(t)];
+            setSort(t, v === '' ? -1 : Number(v), st && st.dir ? st.dir : 'asc');
+        });
+        bar.querySelector('button').addEventListener('click', function () {
+            var st = sortState[tableKey(t)]; if (!st || st.col < 0) return;
+            setSort(t, st.col, st.dir === 'asc' ? 'desc' : 'asc');
+        });
+        var host = t.closest('.overflow-x-auto') || t;
+        host.parentNode.insertBefore(bar, host);
+        t.__sstBar = bar;
+        new MutationObserver(function () {
+            if (applying) return;
+            requestAnimationFrame(function () { if (sortState[tableKey(t)]) applySort(t); });
+        }).observe(tb, { childList: true });
+        paintHeaders(t);
+    }
+    function enhanceAll() {
+        Array.prototype.forEach.call(document.querySelectorAll('.tab-content table'), function (t) {
+            if (t.closest('.sst-no-sort')) return;
+            try { enhance(t); } catch (e) { console.warn('Tri du tableau impossible :', e); }
+        });
+        hideForManager();
+    }
+    setInterval(enhanceAll, 1500);
+    window.sstEnhanceTables = enhanceAll;
+    window.__sstSortHelpers = { parseCell: parseCell, compare: compare };
+})();
+</script>
+
 </body>
 </html>
