@@ -1018,6 +1018,8 @@
                             </div>
                         </div>
 
+                        <div id="duerp-revues-card" class="mb-6 sst-no-sort"></div>
+
                         <div id="duerp-cotation-panel" class="hidden mb-6 rounded-xl border border-slate-300 bg-slate-50 p-4">
                             <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4">
                                 <div>
@@ -4711,7 +4713,7 @@
         const SST_BACKUP_STORAGE_KEY = 'sst_last_operation_backup';
         const SST_BACKUP_KEYS = [
             'unites_travail','catalogue_formations','profils_postes','salaries_formations',
-            'duerp_risques','papripact_actions','papripact_next_action_num','fiches_amelioration',
+            'duerp_risques','duerp_revues','papripact_actions','papripact_next_action_num','fiches_amelioration',
             'situations_urgence','at_analyses','at_registre','at_heures_travaillees',
             'training_sessions','tournees_hse','tournees_modeles'
         ];
@@ -4817,6 +4819,7 @@
                 'profils_postes',
                 'salaries_formations',
                 'duerp_risques',
+                'duerp_revues',
                 'papripact_actions',
                 'papripact_next_action_num',
                 'fiches_amelioration',
@@ -4892,6 +4895,7 @@
                         'profils_postes',
                         'salaries_formations',
                         'duerp_risques',
+                        'duerp_revues',
                         'papripact_actions',
                         'papripact_next_action_num',
                         'fiches_amelioration',
@@ -10213,6 +10217,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             updateDuerpCotationUi();
             syncDuerpPolicyUi();
             renderDuerpAlertBanner();
+            try { if (typeof sstRenderDuerpRevues === 'function') sstRenderDuerpRevues(); } catch (e) {}
 
             const container = document.getElementById('table-duerp-risques');
             if(!container) return;
@@ -14928,6 +14933,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             salaries_formations:  { module:'formations',  kind:'array' },
             training_sessions:    { module:'formations',  kind:'array' },
             duerp_risques:        { module:'duerp',       kind:'array' },
+            duerp_revues:         { module:'duerp',       kind:'array' },
             papripact_actions:    { module:'papripact',   kind:'array' },
             fiches_amelioration:  { module:'amelioration',kind:'array' },
             situations_urgence:   { module:'urgence',    kind:'array' },
@@ -14942,7 +14948,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         const SST_V242_MODULE_KEYS = {
             rh:['unites_travail'],
             formations:['catalogue_formations','profils_postes','salaries_formations','training_sessions'],
-            duerp:['duerp_risques'],
+            duerp:['duerp_risques','duerp_revues'],
             papripact:['papripact_actions','papripact_next_action_num'],
             amelioration:['fiches_amelioration'],
             urgence:['situations_urgence'],
@@ -15090,6 +15096,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             training_sessions:         { modules:['formations'] },
             salaries_formations:       { modules:['formations','infirmiere'], unitField:'service' },
             duerp_risques:             { modules:['duerp'],        unitField:'unite' },
+            duerp_revues:              { modules:['duerp'] },
             papripact_actions:         { modules:['papripact'],    unitField:'unite' },
             papripact_next_action_num: { modules:['papripact'],    counter:true },
             fiches_amelioration:       { modules:['amelioration'], unitField:'unite' },
@@ -15675,6 +15682,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                         if(typeof loadAtRegistre==='function') try{loadAtRegistre();}catch(e){}
                     }
                     if(key==='duerp_risques' && typeof loadDuerp==='function') try{loadDuerp();}catch(e){}
+                    if(key==='duerp_revues' && typeof sstRenderDuerpRevues==='function') try{sstRenderDuerpRevues();}catch(e){}
                     if(key==='tournees_hse' && typeof loadTourneesHse==='function') try{loadTourneesHse();}catch(e){}
                     if(key==='tournees_modeles' && typeof refreshTourneeModelesUi==='function') try{refreshTourneeModelesUi();}catch(e){}
                 } finally { sstV242SuppressSync=false; }
@@ -16442,7 +16450,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 (function () {
     'use strict';
     var LABELS = {
-        duerp_risques: 'DUERP', papripact_actions: 'PAPRIPACT', fiches_amelioration: 'Fiches d’amélioration',
+        duerp_risques: 'DUERP', duerp_revues: 'Revues DUERP', papripact_actions: 'PAPRIPACT', fiches_amelioration: 'Fiches d’amélioration',
         situations_urgence: 'Situations d’urgence', at_analyses: 'Analyse AT', at_registre: 'Registre AT',
         tournees_hse: 'Tournées HSE', tournees_modeles: 'Modèles de tournées', unites_travail: 'Unités de travail',
         profils_postes: 'Profils de postes', catalogue_formations: 'Référentiel de formations',
@@ -16458,6 +16466,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     function fb() { return window.SSTFirebaseApi; }
     function labelOf(item) {
         if (!item || typeof item !== 'object') return 'enregistrement';
+        if (item.dateRevue) return 'Revue ' + (item.unite || '') + ' — V' + (item.version || '');
         var v = item.action || item.danger || item.nom || item.faits || item.titre || item.objet || item.libelle || item.theme || item.numero || item.id || '';
         v = String(v).replace(/\s+/g, ' ').trim();
         return (v || 'enregistrement').slice(0, 90);
@@ -16731,6 +16740,201 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     }
     window.sstOpenJournal = openJournal;
     var boot = setInterval(function () { if (initSession()) { clearInterval(boot); setInterval(installButton, 2000); installButton(); } }, 1000);
+})();
+</script>
+
+<script>
+/* V2.144 — Revues annuelles du DUERP par unité de travail (présents, version conservée, export Excel) */
+(function () {
+    'use strict';
+    var KEY = 'duerp_revues';
+    var FONCTIONS = ['Manager', 'Membre CSE / CSSCT', 'Responsable HSE', 'Technicien HSE', 'DRH / RH', 'Médecin du travail / infirmière', 'Autre'];
+    var MOTIFS = ['Revue annuelle', 'Après un accident du travail', 'Après une modification importante (organisation, équipement, produit…)', 'Nouvelle information sur un risque'];
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+    function ctx() { return window.SST_APP_CONTEXT || null; }
+    function read(k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } }
+    function level() { var c = ctx(); if (!c) return 'none'; if (c.role === 'local-dev') return 'write'; return typeof sstAccessLevel === 'function' ? sstAccessLevel('duerp') : 'read'; }
+    function canEdit() { var l = level(); return l === 'edit' || l === 'write'; }
+    function canDelete() { return level() === 'write'; }
+    function fmt(d) { var m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : '—'; }
+    function today() { var t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+    function plusYear(d) { var m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return ''; return (Number(m[1]) + 1) + '-' + m[2] + '-' + m[3]; }
+    function slug(v) { return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unite'; }
+    function revues() { return read(KEY); }
+    function unitNames() {
+        var set = {}, out = [];
+        try { normalizeUnitesTravail(read('unites_travail')).forEach(function (u) { if (u.nom) set[u.nom] = 1; }); } catch (e) {}
+        read('duerp_risques').forEach(function (r) { if (r && r.unite) set[r.unite] = 1; });
+        revues().forEach(function (r) { if (r && r.unite) set[r.unite] = 1; });
+        Object.keys(set).forEach(function (n) { out.push(n); });
+        return out.sort(function (a, b) { return a.localeCompare(b, 'fr', { sensitivity: 'base' }); });
+    }
+    function unitStatus(unite) {
+        var list = revues().filter(function (r) { return r.unite === unite; }).sort(function (a, b) { return String(b.dateRevue).localeCompare(String(a.dateRevue)) || (b.version - a.version); });
+        var last = list[0];
+        if (!last) return { key: 'never', label: 'Jamais revue', cls: 'bg-slate-200 text-slate-700', last: null, list: list };
+        var due = last.prochaineRevue || plusYear(last.dateRevue);
+        var days = Math.round((new Date(due + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+        if (days < 0) return { key: 'late', label: 'En retard de ' + (-days) + ' j', cls: 'bg-red-100 text-red-800', last: last, due: due, list: list };
+        if (days <= 60) return { key: 'soon', label: 'À prévoir (' + days + ' j)', cls: 'bg-amber-100 text-amber-800', last: last, due: due, list: list };
+        return { key: 'ok', label: 'À jour', cls: 'bg-green-100 text-green-800', last: last, due: due, list: list };
+    }
+
+    // ---------- Carte « Revues par unité » dans l'onglet DUERP ----------
+    window.sstRenderDuerpRevues = function () {
+        var box = document.getElementById('duerp-revues-card'); if (!box) return;
+        var names = unitNames(), st = names.map(function (n) { return { n: n, s: unitStatus(n) }; });
+        var c = { ok: 0, soon: 0, late: 0, never: 0 }; st.forEach(function (x) { c[x.s.key]++; });
+        var open = box.querySelector('details') ? box.querySelector('details').open : (c.late + c.soon + c.never > 0);
+        var rows = st.map(function (x) {
+            var s = x.s, last = s.last;
+            return '<div class="border rounded-lg p-3 bg-white"><div class="flex items-start justify-between gap-2"><div class="font-semibold text-sm text-slate-800">' + esc(x.n) + '</div><span class="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ' + s.cls + '">' + esc(s.label) + '</span></div>' +
+                '<div class="text-xs text-slate-500 mt-1">' + (last ? 'Dernière revue : <b>' + fmt(last.dateRevue) + '</b> (V' + last.version + ') · ' + (last.participants || []).length + ' participant(s) · prochaine : <b>' + fmt(s.due) + '</b>' : 'Aucune revue enregistrée pour cette unité.') + '</div>' +
+                '<div class="flex flex-wrap gap-2 mt-2">' + (canEdit() ? '<button type="button" data-rv-new="' + esc(x.n) + '" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold">+ Nouvelle revue</button>' : '') +
+                (s.list.length ? '<button type="button" data-rv-hist="' + esc(x.n) + '" class="px-3 py-1.5 rounded border text-xs font-semibold">Historique (' + s.list.length + ')</button><button type="button" data-rv-xl="' + esc(last.id) + '" class="px-3 py-1.5 rounded border text-xs font-semibold">📥 Excel dernière version</button>' : '') + '</div></div>';
+        }).join('');
+        box.innerHTML = '<details class="rounded-xl border border-slate-200 bg-slate-50 p-4"' + (open ? ' open' : '') + '><summary class="cursor-pointer font-bold text-slate-800 text-sm">📅 Revues annuelles du DUERP par unité <span class="font-normal text-xs text-slate-500">— ' +
+            c.ok + ' à jour · ' + c.soon + ' à prévoir · ' + c.late + ' en retard · ' + c.never + ' jamais revue(s)</span></summary>' +
+            '<div class="text-xs text-slate-500 my-2">Chaque revue note la date, les personnes présentes et conserve la version du DUERP de l’unité. Le fichier Excel de la version se télécharge pour le dossier de partage.</div>' +
+            '<div class="space-y-2">' + (rows || '<div class="text-xs text-slate-500">Aucune unité de travail.</div>') + '</div></details>';
+        box.querySelectorAll('[data-rv-new]').forEach(function (b) { b.addEventListener('click', function () { openNew(b.getAttribute('data-rv-new')); }); });
+        box.querySelectorAll('[data-rv-hist]').forEach(function (b) { b.addEventListener('click', function () { openHistory(b.getAttribute('data-rv-hist')); }); });
+        box.querySelectorAll('[data-rv-xl]').forEach(function (b) { b.addEventListener('click', function () { exportRevue(b.getAttribute('data-rv-xl')); }); });
+    };
+
+    // ---------- Version (instantané) du DUERP d'une unité ----------
+    function snapshotUnit(unite) {
+        var risques = read('duerp_risques'), acts = read('papripact_actions');
+        var cfg = getDuerpCurrentCotationConfig(), crit = getDuerpActiveCriteria(cfg), out = [];
+        risques.forEach(function (r, i) {
+            if (!r || (r.unite || '') !== unite) return;
+            var riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0')), calc = calculateDuerpCotation(r), linked = getDuerpLinkedActions(r, riskId, i, acts);
+            var cells = crit.map(function (c) { var rc = calc.config.criteria.filter(function (x) { return x.key === c.key && x.active; })[0]; if (!rc) return ''; var v = calc.values[c.key]; return v + ' - ' + ((rc.levels[v - 1] || {}).label || ''); });
+            out.push({ ref: riskId, date: r.date || '', danger: r.danger || '', dommage: String(r.dommage || '').split(/[;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean).join('\n'),
+                prevention: String(r.prevention || '').split(/[;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean).join('\n'), cotation: cells, score: calc.score, niveau: calc.zoneInfo.label,
+                actions: linked.map(function (a) { return 'N°' + (a.numero || '?') + ' – ' + (a.action || '') + ' (' + (a.statut || '') + ')'; }).join('\n') });
+        });
+        return { criteres: crit.map(function (c) { return c.label; }), zones: cfg.zones.map(function (z) { return { label: z.label, key: z.key }; }), risques: out };
+    }
+
+    // ---------- Fenêtres ----------
+    function closeModal() { var m = document.getElementById('sst-revue-modal'); if (m) m.remove(); }
+    function modal(html) {
+        closeModal();
+        var d = document.createElement('div'); d.id = 'sst-revue-modal'; d.className = 'fixed inset-0 z-[9999] bg-black/50 flex items-start justify-center p-3 overflow-y-auto';
+        d.innerHTML = '<div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-4 my-4">' + html + '</div>'; document.body.appendChild(d); return d;
+    }
+    function partRow(nom, fonction) {
+        return '<div class="rv-part border rounded-lg p-2 bg-slate-50 space-y-1"><input type="text" class="rv-nom w-full p-2 border rounded text-sm" placeholder="Nom et prénom" value="' + esc(nom || '') + '">' +
+            '<div class="flex gap-2"><select class="rv-fonc flex-1 p-2 border rounded text-sm bg-white">' + FONCTIONS.map(function (f) { return '<option' + (f === fonction ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join('') + '</select>' +
+            '<button type="button" class="rv-del px-3 rounded border text-sm" title="Retirer">✕</button></div></div>';
+    }
+    function openNew(unite) {
+        if (!canEdit()) { alert('Vous n’avez pas le droit d’enregistrer une revue.'); return; }
+        var names = unitNames(), d = today();
+        var m = modal('<div class="flex items-start justify-between gap-2 mb-2"><div class="font-bold text-slate-800">📅 Nouvelle revue du DUERP</div><button type="button" id="rv-close" class="text-slate-500 text-xl leading-none">✕</button></div>' +
+            '<div class="space-y-3 text-sm">' +
+            '<div><label class="block text-xs font-semibold text-slate-600 mb-1">Unité de travail</label><select id="rv-unite" class="w-full p-2 border rounded bg-white">' + names.map(function (n) { return '<option' + (n === unite ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div>' +
+            '<div class="grid grid-cols-2 gap-2"><div><label class="block text-xs font-semibold text-slate-600 mb-1">Date de la revue</label><input id="rv-date" type="date" value="' + d + '" class="w-full p-2 border rounded"></div>' +
+            '<div><label class="block text-xs font-semibold text-slate-600 mb-1">Prochaine revue</label><input id="rv-next" type="date" value="' + plusYear(d) + '" class="w-full p-2 border rounded"></div></div>' +
+            '<div><label class="block text-xs font-semibold text-slate-600 mb-1">Motif</label><select id="rv-motif" class="w-full p-2 border rounded bg-white">' + MOTIFS.map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></div>' +
+            '<div id="rv-at-wrap" class="hidden"><label class="block text-xs font-semibold text-slate-600 mb-1">Référence de l’accident du travail</label><input id="rv-refat" type="text" class="w-full p-2 border rounded" placeholder="Ex. AT-2026-014"></div>' +
+            '<div><div class="text-xs font-semibold text-slate-600 mb-1">Personnes présentes à la revue</div><div id="rv-parts" class="space-y-2">' + partRow('', 'Manager') + '</div>' +
+            '<div class="flex flex-wrap gap-2 mt-2">' + ['Manager', 'Membre CSE / CSSCT', 'Responsable HSE', 'Technicien HSE'].map(function (f) { return '<button type="button" data-addp="' + esc(f) + '" class="px-2 py-1 rounded border text-xs">+ ' + esc(f) + '</button>'; }).join('') + '</div></div>' +
+            '<div><label class="block text-xs font-semibold text-slate-600 mb-1">Décisions / observations</label><textarea id="rv-dec" rows="3" class="w-full p-2 border rounded" placeholder="Ce qui a été revu, décidé, actions à créer…"></textarea></div>' +
+            '<div class="text-[11px] text-slate-500 bg-slate-50 border rounded p-2">En enregistrant, la version actuelle des risques de cette unité est conservée telle quelle (elle ne changera plus), avec la liste des présents.</div>' +
+            '<div class="flex justify-end gap-2"><button type="button" id="rv-cancel" class="px-3 py-2 rounded border text-sm">Annuler</button><button type="button" id="rv-save" class="px-3 py-2 rounded bg-blue-600 text-white text-sm font-semibold">Enregistrer la revue</button></div></div>');
+        var nextTouched = false;
+        m.querySelector('#rv-close').addEventListener('click', closeModal); m.querySelector('#rv-cancel').addEventListener('click', closeModal);
+        m.querySelector('#rv-next').addEventListener('input', function () { nextTouched = true; });
+        m.querySelector('#rv-date').addEventListener('change', function (e) { if (!nextTouched) m.querySelector('#rv-next').value = plusYear(e.target.value); });
+        m.querySelector('#rv-motif').addEventListener('change', function (e) { m.querySelector('#rv-at-wrap').classList.toggle('hidden', e.target.value.indexOf('accident') < 0); });
+        function wireRow(row) { row.querySelector('.rv-del').addEventListener('click', function () { row.remove(); }); }
+        m.querySelectorAll('.rv-part').forEach(wireRow);
+        m.querySelectorAll('[data-addp]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var w = document.createElement('div'); w.innerHTML = partRow('', b.getAttribute('data-addp'));
+                var row = w.firstChild; m.querySelector('#rv-parts').appendChild(row); wireRow(row); row.querySelector('.rv-nom').focus();
+            });
+        });
+        m.querySelector('#rv-save').addEventListener('click', function () { save(m); });
+    }
+    async function save(m) {
+        var unite = m.querySelector('#rv-unite').value, date = m.querySelector('#rv-date').value, next = m.querySelector('#rv-next').value,
+            motif = m.querySelector('#rv-motif').value, refAt = m.querySelector('#rv-refat').value.trim(), dec = m.querySelector('#rv-dec').value.trim(), parts = [];
+        m.querySelectorAll('.rv-part').forEach(function (r) { var n = r.querySelector('.rv-nom').value.trim(); if (n) parts.push({ nom: n, fonction: r.querySelector('.rv-fonc').value }); });
+        if (!unite || !date) { alert('Choisissez l’unité et la date de la revue.'); return; }
+        if (!parts.length) { alert('Ajoutez au moins une personne présente.'); return; }
+        if (motif.indexOf('accident') >= 0 && !refAt) { alert('Indiquez la référence de l’accident du travail.'); return; }
+        var snap = snapshotUnit(unite);
+        if (!snap.risques.length && !window.confirm('Cette unité n’a aucun risque enregistré dans le DUERP. Enregistrer quand même la revue ?')) return;
+        var all = revues(), n = all.filter(function (r) { return r.unite === unite; }).length + 1, c = ctx() || {};
+        var rec = { id: 'REV-' + slug(unite) + '-' + date + '-' + Math.random().toString(36).slice(2, 6), unite: unite, dateRevue: date, prochaineRevue: next || plusYear(date), motif: motif, refAt: refAt,
+            participants: parts, decisions: dec, version: n, nbRisques: snap.risques.length, criteres: snap.criteres, zones: snap.zones, risques: snap.risques,
+            creePar: c.displayName || '', creeParEmail: c.email || '', creeLe: new Date().toISOString() };
+        all.push(rec);
+        try { localStorage.setItem(KEY, JSON.stringify(all)); } catch (e) { alert('Enregistrement impossible : ' + e.message); return; }
+        try { if (window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant()) await sstV247CommitKeys(KEY); }
+        catch (err) { console.warn(err); alert('Revue enregistrée sur cet appareil, mais pas encore synchronisée avec le cloud. Vérifiez votre connexion.'); }
+        closeModal(); window.sstRenderDuerpRevues();
+        if (window.confirm('Revue enregistrée (version V' + n + ' de « ' + unite + ' »).\n\nTélécharger maintenant le fichier Excel de cette version pour le dossier de partage ?')) exportRevue(rec.id);
+    }
+    function openHistory(unite) {
+        var list = unitStatus(unite).list;
+        var m = modal('<div class="flex items-start justify-between gap-2 mb-2"><div><div class="font-bold text-slate-800">Historique des revues</div><div class="text-xs text-slate-500">' + esc(unite) + '</div></div><button type="button" id="rv-close" class="text-slate-500 text-xl leading-none">✕</button></div><div class="space-y-2">' +
+            list.map(function (r) {
+                return '<div class="border rounded-lg p-3"><div class="flex items-center justify-between gap-2"><div class="font-semibold text-sm">V' + r.version + ' — ' + fmt(r.dateRevue) + '</div><span class="text-[11px] text-slate-500">' + esc(r.motif) + (r.refAt ? ' (' + esc(r.refAt) + ')' : '') + '</span></div>' +
+                    '<div class="text-xs text-slate-600 mt-1"><b>Présents :</b> ' + esc((r.participants || []).map(function (p) { return p.nom + ' (' + p.fonction + ')'; }).join(' ; ')) + '</div>' +
+                    (r.decisions ? '<div class="text-xs text-slate-600 mt-1"><b>Observations :</b> ' + esc(r.decisions) + '</div>' : '') +
+                    '<div class="text-[11px] text-slate-400 mt-1">' + (r.nbRisques || 0) + ' risque(s) · saisi par ' + esc(r.creePar || '?') + ' · prochaine revue ' + fmt(r.prochaineRevue) + '</div>' +
+                    '<div class="flex gap-2 mt-2"><button type="button" data-xl="' + esc(r.id) + '" class="px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-semibold">📥 Excel de cette version</button>' +
+                    (canDelete() ? '<button type="button" data-del="' + esc(r.id) + '" class="px-3 py-1.5 rounded border border-red-300 text-red-700 text-xs">Supprimer</button>' : '') + '</div></div>';
+            }).join('') + '</div>');
+        m.querySelector('#rv-close').addEventListener('click', closeModal);
+        m.querySelectorAll('[data-xl]').forEach(function (b) { b.addEventListener('click', function () { exportRevue(b.getAttribute('data-xl')); }); });
+        m.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { del(b.getAttribute('data-del'), unite); }); });
+    }
+    async function del(id, unite) {
+        if (!canDelete()) return;
+        if (!window.confirm('Supprimer cette revue ? (Elle restera récupérable dans le journal des modifications.)')) return;
+        var all = revues().filter(function (r) { return r.id !== id; });
+        localStorage.setItem(KEY, JSON.stringify(all));
+        try { if (window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant()) await sstV247CommitKeys(KEY); } catch (e) { console.warn(e); }
+        window.sstRenderDuerpRevues(); closeModal(); if (unitStatus(unite).list.length) openHistory(unite);
+    }
+
+    // ---------- Excel d'une version ----------
+    async function exportRevue(id) {
+        var rec = revues().filter(function (r) { return r.id === id; })[0]; if (!rec) return;
+        if (typeof ExcelJS === 'undefined') { alert('L’export Excel n’a pas pu se charger. Vérifiez votre connexion puis réessayez.'); return; }
+        var wb = new ExcelJS.Workbook(), b = getSstDocumentBranding(); wb.creator = b.companyName || 'SST'; wb.created = new Date();
+        var rows = [['Entreprise', b.companyName || ''], ['Unité de travail', rec.unite], ['Version', 'V' + rec.version], ['Date de la revue', sstXlDate(rec.dateRevue)],
+            ['Motif', rec.motif + (rec.refAt ? ' — ' + rec.refAt : '')], ['Prochaine revue prévue', sstXlDate(rec.prochaineRevue)], ['Risques évalués dans cette version', rec.nbRisques || 0], ['Enregistré par', rec.creePar || '']];
+        var blocks = [{ title: 'Identification de la revue', rows: rows }];
+        if (rec.decisions) blocks.push({ title: 'Décisions et observations', rows: [['Observations', rec.decisions]] });
+        blocks.push({ title: 'À savoir', rows: [
+            ['Nature du document', 'Version du document unique d’évaluation des risques de l’unité de travail, arrêtée à la date de la revue (Code du travail, art. L4121-3 et R4121-2). Elle est conservée avec les versions précédentes.'],
+            ['Contenu', 'Feuille « Participants » (à signer), puis le tableau des risques de l’unité tel qu’il était à la date de la revue.'],
+            ['Utiliser les filtres', 'Le tableau des risques possède des filtres sur la ligne d’en-tête.']] });
+        sstXlInfo(wb, 'REVUE DU DOCUMENT UNIQUE — ' + rec.unite, blocks);
+        var pt = sstXlTable(wb, 'Participants', 'Personnes présentes à la revue — ' + rec.unite, 'Revue du ' + fmt(rec.dateRevue) + ' (V' + rec.version + ')', ['Nom', 'Fonction', 'Signature'], [34, 34, 42],
+            (rec.participants || []).map(function (p) { return [p.nom, p.fonction, '']; }), { footer: 'Émargement — ' + rec.unite });
+        for (var r = pt.first; r <= pt.last; r++) pt.ws.getRow(r).height = 30;
+        var crit = rec.criteres || [], zc = { green: ['FFC6EFCE', 'FF006100'], orange: ['FFFFEB9C', 'FF9C5700'], red: ['FFFFC7CE', 'FF9C0006'] };
+        var heads = ['Réf.', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes'].concat(crit, ['Score', 'Niveau de risque', 'Actions de prévention liées (PAPRIPACT)']);
+        var data = (rec.risques || []).map(function (x) { return [x.ref, sstXlDate(x.date), x.danger, x.dommage, x.prevention].concat(x.cotation || [], [x.score, x.niveau, x.actions]); });
+        var sc = 5 + crit.length + 1, nc = sc + 1;
+        var t = sstXlTable(wb, ('DUERP - ' + rec.unite).replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31), 'DUERP — ' + rec.unite + ' — V' + rec.version, 'Version arrêtée le ' + fmt(rec.dateRevue) + ' — ' + data.length + ' risque(s)',
+            heads, [14, 14, 44, 34, 40].concat(crit.map(function () { return 22; }), [9, 16, 56]), data, { freezeCols: 1, centerCols: [sc, nc], footer: 'DUERP — ' + rec.unite + ' — V' + rec.version });
+        var L = function (n) { var s = ''; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
+        if (data.length) t.ws.addConditionalFormatting({ ref: L(sc) + t.first + ':' + L(nc) + t.last, rules: (rec.zones || []).map(function (z, i) {
+            var col = zc[z.key] || zc.green;
+            return { type: 'expression', priority: i + 1, formulae: ['$' + L(nc) + t.first + '="' + String(z.label).replace(/"/g, '""') + '"'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: col[0] } }, font: { bold: true, color: { argb: col[1] } } } };
+        }) });
+        await sstXlSave(wb, 'DUERP_' + sstXlName() + '_' + slug(rec.unite) + '_V' + rec.version + '_' + rec.dateRevue + '.xlsx');
+    }
+    window.sstExportRevueXlsx = exportRevue;
+    setInterval(function () { if (document.getElementById('duerp-revues-card') && !document.getElementById('duerp-revues-card').firstChild && ctx()) window.sstRenderDuerpRevues(); }, 2000);
 })();
 </script>
 
