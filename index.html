@@ -5576,13 +5576,13 @@
         async function sstResyncAllManagers() {
             const unites = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
             let ok = 0, ko = 0;
-            for (const u of unites) {
-                if (!u.responsableEmail) continue;
-                try { await sstSyncManagerUnitAssignment(u.nom, u.responsableEmail, u.responsableEmail); ok++; }
-                catch(err) { ko++; console.warn('Resynchronisation manager impossible pour', u.nom, err); }
+            const emails = Array.from(new Set(unites.map(u => String(u.responsableEmail || '').trim()).filter(Boolean)));
+            for (const em of emails) {
+                try { await sstRecomputeManagerUnits(em); ok++; }
+                catch(err) { ko++; console.warn('Resynchronisation manager impossible pour', em, err); }
             }
             await sstRefreshManagerBadges();
-            alert(ko ? `Resynchronisation terminée : ${ok} unité(s) traitée(s), ${ko} en échec (droits insuffisants ?).` : `Resynchronisation terminée : ${ok} unité(s) traitée(s). Vérifie les pastilles à côté de chaque manager.`);
+            alert(ko ? `Resynchronisation terminée : ${ok} manager(s) traité(s), ${ko} en échec (droits insuffisants ?).` : `Resynchronisation terminée : ${ok} manager(s) traité(s). Vérifie les pastilles à côté de chaque manager.`);
         }
 
         function loadUnites() {
@@ -5750,38 +5750,46 @@
         // Met à jour la liste "unitesGerees" du profil manager concerné lorsqu'on associe
         // (ou change) l'e-mail du responsable d'une unité de travail. Purement best-effort :
         // une erreur ici ne doit jamais empêcher l'enregistrement de l'unité elle-même.
+        // Recalcule la liste des unités gérées (unitesGerees) d'un manager à partir de la liste des unités :
+        // les unités où son e-mail est renseigné + leurs sous-unités. Les règles Firestore ne lisent que ce
+        // champ : l'héritage mère -> sous-unités doit donc y être écrit explicitement.
+        async function sstRecomputeManagerUnits(email) {
+            const ctx = window.SST_APP_CONTEXT;
+            const api = window.SSTFirebaseApi;
+            const db = api?.getDb?.();
+            const em = String(email || '').trim();
+            if (!em || !ctx || !db || !ctx.companyId || ctx.role === 'local-dev') return;
+            const all = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+            const mine = all.filter(u => String(u.responsableEmail || '').trim().toLowerCase() === em.toLowerCase());
+            const wanted = new Set();
+            mine.forEach(u => { wanted.add(u.nom); all.forEach(c => { if (c.parent === u.nom) wanted.add(c.nom); }); });
+            let snap = null;
+            for (const candidate of Array.from(new Set([em.toLowerCase(), em]))) {
+                const q = api.query(api.collection(db, 'users'), api.where('companyId', '==', String(ctx.companyId)), api.where('email', '==', candidate));
+                const r = await api.getDocs(q);
+                if (!r.empty) { snap = r; break; }
+            }
+            if (!snap) return;
+            const userDoc = snap.docs[0];
+            const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
+            const next = Array.from(wanted);
+            const same = current.length === next.length && next.every(n => current.includes(n));
+            if (!same) await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: next });
+        }
         async function sstSyncManagerUnitAssignment(uniteName, newEmail, previousEmail) {
             const ctx = window.SST_APP_CONTEXT;
             const api = window.SSTFirebaseApi;
             const db = api?.getDb?.();
             if (!ctx || !db || !ctx.companyId || ctx.role === 'local-dev') return;
-            if (newEmail === previousEmail) {
-                if (!newEmail) return;
-            }
-            async function findUserDocByEmail(email) {
-                if (!email) return null;
-                const q = api.query(api.collection(db, 'users'), api.where('companyId', '==', String(ctx.companyId)), api.where('email', '==', email));
-                const snap = await api.getDocs(q);
-                return snap.empty ? null : snap.docs[0];
-            }
-            async function addUniteToUser(email) {
-                const userDoc = await findUserDocByEmail(email);
-                if (!userDoc) return;
-                const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
-                if (!current.includes(uniteName)) {
-                    await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: [...current, uniteName] });
-                }
-            }
-            async function removeUniteFromUser(email) {
-                const userDoc = await findUserDocByEmail(email);
-                if (!userDoc) return;
-                const current = Array.isArray(userDoc.data().unitesGerees) ? userDoc.data().unitesGerees : [];
-                if (current.includes(uniteName)) {
-                    await api.updateDoc(api.doc(db, 'users', userDoc.id), { unitesGerees: current.filter(u => u !== uniteName) });
-                }
-            }
-            if (previousEmail && previousEmail !== newEmail) await removeUniteFromUser(previousEmail);
-            if (newEmail) await addUniteToUser(newEmail);
+            const emails = new Set([newEmail, previousEmail].filter(Boolean));
+            // Le manager de l'unité mère doit aussi couvrir une sous-unité créée ou déplacée.
+            try {
+                const all = normalizeUnitesTravail(JSON.parse(localStorage.getItem('unites_travail') || '[]'));
+                const me = all.find(u => u.nom === uniteName);
+                const parent = me && me.parent ? all.find(u => u.nom === me.parent) : null;
+                if (parent && parent.responsableEmail) emails.add(parent.responsableEmail);
+            } catch(e) {}
+            for (const e of emails) await sstRecomputeManagerUnits(e);
         }
 
         function editUnite(index) {
