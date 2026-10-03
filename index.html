@@ -1012,6 +1012,7 @@
                                     <input type="file" id="import-duerp-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="importDuerpFile(event)">
                                 </label>
                                 <button onclick="exportDuerpXlsx()" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-semibold text-sm">📊 Exporter en Excel</button>
+                                <button onclick="sstExportDiffusionDuerp()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold text-sm">📑 Export Excel salariés / CSSCT</button>
                                 <button onclick="openDuerpAccessModal()" data-duerp-write class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📄 Avis d'accès</button>
                                 <button onclick="openDuerpModal()" data-duerp-write class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un risque</button>
                             </div>
@@ -1283,6 +1284,7 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                                 <button onclick="exportPapripactXlsx()" class="flex-1 sm:flex-none bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded hover:bg-slate-50 text-sm font-semibold whitespace-nowrap">📤 Exporter (archiver)</button>
+                                <button onclick="sstExportDiffusionPap()" class="flex-1 sm:flex-none bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm font-semibold whitespace-nowrap">📑 Export Excel salariés / CSSCT</button>
                                 <button onclick="openNewPapripactModal()" data-sst-key-write="papripact_actions" class="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-semibold whitespace-nowrap">+ Créer une action</button>
                             </div>
                         </div>
@@ -1453,6 +1455,10 @@
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Réalisation / mesures mises en œuvre</label>
                                     <textarea id="p-realisation" class="w-full p-2 border rounded h-20 text-sm" placeholder="Décrire concrètement ce qui a été réalisé et les mesures effectivement mises en œuvre..."></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1">Indicateur de résultat</label>
+                                    <input type="text" id="p-indicateur" class="w-full p-2 border rounded text-sm" placeholder="Comment mesurer que l’action a atteint son but ? Ex. : 0 chute de hauteur sur 12 mois">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Conditions d’exécution / moyens nécessaires</label>
@@ -3469,7 +3475,7 @@
                 const levels = ['none','read'].concat(scoped?['units']:[]).concat(['edit','write']);
                 const v = SST_ACCESS_LEVELS.includes(cur[m]) ? cur[m] : 'none';
                 const val = levels.includes(v) ? v : (v==='units' ? 'read' : 'none');
-                return `<tr class="border-b"><td class="py-2 pr-3 text-xs font-semibold text-slate-700">${escSstAdmin(SST_MODULE_LABELS[m])}</td><td class="py-2"><select data-mod="${m}" ${isAdmin?'disabled':''} class="sst-matrix-sel p-1.5 border rounded text-xs bg-white w-full">${levels.map(l=>`<option value="${l}" ${l===val?'selected':''}>${SST_LEVEL_LABELS[l]}</option>`).join('')}</select></td></tr>`;
+                return `<div class="py-2 border-b"><div class="text-xs font-semibold text-slate-700 mb-1">${escSstAdmin(SST_MODULE_LABELS[m])}</div>${isAdmin?'<div class="text-xs text-slate-500">🗑️ Accès complet (non modifiable)</div>':`<select data-mod="${m}" class="sst-matrix-sel p-2 border rounded text-sm bg-white w-full">${levels.map(l=>`<option value="${l}" ${l===val?'selected':''}>${SST_LEVEL_LABELS[l]}</option>`).join('')}</select>`}</div>`;
             }).join('');
             document.getElementById('sst-matrix-modal')?.remove();
             const div = document.createElement('div');
@@ -3477,9 +3483,9 @@
             div.className = 'fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-3';
             div.innerHTML = `<div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4">
                 <div class="flex items-start justify-between gap-2 mb-1"><div><div class="font-bold text-slate-800">🔐 Droits par module</div><div class="text-xs text-slate-500">${escSstAdmin(u.displayName||u.email||'')} · rôle : ${escSstAdmin(role)}</div></div><button type="button" onclick="document.getElementById('sst-matrix-modal').remove()" class="text-slate-500 text-xl leading-none">✕</button></div>
-                ${isAdmin?'<div class="text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 p-2 my-2">Un administrateur a toujours tous les droits : modifiez le rôle pour restreindre ce compte.</div>':''}
+                ${isAdmin?'<div class="text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 p-2 my-2">Compte administrateur : accès complet à tous les modules, non modifiable. Pour limiter des droits, choisissez un compte non administrateur (manager, salarié…) ou changez son rôle.</div>':''}
                 <div class="text-[11px] text-slate-500 my-2">« Mes unités » : le salarié modifie uniquement les éléments des unités dont son e-mail est renseigné comme manager (sous-unités comprises). La suppression est réservée au niveau « Modifier + supprimer ».</div>
-                <table class="w-full">${rows}</table>
+                <div>${rows}</div>
                 <div class="flex flex-wrap gap-2 mt-3">
                     <button type="button" onclick="sstMatrixPreset('role','${userId}')" class="px-2 py-1 rounded border text-[11px]">Défauts du rôle</button>
                     <button type="button" onclick="sstMatrixPreset('read','${userId}')" class="px-2 py-1 rounded border text-[11px]">Lecture : DUERP, PAPRIPACT, FA, SU</button>
@@ -9577,6 +9583,150 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function closeDuerpAlertModal() { document.getElementById('duerp-alert-modal')?.classList.add('hidden'); }
         function createActionFromDuerpAlert() { const i = window._duerpAlertIdx; closeDuerpAlertModal(); if(i !== undefined && i !== null) openDuerpPapModalFromIndex(i); }
 
+        // --- Export Excel « diffusion » (salariés / CSSCT) : DUERP et PAPRIPACT ----------------------
+        // Mise en forme conditionnelle Excel (niveaux de risque, statuts, retards) et filtres actifs sur
+        // l'en-tête. Disponible en lecture seule : le fichier ne contient ni commentaires internes ni
+        // donnée nominative ajoutée par l'application.
+        const SST_XL_BORDER = { top:{style:'thin',color:{argb:'FFCBD5E1'}}, left:{style:'thin',color:{argb:'FFCBD5E1'}}, bottom:{style:'thin',color:{argb:'FFCBD5E1'}}, right:{style:'thin',color:{argb:'FFCBD5E1'}} };
+        function sstXlDate(v) { const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null; }
+        function sstXlName() { return String((typeof getSstDocumentBranding === 'function' ? getSstDocumentBranding().companyName : '') || 'entreprise').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'entreprise'; }
+        function sstXlFill(argb) { return { type:'pattern', pattern:'solid', bgColor:{argb}, fgColor:{argb} }; }
+        function sstXlCanExport(moduleId, label) {
+            if (typeof ExcelJS === 'undefined') { alert("L'export Excel n'a pas pu se charger. Vérifiez votre connexion internet puis réessayez."); return false; }
+            const ctx = window.SST_APP_CONTEXT;
+            if (ctx && ctx.role !== 'local-dev' && typeof sstAccessLevel === 'function' && sstAccessLevel(moduleId) === 'none') { alert("Vous n'avez pas accès à " + label + '.'); return false; }
+            return true;
+        }
+        async function sstXlSave(wb, filename) {
+            const buf = await wb.xlsx.writeBuffer();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+            a.download = filename; document.body.appendChild(a); a.click();
+            setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+        }
+        // Feuille « tableau » : titre, en-tête figé et filtrable, colonnes dimensionnées, impression paysage.
+        function sstXlTable(wb, name, title, subtitle, headers, widths, rows, opts = {}) {
+            const n = headers.length, headRow = 4;
+            const ws = wb.addWorksheet(name, { views:[{ state:'frozen', xSplit: opts.freezeCols || 0, ySplit: headRow }] });
+            ws.mergeCells(1, 1, 1, n); ws.mergeCells(2, 1, 2, n);
+            ws.getCell(1, 1).value = title; ws.getCell(1, 1).font = { bold:true, size:14, color:{argb:'FF1E293B'} };
+            ws.getCell(2, 1).value = subtitle; ws.getCell(2, 1).font = { italic:true, size:10, color:{argb:'FF64748B'} };
+            ws.getRow(1).height = 24;
+            headers.forEach((h, i) => { ws.getColumn(i + 1).width = widths[i] || 18; const c = ws.getCell(headRow, i + 1); c.value = h; c.font = { bold:true, color:{argb:'FFFFFFFF'} }; c.fill = sstXlFill('FF1E3A5F'); c.alignment = { vertical:'middle', horizontal:'center', wrapText:true }; c.border = SST_XL_BORDER; });
+            ws.getRow(headRow).height = 34;
+            rows.forEach((r, ri) => r.forEach((v, ci) => {
+                const c = ws.getCell(headRow + 1 + ri, ci + 1); c.value = v === undefined ? null : v; c.border = SST_XL_BORDER;
+                const isDate = v instanceof Date; if (isDate) c.numFmt = 'dd/mm/yyyy'; else if (typeof v === 'number' && (opts.moneyCols || []).includes(ci + 1)) c.numFmt = '#,##0 "€"';
+                c.alignment = { vertical:'top', wrapText:true, horizontal: (isDate || (opts.centerCols || []).includes(ci + 1)) ? 'center' : 'left' };
+            }));
+            ws.autoFilter = { from:{ row:headRow, column:1 }, to:{ row:headRow + rows.length, column:n } };
+            ws.pageSetup = { orientation:'landscape', paperSize:9, fitToPage:true, fitToWidth:1, fitToHeight:0, printTitlesRow: headRow + ':' + headRow };
+            ws.headerFooter = { oddFooter: '&L' + String(opts.footer || name).replace(/&/g, '&&') + '&RPage &P / &N' };
+            return { ws, first: headRow + 1, last: headRow + Math.max(rows.length, 1) };
+        }
+        // Feuille « Informations » : identité, consultation du document complet, légende, mentions.
+        function sstXlInfo(wb, title, blocks) {
+            const ws = wb.addWorksheet('Informations'); ws.getColumn(1).width = 34; ws.getColumn(2).width = 90;
+            ws.mergeCells(1, 1, 1, 2); ws.getCell(1, 1).value = title; ws.getCell(1, 1).font = { bold:true, size:14, color:{argb:'FF1E293B'} }; ws.getCell(1, 1).alignment = { wrapText:true, vertical:'middle' }; ws.getRow(1).height = 42;
+            let r = 3;
+            blocks.forEach(b => {
+                ws.mergeCells(r, 1, r, 2); const h = ws.getCell(r, 1); h.value = b.title; h.font = { bold:true, color:{argb:'FFFFFFFF'} }; h.fill = sstXlFill('FF1E3A5F'); r++;
+                b.rows.forEach(([k, v, style]) => {
+                    const a = ws.getCell(r, 1), c = ws.getCell(r, 2); a.value = k; a.font = { bold:true }; c.value = v; a.border = c.border = SST_XL_BORDER; if (v instanceof Date) c.numFmt = 'dd/mm/yyyy';
+                    a.alignment = c.alignment = { vertical:'top', wrapText:true, horizontal:'left' };
+                    if (style) { a.fill = sstXlFill(style.bg); a.font = { bold:true, color:{argb:style.fg} }; }
+                    r++;
+                });
+                r++;
+            });
+            return ws;
+        }
+        function sstXlInfoCommon(kind) {
+            const b = getSstDocumentBranding(), today = new Date();
+            const rows = [['Entreprise', b.companyName || '']];
+            if (b.establishment) rows.push(['Établissement', b.establishment]);
+            if (b.address) rows.push(['Adresse', b.address]);
+            if (b.siret) rows.push(['SIRET', b.siret]);
+            rows.push(['Date de l’export', new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))]);
+            return { title: 'Identification', rows };
+        }
+        async function sstExportDiffusionDuerp() {
+            if (!sstXlCanExport('duerp', 'le DUERP')) return;
+            let risques = [], actionsPap = [];
+            try { risques = JSON.parse(localStorage.getItem('duerp_risques') || '[]'); actionsPap = JSON.parse(localStorage.getItem('papripact_actions') || '[]'); } catch(e) {}
+            if (!risques.length) { alert('Aucun risque à exporter.'); return; }
+            const cfg = getDuerpCurrentCotationConfig(), crit = getDuerpActiveCriteria(cfg);
+            const lines = v => String(v || '').split(/[;\n]+/).map(x => x.trim()).filter(Boolean).join('\n');
+            const rows = [], unites = new Set(); let lastEval = '';
+            risques.map((r, i) => ({ r, i })).sort((a, b) => String(a.r.unite || '').localeCompare(String(b.r.unite || ''), 'fr', { sensitivity:'base' }) || a.i - b.i).forEach(({ r, i }) => {
+                const riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0'));
+                const calc = calculateDuerpCotation(r), linked = getDuerpLinkedActions(r, riskId, i, actionsPap);
+                if (r.unite) unites.add(r.unite); if (r.date && String(r.date) > lastEval) lastEval = String(r.date);
+                const critCells = crit.map(c => { const rc = calc.config.criteria.find(x => x.key === c.key && x.active); if (!rc) return ''; const v = calc.values[c.key]; return v + ' - ' + (rc.levels[v - 1]?.label || ''); });
+                rows.push([riskId, r.unite || '', sstXlDate(r.date), r.danger || '', lines(r.dommage), lines(r.prevention), ...critCells, calc.score, calc.zoneInfo.label,
+                    linked.map(a => 'N°' + (a.numero || '?') + ' – ' + (a.action || '') + ' (' + (a.statut || '') + ')').join('\n')]);
+            });
+            const wb = new ExcelJS.Workbook(); wb.creator = getSstDocumentBranding().companyName || 'SST'; wb.created = new Date();
+            const pol = getDuerpPolicy().access || {}, id = sstXlInfoCommon('duerp');
+            id.rows.push(['Dernière évaluation enregistrée', sstXlDate(lastEval)], ['Risques évalués', risques.length], ['Unités de travail concernées', unites.size]);
+            const access = []; if (pol.lieu) access.push(['Lieu de consultation', pol.lieu]); if (pol.horaires) access.push(['Horaires', pol.horaires]); if (pol.contact) access.push(['Contact', pol.contact]);
+            const zc = { green:['FFC6EFCE','FF006100'], orange:['FFFFEB9C','FF9C5700'], red:['FFFFC7CE','FF9C0006'] };
+            const blocks = [id];
+            if (access.length) blocks.push({ title:'Consulter le document complet', rows: access });
+            blocks.push({ title:'Légende des niveaux de risque', rows: cfg.zones.map(z => [z.label, 'Score ' + (z === cfg.zones[0] ? 'de 1 à ' + z.max : (z === cfg.zones[1] ? 'de ' + (cfg.zones[0].max + 1) + ' à ' + z.max : 'supérieur à ' + cfg.zones[1].max)), { bg: (zc[z.key] || zc.green)[0], fg: (zc[z.key] || zc.green)[1] }]) });
+            blocks.push({ title:'À savoir', rows:[
+                ['Nature du document', 'Extraction du document unique d’évaluation des risques professionnels, établi par unité de travail (Code du travail, art. L4121-3 et R4121-1).'],
+                ['Mise à disposition', 'Le DUERP et ses versions antérieures sont conservés et tenus à la disposition des travailleurs, du CSE/CSSCT, du médecin du travail et de l’inspection du travail (art. L4121-3-1 et R4121-4).'],
+                ['Contenu de l’export', 'Aucune donnée nominative ni donnée de santé individuelle n’est ajoutée par l’export ; les commentaires internes en sont exclus.'],
+                ['Utiliser les filtres', 'Chaque feuille possède des filtres sur la ligne d’en-tête (flèche dans chaque titre de colonne).']] });
+            sstXlInfo(wb, 'DOCUMENT UNIQUE D’ÉVALUATION DES RISQUES PROFESSIONNELS (DUERP)', blocks);
+            const heads = ['Réf.', 'Unité de travail', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes', ...crit.map(c => c.label), 'Score', 'Niveau de risque', 'Actions de prévention liées (PAPRIPACT)'];
+            const sc = 6 + crit.length + 1, nc = sc + 1;
+            const t = sstXlTable(wb, 'DUERP', 'DUERP — ' + (getSstDocumentBranding().companyName || ''), 'Export du ' + new Date().toLocaleDateString('fr-FR') + ' — ' + risques.length + ' risque(s) évalué(s)',
+                heads, [14, 24, 14, 44, 34, 40, ...crit.map(() => 22), 9, 16, 56], rows, { freezeCols:2, centerCols:[sc, nc], footer:'DUERP — ' + (getSstDocumentBranding().companyName || '') });
+            const L = n => { let s = ''; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
+            t.ws.addConditionalFormatting({ ref: L(sc) + t.first + ':' + L(nc) + t.last, rules: cfg.zones.map((z, i) => ({ type:'expression', priority:i + 1, formulae:['$' + L(nc) + t.first + '="' + String(z.label).replace(/"/g, '""') + '"'],
+                style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:(zc[z.key] || zc.green)[0] } }, font:{ bold:true, color:{ argb:(zc[z.key] || zc.green)[1] } } } })) });
+            const grid = []; crit.forEach(c => c.levels.forEach(l => grid.push([c.label, l.value, l.label])));
+            sstXlTable(wb, 'Grille de cotation', 'Méthode de cotation des risques', 'Critères et niveaux utilisés pour calculer le score (produit des critères actifs).', ['Critère', 'Valeur', 'Libellé'], [34, 10, 60], grid, { centerCols:[2] });
+            await sstXlSave(wb, 'DUERP_' + sstXlName() + '_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        }
+        async function sstExportDiffusionPap() {
+            if (!sstXlCanExport('papripact', 'le PAPRIPACT')) return;
+            let actions = []; try { actions = JSON.parse(localStorage.getItem('papripact_actions') || '[]'); } catch(e) {}
+            if (!actions.length) { alert('Aucune action PAPRIPACT à exporter.'); return; }
+            const sorted = [...actions].sort((a, b) => (a.numero || 0) - (b.numero || 0));
+            const today = new Date(), t0 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+            const rows = sorted.map((a, i) => {
+                const delai = sstXlDate(a.delai), r = 5 + i, late = a.statut !== 'Clôturée' && delai && delai.getTime() < t0;
+                const m = String(a.cout || '').match(/^\s*([\d\s.,]+)\s*(€|eur|euros)?\s*$/i), cost = m ? parseFloat(m[1].replace(/\s/g, '').replace(',', '.')) : null;
+                return [a.numero || '', a.unite || '', a.origine || '', a.action || '', a.type || '', a.priorite || '', a.responsable || '', sstXlDate(a.dateCreation), delai, a.statut || '', sstXlDate(a.dateCloture),
+                    { formula:'IF(AND(J' + r + '<>"Clôturée",I' + r + '<>"",I' + r + '<TODAY()),"En retard","")', result: late ? 'En retard' : '' },
+                    (cost !== null && !isNaN(cost)) ? cost : (a.cout || ''), a.indicateur || '', a.realisation || '', a.conditionsExecution || '', a.statut === 'Reportée' ? (a.motifReport || '') : ''];
+            });
+            const count = s => sorted.filter(a => a.statut === s).length, late = rows.filter(r => r[11].result).length;
+            const wb = new ExcelJS.Workbook(); wb.creator = getSstDocumentBranding().companyName || 'SST'; wb.created = new Date();
+            const id = sstXlInfoCommon('pap');
+            const unites = new Set(sorted.map(a => a.unite).filter(Boolean));
+            id.rows.push(['Actions au programme', { formula:"COUNTA('PAPRIPACT'!A5:A" + (4 + rows.length) + ')', result: rows.length }]);
+            ['À traiter', 'En cours', 'Clôturée', 'Reportée'].forEach(s => id.rows.push(['Statut « ' + s + ' »', { formula:"COUNTIF('PAPRIPACT'!J5:J" + (4 + rows.length) + ',"' + s + '")', result: count(s) }]));
+            id.rows.push(['Actions en retard', { formula:"COUNTIF('PAPRIPACT'!L5:L" + (4 + rows.length) + ',"En retard")', result: late }], ['Unités de travail concernées', unites.size]);
+            sstXlInfo(wb, 'PAPRIPACT — PROGRAMME ANNUEL DE PRÉVENTION DES RISQUES PROFESSIONNELS ET D’AMÉLIORATION DES CONDITIONS DE TRAVAIL', [id,
+                { title:'Légende des statuts', rows:[['À traiter', 'Action décidée, pas encore démarrée.', { bg:'FFFFEB9C', fg:'FF9C5700' }], ['En cours', 'Action en cours de réalisation.', { bg:'FFDDEBF7', fg:'FF1F4E79' }], ['Clôturée', 'Action réalisée (date de clôture renseignée).', { bg:'FFC6EFCE', fg:'FF006100' }], ['Reportée', 'Action reportée (motif indiqué).', { bg:'FFE7E6E6', fg:'FF595959' }], ['En retard', 'Échéance dépassée et action non clôturée : se met à jour automatiquement à l’ouverture du fichier.', { bg:'FFFFC7CE', fg:'FF9C0006' }]] },
+                { title:'À savoir', rows:[
+                    ['Nature du document', 'Programme annuel de prévention : liste des mesures à prendre, avec indicateur de résultat, estimation du coût, conditions d’exécution et calendrier de réalisation (Code du travail, art. L4121-3-1, III — obligatoire à partir de 50 salariés).'],
+                    ['Contenu de l’export', 'Les commentaires internes et les liens techniques de l’application en sont exclus ; aucune donnée nominative n’est ajoutée.'],
+                    ['Utiliser les filtres', 'La feuille PAPRIPACT possède des filtres sur la ligne d’en-tête (statut, unité, échéance, responsable…).']] }]);
+            const heads = ['N°', 'Unité de travail', 'Origine', 'Action de prévention', 'Type', 'Priorité', 'Responsable', 'Date de début', 'Échéance', 'Statut', 'Date de clôture', 'Retard', 'Coût estimé (€)', 'Indicateur de résultat', 'Modalités de réalisation', 'Conditions d’exécution', 'Motif de report'];
+            const t = sstXlTable(wb, 'PAPRIPACT', 'PAPRIPACT — ' + (getSstDocumentBranding().companyName || ''), 'Export du ' + today.toLocaleDateString('fr-FR') + ' — ' + rows.length + ' action(s)',
+                heads, [6, 22, 12, 46, 12, 9, 18, 13, 13, 12, 13, 11, 14, 28, 34, 34, 28], rows, { freezeCols:1, centerCols:[1, 3, 5, 6, 10, 12], moneyCols:[13], footer:'PAPRIPACT — ' + (getSstDocumentBranding().companyName || '') });
+            const st = (s, bg, fg, bold) => ({ type:'expression', formulae:['$J' + t.first + '="' + s + '"'], style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:bg } }, font:{ bold:true, color:{ argb:fg } } } });
+            t.ws.addConditionalFormatting({ ref:'J' + t.first + ':J' + t.last, rules:[{ ...st('À traiter', 'FFFFEB9C', 'FF9C5700'), priority:1 }, { ...st('En cours', 'FFDDEBF7', 'FF1F4E79'), priority:2 }, { ...st('Clôturée', 'FFC6EFCE', 'FF006100'), priority:3 }, { ...st('Reportée', 'FFE7E6E6', 'FF595959'), priority:4 }] });
+            t.ws.addConditionalFormatting({ ref:'I' + t.first + ':I' + t.last + ' L' + t.first + ':L' + t.last, rules:[{ type:'expression', priority:5, formulae:['$L' + t.first + '="En retard"'], style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:'FFFFC7CE' } }, font:{ bold:true, color:{ argb:'FF9C0006' } } } }] });
+            t.ws.addConditionalFormatting({ ref:'A' + t.first + ':H' + t.last + ' K' + t.first + ':K' + t.last + ' M' + t.first + ':Q' + t.last, rules:[{ type:'expression', priority:6, formulae:['$J' + t.first + '="Clôturée"'], style:{ font:{ color:{ argb:'FF64748B' } } } }] });
+            await sstXlSave(wb, 'PAPRIPACT_' + sstXlName() + '_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        }
+
         // --- Export Excel du DUERP ---
         function exportDuerpXlsx() {
             if(sstDuerpReadOnly()) { alert('Export non disponible avec un compte en lecture seule.'); return; }
@@ -10892,6 +11042,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-date-cloture').value = "";
             document.getElementById('p-realisation').value = "";
             document.getElementById('p-conditions-execution').value = "";
+            document.getElementById('p-indicateur').value = "";
             document.getElementById('p-motif-report').value = "";
             document.getElementById('p-cout').value = "";
             document.getElementById('p-commentaires').value = "";
@@ -10925,6 +11076,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-date-cloture').value = a.dateCloture || '';
             document.getElementById('p-realisation').value = a.realisation || '';
             document.getElementById('p-conditions-execution').value = a.conditionsExecution || '';
+            document.getElementById('p-indicateur').value = a.indicateur || '';
             document.getElementById('p-motif-report').value = a.motifReport || '';
             document.getElementById('p-cout').value = a.cout || '';
             document.getElementById('p-commentaires').value = a.commentaires || '';
@@ -10952,12 +11104,12 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(!actions.length) { alert('Aucune action PAPRIPACT à exporter.'); return; }
 
             const sorted = [...actions].sort((a, b) => (a.numero || 0) - (b.numero || 0));
-            const headers = ['N°', 'Origine', 'Unité de travail', 'Action', 'Type', 'Priorité', 'Statut', 'Responsable', 'Date de création', 'Délai', 'Date de clôture', 'Coût estimé', 'Modalités de réalisation', 'Conditions d\'exécution', 'Motif de report', 'Commentaires'];
+            const headers = ['N°', 'Origine', 'Unité de travail', 'Action', 'Type', 'Priorité', 'Statut', 'Responsable', 'Date de création', 'Délai', 'Date de clôture', 'Coût estimé', 'Indicateur de résultat', 'Modalités de réalisation', 'Conditions d\'exécution', 'Motif de report', 'Commentaires'];
             const rows = sorted.map(a => [
                 a.numero || '', a.origine || '', a.unite || '', a.action || '', a.type || '',
                 a.priorite || '', a.statut || '', a.responsable || '',
                 a.dateCreation ? formatDateFr(a.dateCreation) : '', a.delai ? formatDateFr(a.delai) : '', a.dateCloture ? formatDateFr(a.dateCloture) : '',
-                a.cout || '', a.realisation || '', a.conditionsExecution || '', a.motifReport || '', a.commentaires || ''
+                a.cout || '', a.indicateur || '', a.realisation || '', a.conditionsExecution || '', a.motifReport || '', a.commentaires || ''
             ]);
 
             const branding = getSstDocumentBranding();
@@ -10965,7 +11117,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const entete = [[`PAPRIPACT — ${branding.companyName || ''}`], [`Export du ${today} — ${sorted.length} action(s)`], []];
 
             sstDownloadXlsx(
-                [{ name: 'PAPRIPACT', data: [...entete, headers, ...rows], widths: [6, 12, 20, 40, 12, 10, 12, 18, 14, 14, 14, 12, 30, 30, 24, 30] }],
+                [{ name: 'PAPRIPACT', data: [...entete, headers, ...rows], widths: [6, 12, 20, 40, 12, 10, 12, 18, 14, 14, 14, 12, 28, 30, 30, 24, 30] }],
                 `PAPRIPACT_${(branding.companyName || 'export').replace(/[^a-zA-Z0-9_-]+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`
             );
         }
@@ -11011,6 +11163,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 dateCloture: dateCloture,
                 realisation: document.getElementById('p-realisation').value.trim(),
                 conditionsExecution: document.getElementById('p-conditions-execution').value.trim(),
+                indicateur: document.getElementById('p-indicateur').value.trim(),
                 motifReport: document.getElementById('p-motif-report').value.trim(),
                 cout: document.getElementById('p-cout').value.trim(),
                 commentaires: document.getElementById('p-commentaires').value.trim()
