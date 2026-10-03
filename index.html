@@ -2748,11 +2748,13 @@
             const userModules = userData.modules && typeof userData.modules === 'object' ? userData.modules : null;
             const userPermissions = userData.permissions && typeof userData.permissions === 'object' ? userData.permissions : null;
             const effectiveModules = {};
+            const userBlocked = {};
             Object.keys(companyModules).forEach(moduleId => {
                 const roleOk = roleAllows(role, moduleId);
                 const userOk = !userModules || userModules[moduleId] !== false ? true : false;
                 const userExplicit = userModules && Object.prototype.hasOwnProperty.call(userModules,moduleId);
                 effectiveModules[moduleId] = companyModules[moduleId] && roleOk && (!userExplicit || userModules[moduleId] === true);
+                userBlocked[moduleId] = !roleOk || (userExplicit && userModules[moduleId] !== true);
             });
             const effectivePermissions = {};
             ['read','write','delete','export'].forEach(action => {
@@ -2776,7 +2778,7 @@
                 if (['platformAdmin','companyAdmin','hse','rh'].includes(role)) { access[m] = 'write'; return; }
                 if (explicitAccess) { const v = explicitAccess[m]; access[m] = SST_ACCESS_LEVELS.includes(v) ? v : 'none'; }
                 else access[m] = 'read';
-                if (access[m] === 'none') effectiveModules[m] = false;
+                if (access[m] === 'none') { effectiveModules[m] = false; userBlocked[m] = true; }
             });
             Object.keys(access).forEach(m => {
                 if (m === 'dashboard' || m === 'settings') return;
@@ -2796,6 +2798,7 @@
                 modules: effectiveModules,
                 permissions: effectivePermissions,
                 access,
+                userBlocked,
                 status: userData.status || 'active',
                 unitesGerees: Array.isArray(userData.unitesGerees) ? userData.unitesGerees : [],
                 // Paramètres personnels de l'utilisateur (ex. personnalisation du Dashboard).
@@ -3436,7 +3439,7 @@
                 const modules=getSstCheckedModules('sst-company-modules-editor');
                 await setDoc(doc(firebaseDb,'companies',ctx.companyId),{modules:moduleMap(modules),updatedAt:serverTimestamp()},{merge:true});
                 const snap=await getDoc(doc(firebaseDb,'companies',ctx.companyId));
-                if(snap.exists()){window.SST_APP_CONTEXT.company={id:snap.id,...snap.data()};window.SST_APP_CONTEXT.modules=moduleMap(snap.data().modules);updateAccountUi();applySstModuleAccess();}
+                if(snap.exists()){window.SST_APP_CONTEXT.company={id:snap.id,...snap.data()};(function(){const cm=moduleMap(snap.data().modules),ub=window.SST_APP_CONTEXT.userBlocked||{};Object.keys(cm).forEach(k=>{ if(ub[k]) cm[k]=false; });window.SST_APP_CONTEXT.modules=cm;})();updateAccountUi();applySstModuleAccess();}
                 alert('Modules enregistrés.');
             }catch(err){
                 const denied = err?.code==='permission-denied' || /Missing or insufficient permissions/i.test(String(err?.message||''));
@@ -3646,8 +3649,10 @@
                 // couper la session. Sans ça, une déconnexion juste après une suppression/modification
                 // pouvait interrompre l'envoi en cours (le jeton d'authentification devient invalide
                 // pendant que Firestore traite encore la requête) et perdre le dernier changement.
-                try { if(typeof window.sstGetSyncChain === 'function') await window.sstGetSyncChain(); } catch(e){}
-                try { if(window.__sstDeleteSyncChain) await window.__sstDeleteSyncChain; } catch(e){}
+                // Attente plafonnée à 3 s : une synchronisation bloquée ne doit jamais empêcher la déconnexion.
+                const waitMax = p => Promise.race([Promise.resolve(p).catch(()=>{}), new Promise(r => setTimeout(r, 3000))]);
+                try { if(typeof window.sstGetSyncChain === 'function') await waitMax(window.sstGetSyncChain()); } catch(e){}
+                try { if(window.__sstDeleteSyncChain) await waitMax(window.__sstDeleteSyncChain); } catch(e){}
                 if(firebaseAuth) return signOut(firebaseAuth);
             }
         };
@@ -4223,6 +4228,8 @@
             if(lvl === 'read') msg = '👁️ Accès en consultation : vous pouvez consulter ce module mais pas le modifier.';
             else if(lvl === 'units') msg = '✏️ Vous pouvez modifier uniquement les éléments des unités dont vous êtes responsable.';
             else if(lvl === 'edit') msg = '✏️ Vous pouvez modifier ce module mais pas y supprimer d\'éléments.';
+            const _c = window.SST_APP_CONTEXT;
+            if(_c && _c.role === 'manager' && !(Array.isArray(_c.unitesGerees) && _c.unitesGerees.length)) msg += (msg ? ' ' : '') + "⚠ Aucune unité de travail n'est rattachée à votre compte : demandez à l'administrateur de renseigner votre e-mail comme manager d'une unité (onglet Unités de travail).";
             if(!msg) return;
             const div = document.createElement('div');
             div.className = 'sst-access-banner rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 px-4 py-2 text-xs font-semibold';
@@ -4384,6 +4391,11 @@
         }
 
         function switchFormationsSubTab(subTab) {
+            const _fc = window.SST_APP_CONTEXT;
+            const _isMgr = !!(_fc && _fc.role === 'manager');
+            const _sb = document.getElementById('subtab-form-sessions-btn');
+            if (_sb) _sb.classList.toggle('hidden', _isMgr);
+            if (_isMgr && subTab === 'sessions') { alert('Le calendrier des sessions de formation n’est pas accessible aux managers.'); subTab = 'suivi'; }
             document.getElementById('subtab-form-suivi-content').classList.add('hidden');
             document.getElementById('subtab-form-sessions-content').classList.add('hidden');
             document.getElementById('subtab-form-auth-content').classList.add('hidden');
@@ -5614,16 +5626,18 @@
                 });
             }
             const listeDiv = document.getElementById('liste-unites');
+            const _mgr = window.SST_APP_CONTEXT && window.SST_APP_CONTEXT.role === 'manager';
+            const _vis = n => !_mgr || sstManagerUnits(window.SST_APP_CONTEXT).includes(n);
             if (listeDiv) {
                 listeDiv.innerHTML = '';
                 if (unites.length === 0) {
                     listeDiv.innerHTML = `<p class="text-xs text-slate-500 italic">Aucune unité de travail enregistrée.</p>`;
                 } else {
-                    let mainUnits = unites.filter(u => !u.parent).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
+                    let mainUnits = unites.filter(u => _vis(u.nom) && (!u.parent || !_vis(u.parent))).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
                     let html = '<div class="space-y-3">';
                     
                     mainUnits.forEach(mu => {
-                        let subUnits = unites.filter(u => u.parent === mu.nom).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
+                        let subUnits = unites.filter(u => u.parent === mu.nom && _vis(u.nom)).sort((a,b) => a.nom.localeCompare(b.nom, 'fr', {sensitivity:'base', numeric:true}));
                         let muGlobalIdx = unites.indexOf(mu);
                         html += `
                             <div class="border rounded-lg bg-slate-50 p-4 space-y-2">
@@ -5864,13 +5878,16 @@
                 String(a?.nom || '').localeCompare(String(b?.nom || ''), 'fr', { sensitivity:'base', numeric:true })
             );
             const selectIds = ['sal-service', 'filter-formation-service', 'filter-duerp-unite', 'duerp-unite', 'filter-service', 'fa-unite', 'fa-secteur-unite', 'su-unite', 'filter-at-service', 'atr-unite', 'at-service', 'rh-filter-service', 'p-unite'];
+            const _mgrSel = window.SST_APP_CONTEXT && window.SST_APP_CONTEXT.role === 'manager';
+            const _mgrOnly = ['sal-service', 'filter-formation-service', 'rh-filter-service', 'filter-service'];
             selectIds.forEach(id => {
                 const sel = document.getElementById(id);
                 if (sel) {
+                    const list = (_mgrSel && _mgrOnly.includes(id)) ? sortedUnites.filter(u => sstManagerUnits(window.SST_APP_CONTEXT).includes(u.nom)) : sortedUnites;
                     let currentVal = sel.value;
                     let defaultText = sel.options.length > 0 ? sel.options[0].text : '-- Sélectionner --';
                     sel.innerHTML = `<option value="">${defaultText}</option>`;
-                    sortedUnites.forEach(u => { sel.innerHTML += `<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`; });
+                    list.forEach(u => { sel.innerHTML += `<option value="${escapeHtml(u.nom)}">${escapeHtml(u.nom)}</option>`; });
                     sel.value = currentVal;
                 }
             });
@@ -6879,7 +6896,7 @@
                 let matchName = (sal.nom || '').toLowerCase().includes(search) || (sal.poste || '').toLowerCase().includes(search);
                 let matchService = !filterService || sal.service === filterService;
                 let matchPersonnel = !filterPersonnel || sstGetSalarieStatut(sal) === filterPersonnel;
-                return matchName && matchService && matchPersonnel;
+                return matchName && matchService && matchPersonnel && sstManagerCanSeePersonnel(sal.service);
             });
 
             if (filtered.length === 0) {
@@ -7020,6 +7037,7 @@
             const salaries=JSON.parse(localStorage.getItem('salaries_formations') || '[]');
             const sal=salaries[idx];
             if(!sal) { alert('Salarié introuvable.'); return; }
+            if(!sstManagerCanSeePersonnel(sal.service)) { alert('Cette fiche appartient à une unité dont vous n’êtes pas responsable.'); return; }
             sstCurrentSalarieFicheIndex=idx;
 
             const title=document.getElementById('sst-salarie-fiche-title');
@@ -8258,6 +8276,7 @@
 
             let allItems = [];
             salaries.forEach((sal, idx) => {
+                if(!sstManagerCanSeePersonnel(sal.service)) return;
                 let profil = profilsPostes.find(p => p.nom === sal.poste);
                 let requiredByPoste = profil ? (profil.formations || []) : [];
                 let recordedNames = (sal.formations || []).map(f => f.intitule);
@@ -11300,7 +11319,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function toggleAllVisibleFa(checked) {
             const fiches=JSON.parse(localStorage.getItem('fiches_amelioration')||'[]');
             const fr=document.getElementById('filter-fa-redacteur-unite')?.value||'', fs=document.getElementById('filter-fa-secteur')?.value||'', fy=document.getElementById('filter-fa-year')?.value||'';
-            fiches.forEach((f,i)=>{ if((!fr||String(f.unite||'')===fr)&&(!fs||String(f.secteur||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerUnitScopedOnly(f.unite)){ if(checked) window.sstFaSelected.add(i); else window.sstFaSelected.delete(i); }});
+            fiches.forEach((f,i)=>{ if((!fr||String(f.unite||'')===fr)&&(!fs||String(f.secteur||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerCanEditUnit(f.unite)){ if(checked) window.sstFaSelected.add(i); else window.sstFaSelected.delete(i); }});
             renderFichesAmeliorationLocal();
         }
         async function deleteSelectedFichesAmelioration() {
@@ -11339,8 +11358,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
                 (!filterRedacteurUnite || String(f.unite||'')===filterRedacteurUnite) &&
                 (!filterSecteur || String(f.secteur||'')===filterSecteur) &&
-                (!filterYear || sstDateYear(f.date)===filterYear) &&
-                sstManagerUnitScopedOnly(f.unite)
+                (!filterYear || sstDateYear(f.date)===filterYear)
             );
             // Tri d'affichage uniquement : année croissante, puis numéro FA numérique.
             // Le tableau source et les index d'édition/suppression restent inchangés.
@@ -11390,7 +11408,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="text-xs text-slate-400 font-semibold">Rédigé le : ${f.date}</span>
-                                <button onclick="editFicheAmelioration(${idx})" data-sst-key-write="fiches_amelioration" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>
+                                ${sstManagerCanEditUnit(f.unite) ? `<button onclick="editFicheAmelioration(${idx})" data-sst-key-write="fiches_amelioration" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>` : ''}
                                 <button onclick="deleteFicheAmelioration(${idx})" data-sst-key-write-full="fiches_amelioration" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button>
                             </div>
                         </div>
@@ -11458,6 +11476,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         function editFicheAmelioration(idx) {
+            try { const _f = JSON.parse(localStorage.getItem('fiches_amelioration')||'[]')[idx]; if(_f && !sstManagerCanEditUnit(_f.unite)) { alert('Vous ne pouvez modifier que les fiches de votre unité.'); return; } } catch(e){}
             showFaForm(idx);
         }
 
@@ -11616,7 +11635,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         function toggleAllVisibleSu(checked) {
             const fiches=JSON.parse(localStorage.getItem('situations_urgence')||'[]');
             const fr=document.getElementById('filter-su-redacteur-unite')?.value||'', fs=document.getElementById('filter-su-secteur')?.value||'', fy=document.getElementById('filter-su-year')?.value||'';
-            fiches.forEach((f,i)=>{ if((!fr||String(f.uniteRedacteur||'')===fr)&&(!fs||String(f.unite||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerUnitScopedOnly(f.unite)){ if(checked) window.sstSuSelected.add(i); else window.sstSuSelected.delete(i); }});
+            fiches.forEach((f,i)=>{ if((!fr||String(f.uniteRedacteur||'')===fr)&&(!fs||String(f.unite||'')===fs)&&(!fy||sstDateYear(f.date)===fy)&&sstManagerCanEditUnit(f.unite)){ if(checked) window.sstSuSelected.add(i); else window.sstSuSelected.delete(i); }});
             loadSituationsUrgence();
         }
         async function deleteSelectedSituationsUrgence() {
@@ -11653,8 +11672,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             const filteredFiches=fiches.map((f,idx)=>({f,idx})).filter(({f})=>
                 (!filterRedacteurUnite || String(f.uniteRedacteur||'')===filterRedacteurUnite) &&
                 (!filterSecteur || String(f.unite||'')===filterSecteur) &&
-                (!filterYear || sstDateYear(f.date)===filterYear) &&
-                sstManagerUnitScopedOnly(f.unite)
+                (!filterYear || sstDateYear(f.date)===filterYear)
             );
             if(!filteredFiches.length){ container.innerHTML=`<div class="bg-white p-6 rounded-lg shadow-sm border text-center text-slate-500">Aucune situation ne correspond aux filtres sélectionnés.</div>`; return; }
             const selectedCount=window.sstSuSelected.size;
@@ -11675,7 +11693,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <div class="flex flex-wrap justify-between items-start border-b border-amber-100 pb-2"><div>
                             <div class="flex items-center gap-2 flex-wrap"><input type="checkbox" aria-label="Sélectionner ${displayCode}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstSuSelected.has(idx)?'checked':''} onchange="toggleSuSelection(${idx},this.checked)" title="Sélectionner cette situation">${suPapBadgeHtml}${suStatutBadgeHtml}<h4 class="font-bold text-slate-800 text-base">Rédigé par : ${f.redacteur||''}</h4></div>
                             <p class="text-xs text-slate-500 mt-1">${f.uniteRedacteur ? `Unité du rédacteur : ${f.uniteRedacteur} | ` : ''}Unité concernée : ${f.unite || 'N/C'} | Zone : ${f.secteur || 'N/C'}</p></div>
-                            <div class="flex items-center gap-3"><span class="text-xs text-slate-400 font-semibold">Date : ${f.date||''}</span><button onclick="editSituationUrgence(${idx})" data-sst-key-write="situations_urgence" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button><button onclick="deleteSituationUrgence(${idx})" data-sst-key-write-full="situations_urgence" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button></div>
+                            <div class="flex items-center gap-3"><span class="text-xs text-slate-400 font-semibold">Date : ${f.date||''}</span>${sstManagerCanEditUnit(f.unite) ? `<button onclick="editSituationUrgence(${idx})" data-sst-key-write="situations_urgence" class="text-blue-600 text-xs hover:underline font-semibold">Modifier</button>` : ''}<button onclick="deleteSituationUrgence(${idx})" data-sst-key-write-full="situations_urgence" class="text-red-500 text-xs hover:underline font-semibold">Supprimer</button></div>
                         </div><div class="text-xs space-y-2 text-slate-700"><div><span class="font-bold text-slate-900">Situation constatée :</span> ${f.faits||''}</div><div><span class="font-bold text-amber-700">Actions correctives / préventives :</span> ${f.axes || 'Aucune action immédiate renseignée'}</div></div>
                     </div>`;
             });
@@ -11714,6 +11732,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         function editSituationUrgence(idx) {
+            try { const _f = JSON.parse(localStorage.getItem('situations_urgence')||'[]')[idx]; if(_f && !sstManagerCanEditUnit(_f.unite)) { alert('Vous ne pouvez modifier que les situations de votre unité.'); return; } } catch(e){}
             showSuForm(idx);
         }
 
@@ -15784,7 +15803,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         // proprement l'espace local et les listeners de l'ancienne entreprise.
         window.sstLogout = async function(){
             if(!confirm('Se déconnecter de cet espace entreprise ?')) return;
-            try { await window.SSTCloud.signOut(); } finally { window.location.reload(); }
+            try { await Promise.race([window.SSTCloud.signOut(), new Promise(r => setTimeout(r, 8000))]); }
+            catch(e) { console.warn('Déconnexion :', e); }
+            finally { window.location.reload(); }
         };
 
         // --- INITIALISATION AU CHARGEMENT ---
