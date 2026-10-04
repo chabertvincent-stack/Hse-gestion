@@ -1437,7 +1437,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Responsable de l'action <span class="text-red-500">*</span></label>
-                                    <input type="text" id="p-responsable" placeholder="Ex: DUPONT Jean" class="w-full p-2 border rounded text-sm">
+                                    <select id="p-responsable" class="w-full p-2 border rounded text-sm bg-white"><option value="">À définir</option></select>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-slate-600 mb-1">Date de création</label>
@@ -10638,13 +10638,25 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
         }
 
         // --- PAPRIPACT - ISO 45001 ---
+        // Liste déroulante du responsable : le personnel, par ordre alphabétique (pour que le filtre par responsable reste exploitable).
+        function sstPapFillResponsables(selected) {
+            const sel = document.getElementById('p-responsable'); if(!sel) return;
+            let noms = [];
+            try { noms = JSON.parse(localStorage.getItem('salaries_formations') || '[]').map(x => String(x?.nom || '').trim()).filter(Boolean); } catch(e) {}
+            noms = [...new Set(noms)].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+            const cur = String(selected || '').trim();
+            let html = '<option value="">À définir</option>';
+            if(cur && !noms.includes(cur)) html += `<option value="${escapeHtml(cur)}">${escapeHtml(cur)} (hors liste du personnel)</option>`;
+            noms.forEach(n => { html += `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`; });
+            sel.innerHTML = html; sel.value = cur;
+        }
         function populatePapripactResponsablesFilter(actions) {
-            let resps = [...new Set(actions.map(a => a.responsable).filter(Boolean))];
+            let resps = [...new Set(actions.map(a => String(a.responsable || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
             let sel = document.getElementById('filter-responsable');
             if(!sel) return;
             let cur = sel.value;
             sel.innerHTML = '<option value="">Tous les responsables</option>';
-            resps.forEach(r => { sel.innerHTML += `<option value="${r}">${r}</option>`; });
+            resps.forEach(r => { sel.innerHTML += `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`; });
             sel.value = cur;
         }
 
@@ -11092,7 +11104,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-type').value = "Technique";
             document.getElementById('p-priorite').value = "";
             document.getElementById('p-statut').value = "À traiter";
-            document.getElementById('p-responsable').value = "";
+            sstPapFillResponsables("");
             document.getElementById('p-date-creation').value = new Date().toISOString().split('T')[0];
             document.getElementById('p-delai').value = "";
             document.getElementById('p-date-cloture').value = "";
@@ -11126,7 +11138,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             document.getElementById('p-type').value = a.type || 'Technique';
             document.getElementById('p-priorite').value = a.priorite || '';
             document.getElementById('p-statut').value = a.statut || 'À traiter';
-            document.getElementById('p-responsable').value = a.responsable || '';
+            sstPapFillResponsables(a.responsable || '');
             document.getElementById('p-date-creation').value = a.dateCreation || '';
             document.getElementById('p-delai').value = a.delai || '';
             document.getElementById('p-date-cloture').value = a.dateCloture || '';
@@ -11226,6 +11238,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             };
 
             if(!actionObj.action) { alert("Veuillez saisir la description de l'action."); return; }
+            if(actionObj.statut === 'Reportée' && !actionObj.motifReport) {
+                alert("Le motif du report est obligatoire pour passer une action en « Reportée ».");
+                const mr = document.getElementById('p-motif-report'); if(mr) { mr.focus(); mr.classList.add('ring-2','ring-red-400'); }
+                return;
+            }
 
             if(idx !== "" && actions[idx]) {
                 const previous = actions[idx];
@@ -15907,6 +15924,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 
         function sstBuildNotifications() {
             const list = [];
+            // Un manager ne voit que les notifications de ses unités (et de leurs sous-unités).
+            const _nc = window.SST_APP_CONTEXT || {}, _nm = _nc.role === 'manager';
+            const _inU = u => !_nm || (typeof sstManagerUnits === 'function' && sstManagerUnits(_nc).includes(u || ''));
 
             // FORMATIONS : reprend la logique du module existant, sans la modifier.
             // CORRECTIF : une date de réalisation jamais renseignée (diff===null) était
@@ -15919,7 +15939,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 const salaries = sstNotifRead('salaries_formations', []);
                 const profils = sstNotifRead('profils_postes', []);
                 const requiredFor = poste => { const p = Array.isArray(profils) ? profils.find(x => x?.nom === poste) : null; return Array.isArray(p?.formations) ? p.formations : []; };
-                if(Array.isArray(salaries)) salaries.forEach(sal => {
+                if(Array.isArray(salaries)) salaries.forEach((sal, salIdx) => {
+                    if(!_inU(sal?.service)) return;
                     const recorded = Array.isArray(sal?.formations) ? sal.formations : [];
                     const required = requiredFor(sal?.poste);
                     const names = required.length ? required : [...new Set(recorded.map(f => f?.intitule).filter(Boolean))];
@@ -15935,7 +15956,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                             title: `${sal?.nom || 'Salarié'} — ${name || 'Formation'}`,
                             detail: missing ? `Formation jamais réalisée ou date non renseignée — à planifier.` : (expired ? `Formation expirée depuis le ${sstNotifDateLabel(f?.dateFin)}.` : `Formation à renouveler d'ici le ${sstNotifDateLabel(f?.dateFin)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`),
                             module: 'Formations',
-                            target: { tab: 'formations', subtab: 'suivi' },
+                            target: { tab: 'formations', subtab: 'suivi', salarieIdx: salIdx },
                             sortDate: missing ? -1 : diff
                         });
                     });
@@ -15947,7 +15968,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             // aucune alerte, comme si tout allait bien.
             if(sstNotifCan('infirmiere')) {
                 const salaries = sstNotifRead('salaries_formations', []);
-                if(Array.isArray(salaries)) salaries.forEach(sal => {
+                if(Array.isArray(salaries)) salaries.forEach((sal, salIdx) => {
+                    if(!_inU(sal?.service)) return;
                     const diff = sstNotifDiffDays(sal?.visite);
                     if(diff !== null && diff > 90) return;
                     const missing = diff === null;
@@ -15958,7 +15980,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                         title: `${sal?.nom || 'Salarié'} — visite médicale`,
                         detail: missing ? `Visite médicale jamais renseignée — à planifier.` : (expired ? `Visite médicale expirée depuis le ${sstNotifDateLabel(sal?.visite)}.` : `Visite médicale à renouveler d'ici le ${sstNotifDateLabel(sal?.visite)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}).`),
                         module: 'Espace infirmière',
-                        target: { tab: 'infirmiere', subtab: 'medical' },
+                        target: { tab: 'infirmiere', subtab: 'medical', salarieIdx: salIdx },
                         sortDate: missing ? -1 : diff
                     });
                 });
@@ -15970,7 +15992,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 const salaries = sstNotifRead('salaries_formations', []);
                 if(Array.isArray(catalogue) && Array.isArray(salaries)) {
                     catalogue.filter(c => c?.necessiteAuth).forEach(cat => {
-                        salaries.forEach(sal => {
+                        salaries.forEach((sal, salIdx) => {
+                            if(!_inU(sal?.service)) return;
                             try {
                                 const info = getAuthorizationActionInfo(sal, cat.nom);
                                 if(!info?.pending) return;
@@ -15980,7 +16003,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                                     title: `${sal?.nom || 'Salarié'} — ${cat.nom}`,
                                     detail: `${info.trigger || 'Autorisation à renouveler'}. Vérifiez la formation, la visite médicale et le document de non-contre-indication.`,
                                     module: 'Formations / Infirmière',
-                                    target: { tab: 'formations', subtab: 'autorisations' },
+                                    target: { tab: 'formations', subtab: 'autorisations', salarieIdx: salIdx },
                                     sortDate: info.expired ? -1 : 0
                                 });
                             } catch(e) {}
@@ -15993,7 +16016,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(sstNotifCan('papripact')) {
                 const actions = sstNotifRead('papripact_actions', []);
                 if(Array.isArray(actions)) actions.forEach(a => {
-                    if(!a || String(a.statut || '') === 'Clôturée') return;
+                    if(!a || String(a.statut || '') === 'Clôturée' || !_inU(a.unite)) return;
                     const diff = sstNotifDiffDays(a.delai);
                     if(diff === null || diff > 30) return;
                     const overdue = diff < 0;
@@ -16003,7 +16026,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                         title: `Action n°${a.numero || '?'} — ${a.action || 'Action'}`,
                         detail: overdue ? `Échéance dépassée depuis le ${sstNotifDateLabel(a.delai)}. Responsable : ${a.responsable || 'À définir'}.` : `Échéance le ${sstNotifDateLabel(a.delai)} (${diff === 0 ? "aujourd’hui" : `dans ${diff} jour${diff > 1 ? 's' : ''}`}). Responsable : ${a.responsable || 'À définir'}.`,
                         module: 'PAPRIPACT',
-                        target: { tab: 'papripact' },
+                        target: { tab: 'papripact', actionRef: String(a.numero || a._cloudId || a.id || '') },
                         sortDate: diff
                     });
                 });
@@ -16013,14 +16036,14 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if(sstNotifCan('at')) {
                 const analyses = sstNotifRead('at_analyses', []);
                 if(Array.isArray(analyses)) analyses.forEach(a => {
-                    if(!a || a.analyseRequise !== 'Oui' || a.analyseStatut === 'Réalisée' || a.analyseStatut === 'Non nécessaire') return;
+                    if(!a || a.analyseRequise !== 'Oui' || a.analyseStatut === 'Réalisée' || a.analyseStatut === 'Non nécessaire' || !_inU(a.service)) return;
                     sstNotifAdd(list, {
                         severity: 'warning',
                         category: 'Analyse AT',
                         title: `${a.reference || 'Analyse AT'} — ${a.salarie || 'Salarié'}`,
                         detail: `Analyse AT à réaliser${a.analyseStatut === 'En cours' ? ' (en cours)' : ''}.`,
                         module: 'Analyse AT',
-                        target: { tab: 'at' },
+                        target: { tab: 'at', analysisRef: String(a._cloudId || a.id || a.reference || a.sourceAtRef || '') },
                         sortDate: 0
                     });
                     const actionDiff = sstNotifDiffDays(a.echeanceActions);
@@ -16031,7 +16054,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                             title: `${a.reference || 'Analyse AT'} — action en retard`,
                             detail: `Échéance dépassée depuis le ${sstNotifDateLabel(a.echeanceActions)}.`,
                             module: 'Analyse AT',
-                            target: { tab: 'at' },
+                            target: { tab: 'at', analysisRef: String(a._cloudId || a.id || a.reference || a.sourceAtRef || '') },
                             sortDate: actionDiff
                         });
                     }
@@ -16043,13 +16066,14 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 try {
                     const policy = getDuerpPolicy();
                     if(policy.alertMode !== 'off') sstDuerpRisksNeedingAction().forEach(({ r, riskId, calc }) => {
+                        if(!_inU(r.unite)) return;
                         sstNotifAdd(list, {
                             severity: policy.alertMode === 'must' ? 'danger' : 'warning',
                             category: 'DUERP',
                             title: `${riskId} — ${r.danger || 'Risque'}`,
                             detail: `Coté « ${calc.zoneInfo.label} » (score ${calc.score}), sans action PAPRIPACT associée. ${duerpAlertText(policy.alertMode)}`,
                             module: 'DUERP',
-                            target: { tab: 'duerp' },
+                            target: { tab: 'duerp', riskId },
                             sortDate: policy.alertMode === 'must' ? -1 : 0
                         });
                     });
@@ -16104,6 +16128,14 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             const n = sstNotificationsCache[index];
             if(!n?.target) return;
             sstCloseNotifications();
+            const t = n.target;
+            try {
+                // Lien direct vers l'élément concerné (fiche du salarié, action PAPRIPACT, analyse AT, risque DUERP).
+                if(t.salarieIdx !== undefined && t.salarieIdx !== null) { openSalarieFiche360(t.salarieIdx); return; }
+                if(t.actionRef) { scrollToPapripactAction(t.actionRef); return; }
+                if(t.analysisRef) { scrollToAtAnalysis(t.analysisRef); return; }
+                if(t.riskId) { scrollToDuerpRisk(t.riskId); return; }
+            } catch(e) { console.warn('Navigation directe impossible, ouverture de l\'onglet :', e); }
             try {
                 switchTab(n.target.tab);
                 setTimeout(() => {
@@ -17224,6 +17256,47 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     }
     setInterval(wrapAt, 2000);
     setInterval(function () { var c = document.getElementById('duerp-revues-card'); if (c && !c.firstChild && ctx()) window.sstRenderDuerpRevues(); }, 2000);
+})();
+</script>
+
+<script>
+/* V2.148 — Tournée HSE en consultation seule pour qui n'a pas le droit de modifier ; fiche salarié accessible depuis n'importe quel onglet */
+(function () {
+    'use strict';
+    function canEditTournee() {
+        var c = window.SST_APP_CONTEXT; if (!c || c.role === 'local-dev') return true;
+        try { var l = typeof sstAccessLevel === 'function' ? sstAccessLevel('tournees') : 'write'; return l === 'edit' || l === 'write'; } catch (e) { return true; }
+    }
+    function lockTournee() {
+        var v = document.getElementById('tournee-form-view');
+        if (!v || v.classList.contains('hidden') || canEditTournee()) return;
+        v.querySelectorAll('input,select,textarea').forEach(function (el) {
+            el.disabled = true;
+            if (el.type === 'file') { var lab = el.closest('label'); (lab || el).classList.add('hidden'); }
+        });
+        v.querySelectorAll('button').forEach(function (b) {
+            var oc = b.getAttribute('onclick') || '';
+            if (b.id === 'tournee-return-origin-btn') return;
+            if (/^\s*(closeTourneeForm|tourneeReturnToOrigin|scrollTo|window\.print|print|export)/.test(oc)) return;
+            if (/photo/i.test(oc) && !/(upload|delete|remove|supprim|capture|add|ajout)/i.test(oc)) return;      // voir une photo reste possible
+            b.classList.add('hidden');
+        });
+        if (!document.getElementById('tournee-ro-banner')) {
+            var d = document.createElement('div'); d.id = 'tournee-ro-banner'; d.className = 'mb-3 rounded border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs p-2';
+            d.textContent = '👁️ Consultation seule : vous ne pouvez ni modifier cette tournée ni ajouter de photo.';
+            v.insertBefore(d, v.firstChild);
+        }
+    }
+    setInterval(lockTournee, 500);
+    // La fiche salarié (360) doit pouvoir s'ouvrir depuis une notification quel que soit l'onglet affiché.
+    var moved = false;
+    setInterval(function () {
+        if (moved) return;
+        var t = document.getElementById('sst-salarie-fiche-title'); if (!t) return;
+        var root = t;
+        while (root && root.parentElement && root.parentElement !== document.body && !/\bfixed\b/.test(root.className || '')) root = root.parentElement;
+        if (root && /\bfixed\b/.test(root.className || '')) { if (root.parentElement !== document.body) document.body.appendChild(root); moved = true; }
+    }, 1500);
 })();
 </script>
 
