@@ -1011,8 +1011,7 @@
                                     📤 Importer des risques
                                     <input type="file" id="import-duerp-file" accept=".csv,.xlsx,.xls" class="hidden" onchange="importDuerpFile(event)">
                                 </label>
-                                <button onclick="exportDuerpXlsx()" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-semibold text-sm">📊 Exporter en Excel</button>
-                                <button onclick="sstExportDiffusionDuerp()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold text-sm">📑 Export Excel salariés / CSSCT</button>
+                                <button onclick="sstExportDuerpComplet()" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-semibold text-sm">📑 DUERP complet (Excel)</button>
                                 <button onclick="openDuerpAccessModal()" data-duerp-write class="bg-slate-200 text-slate-700 px-4 py-2 rounded hover:bg-slate-300 font-semibold text-sm">📄 Avis d'accès</button>
                                 <button onclick="openDuerpModal()" data-duerp-write class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold text-sm">+ Ajouter un risque</button>
                             </div>
@@ -2269,6 +2268,11 @@
                                     <div>
                                         <label class="block text-xs font-semibold text-slate-600 mb-1">Unité de travail <span class="text-red-500">*</span></label>
                                         <select id="atr-unite" class="w-full p-2 border rounded text-sm bg-white"><option value="">Sélectionner l'unité</option></select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-slate-600 mb-1">Ligne du DUERP concernée</label>
+                                        <select id="atr-risque" class="w-full p-2 border rounded text-sm bg-white"><option value="">— Aucune / à définir —</option></select>
+                                        <p class="text-[10px] text-slate-500 mt-1">Sert à la cotation de la maîtrise (AT de moins de 3 ans sur cette ligne).</p>
                                     </div>
                                     <div>
                                         <label class="block text-xs font-semibold text-slate-600 mb-1">Poste</label>
@@ -10340,6 +10344,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <td class="p-3 border-b" data-label="Réf. & Danger">
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
                                 <div class="text-xs text-slate-600">${escapeHtml(r.danger)}</div>
+                                ${typeof sstDuerpAtBadge === 'function' ? sstDuerpAtBadge(riskId) : ''}
                             </td>
                             <td class="p-3 border-b text-xs" data-label="Dommage potentiel">${sstDuerpListHtml(r.dommage)}</td>
                             <td class="p-3 border-b text-xs" data-label="Mesures actuelles">${sstDuerpListHtml(r.prevention)}</td>
@@ -12421,6 +12426,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 set('atr-statut-personnel', 'Salarié');
                 renderAtRegistreProlongations([]);
             }
+            try { if (typeof sstAtrFillRisks === 'function') sstAtrFillRisks(idx !== null ? ((getAtRegistreData()[idx] || {}).riskId || '') : ''); } catch (e) {}
             updateAtRegistreRef();
             toggleAtRegistreArretFields();
             document.getElementById('at-registre-modal').classList.remove('hidden');
@@ -12539,7 +12545,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 statutPersonnel: sstNormalizeStatut(get('atr-statut-personnel')),
                 debutArret: get('atr-debut-arret'), finArret: get('atr-fin-arret'), joursPerdus,
                 joursInitiaux: arret.initial, prolongations: arret.prolongations, finArretTotal: arret.finTotal,
-                analyseRequise
+                analyseRequise,
+                riskId: get('atr-risque')
             };
 
             // Important : syncAtAnalysisFromRegistry est async. On doit attendre son résultat avant de tester created/analysis.
@@ -16749,11 +16756,11 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 </script>
 
 <script>
-/* V2.146 — Revue guidée du DUERP par unité : relecture risque par risque, version conservée, export du DUERP complet */
+/* V2.147 — Revue guidée du DUERP : fiche complète, actions liées, AT < 3 ans, retour automatique à la revue */
 (function () {
     'use strict';
     var KEY = 'duerp_revues';
-    var FONCTIONS = ['Manager', 'Membre CSE / CSSCT', 'Responsable HSE', 'Technicien HSE', 'DRH / RH', 'Médecin du travail / infirmière', 'Autre'];
+    var FONCTIONS = ['Manager', 'Membre CSE / CSSCT', 'Responsable HSE', 'Technicien HSE', 'DRH / RH', 'Infirmière', 'Médecin du travail', 'Autre'];
     var MOTIFS = ['Revue annuelle', 'Après un accident du travail', 'Après une modification importante (organisation, équipement, produit…)', 'Nouvelle information sur un risque'];
     var AT_TRIGGERS = ['AT avec arrêt', 'AT sans arrêt'];   // l'accident de trajet et l'AT bénin ne déclenchent pas de revue
     var ZC = { green: ['FFC6EFCE', 'FF006100'], orange: ['FFFFEB9C', 'FF9C5700'], red: ['FFFFC7CE', 'FF9C0006'] };
@@ -16787,7 +16794,25 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     function isDraft(r) { return r && r.statut === 'en_cours'; }
     function doneList() { return revues().filter(function (r) { return !isDraft(r); }); }
     function draftOf(u) { return revues().filter(function (r) { return isDraft(r) && r.unite === u; })[0]; }
-    function rid(r, i) { return r.riskId || ('IDX-' + i); }
+    function rid(r, i) { return r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0')); }
+    function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    // Accidents du travail enregistrés sur une ligne du DUERP depuis moins de 3 ans (hors accident de trajet).
+    function atRecent(riskId) {
+        var lim = new Date(); lim.setFullYear(lim.getFullYear() - 3); var l = ymd(lim);
+        return read('at_registre').filter(function (a) { return a && a.riskId && a.riskId === riskId && a.classification !== 'Accident de trajet' && a.date && String(a.date) >= l; })
+            .sort(function (x, y) { return String(y.date).localeCompare(String(x.date)); });
+    }
+    window.sstDuerpAtBadge = function (riskId) {
+        var l = atRecent(riskId); if (!l.length) return '';
+        return '<div class="text-[10px] text-red-700 font-semibold mt-1">⚠ AT &lt; 3 ans : ' + esc(l.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join(', ')) + '</div>';
+    };
+    window.sstAtrFillRisks = function (selected) {
+        var sel = document.getElementById('atr-risque'); if (!sel) return;
+        var u = (document.getElementById('atr-unite') || {}).value || '', opts = '<option value="">— Aucune / à définir —</option>';
+        read('duerp_risques').forEach(function (r, i) { if (!r || (r.unite || '') !== u) return; var id = rid(r, i); opts += '<option value="' + esc(id) + '"' + (id === selected ? ' selected' : '') + '>' + esc(id + ' — ' + (r.danger || '')) + '</option>'; });
+        sel.innerHTML = opts; if (selected) sel.value = selected;
+    };
+    document.addEventListener('change', function (e) { if (e.target && e.target.id === 'atr-unite') window.sstAtrFillRisks(''); });
     function unitRisks(u) { return read('duerp_risques').map(function (r, i) { return { r: r, i: i, id: rid(r, i) }; }).filter(function (x) { return (x.r.unite || '') === u; }); }
     function unitNames() {
         var set = {}, out = [];
@@ -16826,11 +16851,17 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     }
 
     // ---------- Avancement d'une revue en cours ----------
+    function atRequired(x) { return atRecent(x.id).length > 0; }
+    function isChecked(d, x) {
+        var c = d.checks && d.checks[x.id]; if (!c) return false;
+        if (c.cot === undefined && c.prev === undefined && c.act === undefined) return true;      // anciennes revues en cours (V2.146)
+        return !!(c.cot && c.prev && c.act && (!atRequired(x) || c.at));
+    }
     function riskState(d, x) {
         var b = d.baseline && d.baseline[x.id];
         if (!b) return 'new';
         if (changedFields(b.item, strip(x.r)).length) return 'modif';
-        return (d.checks && d.checks[x.id]) ? 'ok' : 'todo';
+        return isChecked(d, x) ? 'ok' : 'todo';
     }
     function progress(d) {
         var items = unitRisks(d.unite), c = { total: items.length, todo: 0, ok: 0, modif: 0, new: 0, removed: 0 }, ids = {};
@@ -16859,7 +16890,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             var riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0')), calc = calculateDuerpCotation(r), linked = getDuerpLinkedActions(r, riskId, i, acts);
             var cells = crit.map(function (c) { var rc = calc.config.criteria.filter(function (x) { return x.key === c.key && x.active; })[0]; if (!rc) return ''; var v = calc.values[c.key]; return v + ' - ' + ((rc.levels[v - 1] || {}).label || ''); });
             var lines = function (t) { return String(t || '').split(/[;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean).join('\n'); };
-            out.push({ ref: riskId, date: r.date || '', danger: r.danger || '', dommage: lines(r.dommage), prevention: lines(r.prevention), cotation: cells, score: calc.score, niveau: calc.zoneInfo.label,
+            var atl = atRecent(riskId);
+            out.push({ ref: riskId, at: atl.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join('\n'), date: r.date || '', danger: r.danger || '', dommage: lines(r.dommage), prevention: lines(r.prevention), cotation: cells, score: calc.score, niveau: calc.zoneInfo.label,
                 actions: linked.map(function (a) { return 'N°' + (a.numero || '?') + ' – ' + (a.action || '') + ' (' + (a.statut || '') + ')'; }).join('\n') });
         });
         return { criteres: crit.map(function (c) { return c.label; }), zones: cfg.zones.map(function (z) { return { label: z.label, key: z.key }; }), risques: out };
@@ -16888,12 +16920,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         box.innerHTML = '<details class="rounded-xl border border-slate-200 bg-slate-50 p-4"' + (open ? ' open' : '') + '><summary class="cursor-pointer font-bold text-slate-800 text-sm">📅 Revues du DUERP par unité <span class="font-normal text-xs text-slate-500">— ' +
             (c.run ? c.run + ' en cours · ' : '') + (c.at ? c.at + ' à revoir après AT · ' : '') + c.ok + ' à jour · ' + c.soon + ' à prévoir · ' + c.late + ' en retard · ' + c.never + ' jamais revue(s)</span></summary>' +
             '<div class="text-xs text-slate-500 my-2">Une revue se fait <b>risque par risque</b> : elle ne peut être terminée que lorsque tous les risques de l’unité ont été relus (validés ou modifiés). Les modifications réelles sont relevées automatiquement.</div>' + banners +
-            '<div class="mb-3"><button type="button" id="rv-full" class="px-3 py-2 rounded bg-emerald-600 text-white text-xs font-semibold">📥 Télécharger le DUERP complet (une feuille par unité)</button></div>' +
             '<div class="space-y-2">' + (rows || '<div class="text-xs text-slate-500">Aucune unité de travail.</div>') + '</div></details>';
         box.querySelectorAll('[data-rv-new]').forEach(function (b) { b.addEventListener('click', function () { openStart(b.getAttribute('data-rv-new')); }); });
         box.querySelectorAll('[data-rv-run]').forEach(function (b) { b.addEventListener('click', function () { openRun(b.getAttribute('data-rv-run')); }); });
         box.querySelectorAll('[data-rv-hist]').forEach(function (b) { b.addEventListener('click', function () { openHistory(b.getAttribute('data-rv-hist')); }); });
-        var f = box.querySelector('#rv-full'); if (f) f.addEventListener('click', function () { exportDuerpComplet(); });
     };
 
     // ---------- Fenêtres ----------
@@ -16916,7 +16946,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         });
     }
     function readParts(root) { var parts = []; root.querySelectorAll('.rv-part').forEach(function (r) { var n = r.querySelector('.rv-nom').value.trim(); if (n) parts.push({ nom: n, fonction: r.querySelector('.rv-fonc').value }); }); return parts; }
-    var ADDBTNS = ['Manager', 'Membre CSE / CSSCT', 'Responsable HSE', 'Technicien HSE'].map(function (f) { return '<button type="button" data-addp="' + esc(f) + '" class="px-2 py-1 rounded border text-xs">+ ' + esc(f) + '</button>'; }).join('');
+    var ADDBTNS = FONCTIONS.map(function (f) { return '<button type="button" data-addp="' + esc(f) + '" class="px-2 py-1 rounded border text-xs">+ ' + esc(f) + '</button>'; }).join('');
 
     // ---- Démarrer une revue ----
     function openStart(unite) {
@@ -16961,21 +16991,59 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         var el = document.createElement('div'); el.id = 'sst-revue-run'; el.className = 'fixed inset-0 z-[9990] bg-slate-100 overflow-y-auto'; el.setAttribute('data-id', id);
         document.body.appendChild(el); renderRun(id);
     }
+    function cotationLines(r) {
+        try {
+            var calc = calculateDuerpCotation(r), crit = getDuerpActiveCriteria(getDuerpCurrentCotationConfig());
+            return crit.map(function (c) { var rc = calc.config.criteria.filter(function (q) { return q.key === c.key && q.active; })[0]; if (!rc) return ''; var v = calc.values[c.key]; return c.label + ' : ' + v + ' - ' + ((rc.levels[v - 1] || {}).label || ''); }).filter(Boolean);
+        } catch (e) { return []; }
+    }
+    var STCSS = { 'À traiter': 'bg-amber-100 text-amber-800', 'En cours': 'bg-blue-100 text-blue-800', 'Clôturée': 'bg-green-100 text-green-800', 'Reportée': 'bg-slate-200 text-slate-700' };
+    // Ferme l'écran de revue le temps d'une saisie (fiche du risque, action) puis le rouvre quand la fenêtre se ferme (enregistrement OU annulation).
+    function leaveFor(id, openFn, modalIds) {
+        var el = document.getElementById('sst-revue-run'); if (el) el.style.display = 'none';
+        try { openFn(); } catch (e) { console.warn(e); if (el) el.style.display = ''; return; }
+        var tries = 0, t = setInterval(function () {
+            tries++;
+            var open = modalIds.some(function (m) { var x = document.getElementById(m); return x && !x.classList.contains('hidden'); });
+            if (!open && tries > 2) { clearInterval(t); var e2 = document.getElementById('sst-revue-run'); if (e2) { e2.style.display = ''; renderRun(id); } }
+        }, 400);
+    }
     function renderRun(id) {
         var el = document.getElementById('sst-revue-run'); if (!el) return;
         var d = revues().filter(function (r) { return r.id === id; })[0]; if (!d) { closeRun(); return; }
-        var p = progress(d), pct = p.total ? Math.round(p.reviewed * 100 / p.total) : 100, items = unitRisks(d.unite), editable = canEdit();
+        var p = progress(d), pct = p.total ? Math.round(p.reviewed * 100 / p.total) : 100, items = unitRisks(d.unite), editable = canEdit(), acts = read('papripact_actions');
         var chip = { todo: ['À revoir', 'bg-amber-100 text-amber-800'], ok: ['✓ Revu', 'bg-green-100 text-green-800'], modif: ['✏️ Modifié', 'bg-blue-100 text-blue-800'], new: ['🆕 Nouveau', 'bg-purple-100 text-purple-800'] };
         var cards = items.map(function (x) {
-            var s = riskState(d, x), calc = null; try { calc = calculateDuerpCotation(x.r); } catch (e) {}
+            var s = riskState(d, x), calc = null, c = (d.checks && d.checks[x.id]) || {}, legacy = c.cot === undefined && c.prev === undefined && c.act === undefined && d.checks && d.checks[x.id];
+            try { calc = calculateDuerpCotation(x.r); } catch (e) {}
+            var linked = []; try { linked = getDuerpLinkedActions(x.r, x.id, x.i, acts) || []; } catch (e) {}
+            var open = linked.filter(function (a) { return a.statut !== 'Clôturée'; }), closed = linked.filter(function (a) { return a.statut === 'Clôturée'; }), at = atRecent(x.id);
+            function actLine(a) {
+                var idx = acts.indexOf(a);
+                return '<div class="flex items-start justify-between gap-2 border rounded p-2 bg-white"><div class="text-xs text-slate-700"><span class="font-semibold">' + (a.numero ? 'N°' + esc(a.numero) + ' — ' : '') + esc(a.action || '') + '</span><div class="text-[11px] text-slate-500">' +
+                    'Resp. : ' + esc(a.responsable || 'à définir') + (a.delai ? ' · échéance ' + fmt(a.delai) : '') + (a.dateCloture ? ' · clôturée le ' + fmt(a.dateCloture) : '') + '</div></div>' +
+                    '<div class="flex flex-col items-end gap-1"><span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ' + (STCSS[a.statut] || 'bg-slate-100 text-slate-700') + '">' + esc(a.statut || '?') + '</span>' +
+                    (editable && idx >= 0 ? '<button type="button" data-act="' + idx + '" class="text-[11px] text-blue-600 underline">Ouvrir</button>' : '') + '</div></div>';
+            }
+            var chk = function (key, label, on) { return '<label class="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" data-chk="' + esc(x.id) + '|' + key + '" class="w-4 h-4" ' + (on ? 'checked' : '') + '> ' + label + '</label>'; };
+            var checks = '';
+            if (editable && s !== 'modif' && s !== 'new') {
+                checks = '<div class="mt-2 border-t pt-2 space-y-1"><div class="text-[11px] font-semibold text-slate-500">Je confirme avoir vérifié :</div>' +
+                    chk('cot', 'la cotation est toujours bonne', legacy || c.cot) + chk('prev', 'les moyens de prévention n’ont pas évolué', legacy || c.prev) + chk('act', 'les actions (à faire et réalisées) ont été examinées', legacy || c.act) +
+                    (at.length ? chk('at', 'la maîtrise tient compte des AT de moins de 3 ans', legacy || c.at) : '') +
+                    '<button type="button" data-allok="' + esc(x.id) + '" class="mt-1 px-3 py-1.5 rounded bg-green-600 text-white text-xs font-semibold">✓ Tout confirmer, rien à changer</button></div>';
+            } else if (s === 'modif' || s === 'new') checks = '<div class="mt-2 text-[11px] text-blue-700">Risque ' + (s === 'new' ? 'ajouté' : 'modifié') + ' pendant la revue : compte comme relu.</div>';
             return '<div class="bg-white border rounded-lg p-3" data-risk="' + esc(x.id) + '"><div class="flex flex-wrap items-center gap-2"><span class="inline-block bg-slate-800 text-white text-xs rounded px-1.5 py-0.5">' + esc(x.id) + '</span>' +
                 '<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ' + chip[s][1] + '">' + chip[s][0] + '</span>' +
                 (calc ? '<span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ' + zoneCss(calc.zoneInfo.label) + '">' + esc(calc.zoneInfo.label) + ' · ' + esc(calc.score) + '</span>' : '') + '</div>' +
-                '<div class="text-sm font-semibold text-slate-800 mt-1">' + esc(x.r.danger || '(sans intitulé)') + '</div>' +
-                '<div class="text-xs text-slate-600 mt-1"><b>Dommages :</b> ' + esc(String(x.r.dommage || '—').slice(0, 160)) + '</div>' +
-                '<div class="text-xs text-slate-600"><b>Prévention :</b> ' + esc(String(x.r.prevention || '—').slice(0, 220)) + '</div>' +
-                (editable ? '<div class="flex flex-wrap gap-2 mt-2"><button type="button" data-ok="' + esc(x.id) + '" class="px-3 py-1.5 rounded ' + (s === 'ok' ? 'bg-slate-200 text-slate-700' : 'bg-green-600 text-white') + ' text-xs font-semibold"' + (s === 'modif' || s === 'new' ? ' disabled style="opacity:.4"' : '') + '>' + (s === 'ok' ? 'Annuler la validation' : '✓ Revu, rien à changer') + '</button>' +
-                    '<button type="button" data-edit="' + esc(x.i) + '" class="px-3 py-1.5 rounded border text-xs font-semibold">✏️ Modifier ce risque</button></div>' : '') + '</div>';
+                '<div class="text-sm font-semibold text-slate-800 mt-1">' + esc(x.r.danger || '(sans intitulé)') + '</div><div class="text-[11px] text-slate-400">Évalué le ' + fmt(x.r.date) + '</div>' +
+                '<div class="text-xs text-slate-600 mt-2"><b>Dommages :</b> ' + esc(String(x.r.dommage || '—').replace(/;/g, ' ; ')) + '</div>' +
+                '<div class="text-xs text-slate-600 mt-1"><b>Moyens de prévention :</b> ' + esc(String(x.r.prevention || '—').replace(/;/g, ' ; ')) + '</div>' +
+                '<div class="text-xs text-slate-600 mt-1"><b>Cotation :</b> ' + (cotationLines(x.r).map(esc).join(' · ') || '—') + (calc ? ' → score ' + esc(calc.score) : '') + '</div>' +
+                (at.length ? '<div class="mt-2 text-xs bg-red-50 border border-red-200 text-red-800 rounded p-2">⚠ <b>' + at.length + ' accident(s) du travail de moins de 3 ans</b> sur cette ligne : ' + esc(at.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join(', ')) + '. À prendre en compte dans la cotation de la maîtrise.</div>' : '') +
+                '<div class="mt-2"><div class="text-[11px] font-semibold text-slate-500 mb-1">Actions PAPRIPACT liées (' + open.length + ' à faire / en cours · ' + closed.length + ' clôturée(s))</div><div class="space-y-1">' +
+                (open.map(actLine).join('') + closed.map(actLine).join('') || '<div class="text-xs text-slate-400 italic">Aucune action liée à ce risque.</div>') + '</div></div>' + checks +
+                (editable ? '<div class="flex flex-wrap gap-2 mt-2"><button type="button" data-edit="' + esc(x.i) + '" class="px-3 py-1.5 rounded border text-xs font-semibold">✏️ Modifier ce risque</button><button type="button" data-addact="' + esc(x.i) + '" class="px-3 py-1.5 rounded border text-xs font-semibold">+ Action</button></div>' : '') + '</div>';
         }).join('');
         var removed = Object.keys(d.baseline || {}).filter(function (k) { return !items.some(function (x) { return x.id === k; }); });
         el.innerHTML = '<div class="max-w-3xl mx-auto"><div class="sticky top-0 z-10 bg-white border-b p-3"><div class="flex items-start justify-between gap-2"><div><div class="font-bold text-slate-800">Revue du DUERP — ' + esc(d.unite) + '</div><div class="text-xs text-slate-500">' + fmt(d.dateRevue) + ' · ' + esc(d.motif) + (d.refAt ? ' (' + esc(d.refAt) + ')' : '') + '</div></div>' +
@@ -16991,17 +17059,25 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         wirePartsEditor(el);
         var sp = el.querySelector('#rr-saveparts');
         if (sp) sp.addEventListener('click', async function () { var parts = readParts(el); if (!parts.length) { alert('Gardez au moins une personne présente.'); return; } var all = revues(); all.forEach(function (r) { if (r.id === id) r.participants = parts; }); await saveAll(all); renderRun(id); });
-        el.querySelectorAll('[data-ok]').forEach(function (b) {
-            b.addEventListener('click', async function () {
-                var rk = b.getAttribute('data-ok'), all = revues(), c = ctx() || {};
-                all.forEach(function (r) { if (r.id === id) { r.checks = r.checks || {}; if (r.checks[rk]) delete r.checks[rk]; else r.checks[rk] = { ts: Date.now(), by: c.email || '' }; } });
-                var y = el.scrollTop; await saveAll(all); renderRun(id); var el2 = document.getElementById('sst-revue-run'); if (el2) el2.scrollTop = y;
+        function mutate(fn) { return async function () { var y = el.scrollTop, all = revues(), c = ctx() || {}; all.forEach(function (r) { if (r.id === id) { r.checks = r.checks || {}; fn(r, c); } }); await saveAll(all); renderRun(id); var e2 = document.getElementById('sst-revue-run'); if (e2) e2.scrollTop = y; }; }
+        el.querySelectorAll('[data-chk]').forEach(function (b) {
+            b.addEventListener('change', function () {
+                var parts = b.getAttribute('data-chk').split('|'), rk = parts[0], k = parts[1], on = b.checked;
+                mutate(function (r, c) {
+                    var cur = r.checks[rk];
+                    if (cur && cur.cot === undefined && cur.prev === undefined && cur.act === undefined) cur = { cot: true, prev: true, act: true, at: true };   // ancienne validation globale
+                    cur = Object.assign({}, cur || {}); cur[k] = on; cur.ts = Date.now(); cur.by = c.email || '';
+                    if (!cur.cot && !cur.prev && !cur.act && !cur.at) delete r.checks[rk]; else r.checks[rk] = cur;
+                })();
             });
         });
-        el.querySelectorAll('[data-edit]').forEach(function (b) {
-            b.addEventListener('click', function () { closeRun(); if (typeof editDuerpRisque === 'function') editDuerpRisque(Number(b.getAttribute('data-edit'))); else alert('Modification indisponible.'); });
+        el.querySelectorAll('[data-allok]').forEach(function (b) {
+            b.addEventListener('click', function () { var rk = b.getAttribute('data-allok'); mutate(function (r, c) { r.checks[rk] = { cot: true, prev: true, act: true, at: true, ts: Date.now(), by: c.email || '' }; })(); });
         });
-        var add = el.querySelector('#rr-add'); if (add) add.addEventListener('click', function () { closeRun(); if (typeof openDuerpModal === 'function') openDuerpModal(); });
+        el.querySelectorAll('[data-edit]').forEach(function (b) { b.addEventListener('click', function () { leaveFor(id, function () { editDuerpRisque(Number(b.getAttribute('data-edit'))); }, ['duerp-modal']); }); });
+        el.querySelectorAll('[data-addact]').forEach(function (b) { b.addEventListener('click', function () { leaveFor(id, function () { openDuerpPapModalFromIndex(Number(b.getAttribute('data-addact'))); }, ['papripact-modal']); }); });
+        el.querySelectorAll('[data-act]').forEach(function (b) { b.addEventListener('click', function () { leaveFor(id, function () { editPapripactAction(Number(b.getAttribute('data-act'))); }, ['papripact-modal']); }); });
+        var add = el.querySelector('#rr-add'); if (add) add.addEventListener('click', function () { leaveFor(id, function () { openDuerpModal(); var u = document.getElementById('duerp-unite'); if (u) u.value = d.unite; }, ['duerp-modal']); });
         var ab = el.querySelector('#rr-abort'); if (ab) ab.addEventListener('click', async function () {
             if (!window.confirm('Abandonner cette revue ? Les validations faites seront perdues (les modifications déjà faites sur les risques restent).')) return;
             await saveAll(revues().filter(function (r) { return r.id !== id; })); closeRun(); window.sstRenderDuerpRevues();
@@ -17062,10 +17138,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         while (used[k.toLowerCase()]) { k = n.slice(0, 28) + ' ' + i++; } used[k.toLowerCase()] = 1; return k;
     }
     function riskSheet(wb, used, unite, sn, subtitle, version) {
-        var crit = sn.criteres || [], heads = ['Réf.', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes'].concat(crit, ['Score', 'Niveau de risque', 'Actions de prévention liées (PAPRIPACT)']);
-        var data = (sn.risques || []).map(function (x) { return [x.ref, sstXlDate(x.date), x.danger, x.dommage, x.prevention].concat(x.cotation || [], [x.score, x.niveau, x.actions]); });
+        var crit = sn.criteres || [], heads = ['Réf.', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes'].concat(crit, ['Score', 'Niveau de risque', 'AT < 3 ans (maîtrise)', 'Actions de prévention liées (PAPRIPACT)']);
+        var data = (sn.risques || []).map(function (x) { return [x.ref, sstXlDate(x.date), x.danger, x.dommage, x.prevention].concat(x.cotation || [], [x.score, x.niveau, x.at || '', x.actions]); });
         var sc = 5 + crit.length + 1, nc = sc + 1;
-        var t = sstXlTable(wb, nameOf(unite, used), 'DUERP — ' + unite + (version ? ' — ' + version : ''), subtitle, heads, [14, 14, 44, 34, 40].concat(crit.map(function () { return 22; }), [9, 16, 56]), data, { freezeCols: 1, centerCols: [sc, nc], footer: 'DUERP — ' + unite });
+        var t = sstXlTable(wb, nameOf(unite, used), 'DUERP — ' + unite + (version ? ' — ' + version : ''), subtitle, heads, [14, 14, 44, 34, 40].concat(crit.map(function () { return 22; }), [9, 16, 24, 56]), data, { freezeCols: 1, centerCols: [sc, nc], footer: 'DUERP — ' + unite });
         t.ws.getCell(2, 1).alignment = { wrapText: true, vertical: 'top' }; t.ws.getRow(2).height = Math.min(120, 16 * Math.ceil(String(subtitle).length / 140) + 6);
         var L = function (n) { var s = ''; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
         if (data.length) t.ws.addConditionalFormatting({ ref: L(sc) + t.first + ':' + L(nc) + t.last, rules: (sn.zones || []).map(function (z, i) {
@@ -17099,17 +17175,31 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         if (typeof ExcelJS === 'undefined') { alert('L’export Excel n’a pas pu se charger. Vérifiez votre connexion puis réessayez.'); return; }
         var names = unitNames().filter(function (n) { return unitRisks(n).length; });
         if (!names.length) { alert('Aucun risque à exporter.'); return; }
-        var wb = new ExcelJS.Workbook(), b = getSstDocumentBranding(), used = { informations: 1 }, cfg = getDuerpCurrentCotationConfig(), done = doneList(), snaps = {}, total = 0;
+        var wb = new ExcelJS.Workbook(), b = getSstDocumentBranding(), used = { informations: 1, 'grille de cotation': 1 }, cfg = getDuerpCurrentCotationConfig(), done = doneList(), snaps = {}, total = 0;
         wb.creator = b.companyName || 'SST'; wb.created = new Date();
         names.forEach(function (n) { snaps[n] = snapshotUnit(n); total += snaps[n].risques.length; });
         var maxV = done.reduce(function (a, r) { return Math.max(a, r.versionDuerp || 0); }, 0), now = new Date();
         var ident = [['Entreprise', b.companyName || '']]; if (b.establishment) ident.push(['Établissement', b.establishment]);
-        ident.push(['Date de l’export', new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))], ['Version du DUERP', maxV ? 'V' + maxV : 'Non versionnée'], ['Unités de travail', names.length], ['Risques évalués', total]);
+        var lastEval = ''; read('duerp_risques').forEach(function (r) { if (r && r.date && String(r.date) > lastEval) lastEval = String(r.date); });
+        ident.push(['Date de l’export', new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))], ['Version du DUERP', maxV ? 'V' + maxV : 'Non versionnée'], ['Dernière évaluation enregistrée', sstXlDate(lastEval)], ['Unités de travail', names.length], ['Risques évalués', total]);
+        var pol = {}; try { pol = (getDuerpPolicy().access) || {}; } catch (e) {}
+        var accessRows = []; if (pol.lieu) accessRows.push(['Lieu de consultation', pol.lieu]); if (pol.horaires) accessRows.push(['Horaires', pol.horaires]); if (pol.contact) accessRows.push(['Contact', pol.contact]);
+        var t1 = cfg.zones[0], t2 = cfg.zones[1];
         var revRows = names.map(function (n) { var l = baseStatus(n).last; return [n, l ? 'Revue du ' + fmt(l.dateRevue) + ' (V' + l.version + ') — ' + (l.participants || []).map(function (p) { return p.nom + ' (' + p.fonction + ')'; }).join(', ') : 'Aucune revue terminée enregistrée']; });
-        sstXlInfo(wb, 'DOCUMENT UNIQUE D’ÉVALUATION DES RISQUES PROFESSIONNELS (DUERP) — VERSION COMPLÈTE', [{ title: 'Identification', rows: ident }, { title: 'Dernière revue de chaque unité', rows: revRows },
-            { title: 'Légende des niveaux de risque', rows: cfg.zones.map(function (z) { var col = ZC[z.key] || ZC.green; return [z.label, 'Niveau de risque', { bg: col[0], fg: col[1] }]; }) },
-            { title: 'À savoir', rows: [['Nature du document', 'Document unique d’évaluation des risques professionnels, une feuille par unité de travail (Code du travail, art. L4121-3 et R4121-2).'], ['Utiliser les filtres', 'Chaque feuille possède des filtres sur la ligne d’en-tête. La première ligne de chaque feuille rappelle la dernière revue de l’unité et les personnes présentes.']] }]);
+        var blocks = [{ title: 'Identification', rows: ident }];
+        if (accessRows.length) blocks.push({ title: 'Consulter le document complet', rows: accessRows });
+        blocks.push({ title: 'Dernière revue de chaque unité', rows: revRows });
+        blocks.push({ title: 'Légende des niveaux de risque', rows: cfg.zones.map(function (z, i) { var col = ZC[z.key] || ZC.green; return [z.label, i === 0 ? 'Score de 1 à ' + z.max : (i === 1 ? 'Score de ' + (t1.max + 1) + ' à ' + z.max : 'Score supérieur à ' + t2.max), { bg: col[0], fg: col[1] }]; }) });
+        blocks.push({ title: 'À savoir', rows: [
+            ['Nature du document', 'Document unique d’évaluation des risques professionnels, une feuille par unité de travail (Code du travail, art. L4121-3 et R4121-2).'],
+            ['Mise à disposition', 'Le DUERP et ses versions antérieures sont conservés et tenus à la disposition des travailleurs, du CSE/CSSCT, du médecin du travail et de l’inspection du travail (art. L4121-3-1 et R4121-4).'],
+            ['Colonne « AT < 3 ans »', 'Références des accidents du travail enregistrés sur la ligne depuis moins de trois ans, pris en compte pour la maîtrise du risque. Aucun nom de salarié.'],
+            ['Contenu de l’export', 'Aucune donnée nominative ni donnée de santé individuelle n’est ajoutée ; les commentaires internes en sont exclus.'],
+            ['Utiliser les filtres', 'Chaque feuille possède des filtres sur la ligne d’en-tête. La première ligne de chaque feuille rappelle la dernière revue de l’unité et les personnes présentes.']] });
+        sstXlInfo(wb, 'DOCUMENT UNIQUE D’ÉVALUATION DES RISQUES PROFESSIONNELS (DUERP) — VERSION COMPLÈTE', blocks);
         names.forEach(function (n) { riskSheet(wb, used, n, snaps[n], revueLine(baseStatus(n).last), maxV ? 'V' + maxV : ''); });
+        var grid = []; try { getDuerpActiveCriteria(cfg).forEach(function (c) { (c.levels || []).forEach(function (l) { grid.push([c.label, l.value, l.label]); }); }); } catch (e) {}
+        sstXlTable(wb, 'Grille de cotation', 'Méthode de cotation des risques', 'Critères et niveaux utilisés pour calculer le score (produit des critères actifs).', ['Critère', 'Valeur', 'Libellé'], [34, 10, 60], grid, { centerCols: [2] });
         await sstXlSave(wb, 'DUERP_' + sstXlName() + '_complet_' + today() + '.xlsx');
     }
     window.sstExportRevueXlsx = exportRevue; window.sstExportDuerpComplet = exportDuerpComplet;
