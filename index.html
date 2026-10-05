@@ -1284,7 +1284,8 @@
                                 <p id="papripact-tab-subtitle" class="text-xs text-slate-500 mt-1">Plan d'action SST conforme à la norme ISO 45001.</p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                <button onclick="exportPapripactXlsx()" class="flex-1 sm:flex-none bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded hover:bg-slate-50 text-sm font-semibold whitespace-nowrap">📤 Exporter (archiver)</button>
+                                <button onclick="document.getElementById('import-pap-file').click()" data-sst-key-write-full="papripact_actions" class="flex-1 sm:flex-none bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded hover:bg-slate-50 text-sm font-semibold whitespace-nowrap">📥 Importer un export</button>
+                                <input type="file" id="import-pap-file" accept=".xlsx" class="hidden" onchange="sstImportPapExport(event)">
                                 <button onclick="sstExportDiffusionPap()" class="flex-1 sm:flex-none bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm font-semibold whitespace-nowrap">📑 Export Excel salariés / CSSCT</button>
                                 <button onclick="openNewPapripactModal()" data-sst-key-write="papripact_actions" class="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-semibold whitespace-nowrap">+ Créer une action</button>
                             </div>
@@ -9771,7 +9772,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 { title:'À savoir', rows:[
                     ['Nature du document', 'Programme annuel de prévention : liste des mesures à prendre, avec indicateur de résultat, estimation du coût, conditions d’exécution et calendrier de réalisation (Code du travail, art. L4121-3-1, III — obligatoire à partir de 50 salariés).'],
                     ['Contenu de l’export', 'Les commentaires internes et les liens techniques de l’application en sont exclus ; aucune donnée nominative n’est ajoutée.'],
-                    ['Utiliser les filtres', 'La feuille PAPRIPACT possède des filtres sur la ligne d’en-tête (statut, unité, échéance, responsable…).']] }]);
+                    ['Utiliser les filtres', 'La feuille PAPRIPACT possède des filtres sur la ligne d’en-tête (statut, unité, échéance, responsable…).'],
+                    ['Réimporter ce fichier', 'Le bouton « Importer un export » de l’onglet PAPRIPACT relit ce fichier (feuilles « PAPRIPACT » et « Liens (import) ») pour restaurer les actions et leurs liens. Les commentaires internes ne figurent pas dans le fichier.']] }]);
             const heads = ['N°', 'Unité de travail', 'Origine', 'Action de prévention', 'Type', 'Priorité', 'Responsable', 'Date de début', 'Échéance', 'Statut', 'Date de clôture', 'Retard', 'Coût estimé (€)', 'Indicateur de résultat', 'Modalités de réalisation', 'Conditions d’exécution', 'Motif de report'];
             const t = sstXlTable(wb, 'PAPRIPACT', 'PAPRIPACT — ' + (getSstDocumentBranding().companyName || ''), 'Export du ' + today.toLocaleDateString('fr-FR') + ' — ' + rows.length + ' action(s)',
                 heads, [6, 22, 12, 46, 12, 9, 18, 13, 13, 12, 13, 11, 14, 28, 34, 34, 28], rows, { freezeCols:1, centerCols:[1, 3, 5, 6, 10, 12], moneyCols:[13], footer:'PAPRIPACT — ' + (getSstDocumentBranding().companyName || '') });
@@ -9779,6 +9781,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             t.ws.addConditionalFormatting({ ref:'J' + t.first + ':J' + t.last, rules:[{ ...st('À traiter', 'FFFFEB9C', 'FF9C5700'), priority:1 }, { ...st('En cours', 'FFDDEBF7', 'FF1F4E79'), priority:2 }, { ...st('Clôturée', 'FFC6EFCE', 'FF006100'), priority:3 }, { ...st('Reportée', 'FFE7E6E6', 'FF595959'), priority:4 }] });
             t.ws.addConditionalFormatting({ ref:'I' + t.first + ':I' + t.last + ' L' + t.first + ':L' + t.last, rules:[{ type:'expression', priority:5, formulae:['$L' + t.first + '="En retard"'], style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:'FFFFC7CE' } }, font:{ bold:true, color:{ argb:'FF9C0006' } } } }] });
             t.ws.addConditionalFormatting({ ref:'A' + t.first + ':H' + t.last + ' K' + t.first + ':K' + t.last + ' M' + t.first + ':Q' + t.last, rules:[{ type:'expression', priority:6, formulae:['$J' + t.first + '="Clôturée"'], style:{ font:{ color:{ argb:'FF64748B' } } } }] });
+            // Feuille technique : références des liens (ligne DUERP, analyse AT, FA, SU, tournée) pour pouvoir réimporter ce fichier sans perdre les liaisons.
+            const lk = sorted.map(a => [a.numero || '', a.duerpRiskId || '', a.sourceAtRef || '', a.atAnalysisId || '', a.atAnalysisCloudId || '', a.atAnalysisReference || '', a.atActionId || '', a.faCode || '', a.suCode || '', a.sourceReference || '', a.tourneeReference || '', a.tourneeItemId || '', (a.tourneeIndex === null || a.tourneeIndex === undefined) ? '' : a.tourneeIndex, a.sourceLinkRemovedAt || '']);
+            sstXlTable(wb, 'Liens (import)', 'Références techniques des liens', 'Ne pas modifier : ces références servent à réimporter ce fichier en conservant les liens vers le DUERP, les analyses AT, les FA, les SU et les tournées.',
+                ['N°', 'Ligne DUERP', 'AT (registre)', 'Analyse AT (id)', 'Analyse AT (id cloud)', 'Analyse AT (réf.)', 'Action de l’analyse AT', 'FA (code)', 'SU (code)', 'Référence source', 'Tournée (réf.)', 'Point de tournée', 'Tournée (n°)', 'Lien source supprimé le'], [8, 18, 16, 22, 22, 18, 22, 16, 16, 18, 18, 22, 12, 22], lk, { centerCols: [1] });
             await sstXlSave(wb, 'PAPRIPACT_' + sstXlName() + '_' + new Date().toISOString().split('T')[0] + '.xlsx');
         }
 
@@ -11036,6 +11042,11 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                     refBadge = `<button onclick='scrollToTourneeItem(${safeTourneeRef}, ${safeItemId}, ${a.tourneeIndex ?? 'null'}, ${safePapOrigin})' class="inline-block px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-800 font-extrabold text-[10px] rounded border border-indigo-200 ml-1 transition cursor-pointer" title="Accéder directement à l'action dans la tournée HSE ${escapeHtml(label)}">🔗 ${escapeHtml(label)}</button>`;
                 }
 
+                // Deuxième badge : une action dont la source n'est pas le DUERP (ex. analyse AT) renvoie aussi à sa ligne du DUERP.
+                if(!a.sourceLinkRemovedAt && a.origine !== 'DUERP' && a.duerpRiskId) {
+                    const _rid = escapeHtml(String(a.duerpRiskId));
+                    refBadge += `<button onclick="scrollToDuerpRisk('${_rid}')" class="inline-block px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-800 font-extrabold text-[10px] rounded border border-indigo-200 ml-1 transition cursor-pointer" title="Accéder directement à la ligne DUERP ${_rid}">🔗 ${_rid}</button>`;
+                }
                 let displayPrio = a.priorite ? `P${a.priorite}` : '-';
 
                 tbody.innerHTML += `
@@ -16392,7 +16403,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     wrap('switchFormationsSubTab', function (orig, args) { var r = orig.apply(this, args); scheduleRestore(); return r; });
     wrap('switchInfSubTab', function (orig, args) { var r = orig.apply(this, args); scheduleRestore(); return r; });
 
-    // ---------- 3. Tri des tableaux (clic sur l'en-tête, ou liste « Trier par » sur téléphone) ----------
+    // ---------- 3. Tri des tableaux : une petite flèche sur chaque en-tête (comme un filtre Excel) ----------
     var sortState = {}, applying = false;
     function parseCell(txt) {
         var t = String(txt || '').replace(/\u00a0/g, ' ').trim(), m;
@@ -16418,13 +16429,14 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     }
     function headCells(t) { return t.tHead && t.tHead.rows[0] ? Array.prototype.slice.call(t.tHead.rows[0].cells) : []; }
     function sortable(th) { var x = (th.textContent || '').trim(); return x.length > 0 && !/^actions?$/i.test(x); }
+    function thText(th) { var c = th.cloneNode(true); Array.prototype.forEach.call(c.querySelectorAll('.sst-sort-ind'), function (n) { n.remove(); }); return (c.textContent || '').replace(/\s+/g, ' ').trim(); }
     function applySort(t) {
         var st = sortState[tableKey(t)], tb = t.tBodies[0];
         if (!tb) return;
         var n = headCells(t).length, rows = Array.prototype.slice.call(tb.rows);
-        if (!rows.length || rows.some(function (r) { return r.cells.length !== n; })) return;
+        if (!rows.length || rows.some(function (r) { return r.cells.length !== n; })) { paintHeaders(t); return; }
         rows.forEach(function (r, i) { if (r.dataset.sstOrig === undefined) r.dataset.sstOrig = String(i); });
-        var items = rows.map(function (r, i) {
+        var items = rows.map(function (r) {
             return { r: r, i: Number(r.dataset.sstOrig), v: st && st.col >= 0 ? parseCell(r.cells[st.col].innerText || r.cells[st.col].textContent) : null };
         });
         items.sort(function (x, y) {
@@ -16435,24 +16447,27 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         try { items.forEach(function (o) { tb.appendChild(o.r); }); } finally { setTimeout(function () { applying = false; }, 0); }
         paintHeaders(t);
     }
+    function chipClass(on) { return 'sst-sortchip px-2.5 py-1 rounded-full border text-xs font-semibold whitespace-nowrap ' + (on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-300'); }
     function paintHeaders(t) {
         var st = sortState[tableKey(t)];
         headCells(t).forEach(function (th, i) {
-            var s = th.querySelector('.sst-sort-ind');
-            if (!s) return;
-            s.textContent = st && st.col === i ? (st.dir === 'desc' ? ' ▼' : ' ▲') : '';
+            var s = th.querySelector('.sst-sort-ind'); if (!s) return;
+            var on = st && st.col === i;
+            s.textContent = on ? (st.dir === 'desc' ? ' ▼' : ' ▲') : ' ⇅';
+            s.style.opacity = on ? '1' : '.4'; s.style.color = on ? '#2563eb' : '';
         });
         var bar = t.__sstBar;
-        if (bar) {
-            var sel = bar.querySelector('select'), btn = bar.querySelector('button');
-            sel.value = st && st.col >= 0 ? String(st.col) : '';
-            btn.textContent = st && st.dir === 'desc' ? 'Z → A' : 'A → Z';
-            btn.disabled = !(st && st.col >= 0);
-        }
+        if (bar) Array.prototype.forEach.call(bar.querySelectorAll('button'), function (b) {
+            var on = st && st.col === Number(b.dataset.col);
+            b.querySelector('.ind').textContent = on ? (st.dir === 'desc' ? '▼' : '▲') : '⇅';
+            b.className = chipClass(on);
+        });
     }
-    function setSort(t, col, dir) {
-        sortState[tableKey(t)] = { col: col, dir: dir || 'asc' };
-        applySort(t);
+    function setSort(t, col, dir) { sortState[tableKey(t)] = { col: col, dir: dir || 'asc' }; applySort(t); }
+    // Excel : 1er clic A→Z, 2e clic Z→A, 3e clic retour à l'ordre d'origine.
+    function cycle(t, i) {
+        var st = sortState[tableKey(t)];
+        if (!st || st.col !== i) setSort(t, i, 'asc'); else if (st.dir === 'asc') setSort(t, i, 'desc'); else setSort(t, -1, 'asc');
     }
     function enhance(t) {
         if (t.__sstSort) return;
@@ -16461,28 +16476,18 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         t.__sstSort = true;
         heads.forEach(function (th, i) {
             if (!sortable(th)) return;
-            th.style.cursor = 'pointer';
-            th.title = 'Trier cette colonne (clic : A → Z, second clic : Z → A)';
-            var s = document.createElement('span'); s.className = 'sst-sort-ind'; th.appendChild(s);
-            th.addEventListener('click', function (e) {
-                if (e.target.closest && e.target.closest('input,button,select,a')) return;
-                var st = sortState[tableKey(t)];
-                setSort(t, i, st && st.col === i && st.dir === 'asc' ? 'desc' : 'asc');
-            });
+            th.style.cursor = 'pointer'; th.style.userSelect = 'none';
+            th.title = 'Trier cette colonne : A → Z, puis Z → A, puis ordre d’origine';
+            var s = document.createElement('span'); s.className = 'sst-sort-ind'; s.textContent = ' ⇅'; s.style.opacity = '.4'; th.appendChild(s);
+            th.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('input,button,select,a')) return; cycle(t, i); });
         });
+        // Sur téléphone les en-têtes du tableau sont masqués par l'application : mêmes flèches, présentées en puces.
         var bar = document.createElement('div');
-        bar.className = 'sst-sortbar flex items-center gap-2 text-xs text-slate-600 mb-2';
-        var opts = '<option value="">Ordre d’origine</option>';
-        heads.forEach(function (th, i) { if (sortable(th)) opts += '<option value="' + i + '">' + (th.textContent || '').replace(/[▲▼]/g, '').replace(/\s+/g, ' ').trim().replace(/</g, '&lt;') + '</option>'; });
-        bar.innerHTML = '<span>Trier par</span><select class="border rounded px-2 py-1 bg-white max-w-[55%]">' + opts + '</select><button type="button" class="border rounded px-2 py-1 bg-white font-semibold">A → Z</button>';
-        bar.querySelector('select').addEventListener('change', function (e) {
-            var v = e.target.value; var st = sortState[tableKey(t)];
-            setSort(t, v === '' ? -1 : Number(v), st && st.dir ? st.dir : 'asc');
-        });
-        bar.querySelector('button').addEventListener('click', function () {
-            var st = sortState[tableKey(t)]; if (!st || st.col < 0) return;
-            setSort(t, st.col, st.dir === 'asc' ? 'desc' : 'asc');
-        });
+        bar.className = 'sst-sortbar flex flex-wrap items-center gap-1.5 mb-2'; bar.style.display = 'none';
+        bar.innerHTML = '<span class="text-xs text-slate-500 mr-1">Trier :</span>' + heads.map(function (th, i) {
+            return sortable(th) ? '<button type="button" data-col="' + i + '" class="' + chipClass(false) + '">' + thText(th).replace(/</g, '&lt;') + ' <span class="ind">⇅</span></button>' : '';
+        }).join('');
+        Array.prototype.forEach.call(bar.querySelectorAll('button'), function (b) { b.addEventListener('click', function () { cycle(t, Number(b.dataset.col)); }); });
         var host = t.closest('.overflow-x-auto') || t;
         host.parentNode.insertBefore(bar, host);
         t.__sstBar = bar;
@@ -16492,10 +16497,11 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         }).observe(tb, { childList: true });
         paintHeaders(t);
     }
+    function barVisible(t) { try { return !!(t.tHead && window.getComputedStyle(t.tHead).display === 'none'); } catch (e) { return false; } }
     function enhanceAll() {
         Array.prototype.forEach.call(document.querySelectorAll('.tab-content table'), function (t) {
             if (t.closest('.sst-no-sort')) return;
-            try { enhance(t); } catch (e) { console.warn('Tri du tableau impossible :', e); }
+            try { enhance(t); if (t.__sstBar) t.__sstBar.style.display = barVisible(t) ? 'flex' : 'none'; } catch (e) { console.warn('Tri du tableau impossible :', e); }
         });
         hideForManager();
     }
@@ -17217,10 +17223,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         while (used[k.toLowerCase()]) { k = n.slice(0, 28) + ' ' + i++; } used[k.toLowerCase()] = 1; return k;
     }
     function riskSheet(wb, used, unite, sn, subtitle, version) {
-        var crit = sn.criteres || [], heads = ['Réf.', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes'].concat(crit, ['Score', 'Niveau de risque', 'AT < 3 ans (maîtrise)', 'Actions de prévention liées (PAPRIPACT)']);
-        var data = (sn.risques || []).map(function (x) { return [x.ref, sstXlDate(x.date), x.danger, x.dommage, x.prevention].concat(x.cotation || [], [x.score, x.niveau, x.at || '', x.actions]); });
+        var crit = sn.criteres || [], heads = ['Réf.', 'Date d’évaluation', 'Danger / situation dangereuse', 'Dommage(s) potentiel(s)', 'Mesures de prévention existantes'].concat(crit, ['Score', 'Niveau de risque', 'AT < 3 ans (maîtrise)', 'Actions de prévention liées (PAPRIPACT)', 'Unité de travail']);
+        var data = (sn.risques || []).map(function (x) { return [x.ref, sstXlDate(x.date), x.danger, x.dommage, x.prevention].concat(x.cotation || [], [x.score, x.niveau, x.at || '', x.actions, unite]); });
         var sc = 5 + crit.length + 1, nc = sc + 1;
-        var t = sstXlTable(wb, nameOf(unite, used), 'DUERP — ' + unite + (version ? ' — ' + version : ''), subtitle, heads, [14, 14, 44, 34, 40].concat(crit.map(function () { return 22; }), [9, 16, 24, 56]), data, { freezeCols: 1, centerCols: [sc, nc], footer: 'DUERP — ' + unite });
+        var t = sstXlTable(wb, nameOf(unite, used), 'DUERP — ' + unite + (version ? ' — ' + version : ''), subtitle, heads, [14, 14, 44, 34, 40].concat(crit.map(function () { return 22; }), [9, 16, 24, 56, 26]), data, { freezeCols: 1, centerCols: [sc, nc], footer: 'DUERP — ' + unite });
         t.ws.getCell(2, 1).alignment = { wrapText: true, vertical: 'top' }; t.ws.getRow(2).height = Math.min(120, 16 * Math.ceil(String(subtitle).length / 140) + 6);
         var L = function (n) { var s = ''; while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); } return s; };
         if (data.length) t.ws.addConditionalFormatting({ ref: L(sc) + t.first + ':' + L(nc) + t.last, rules: (sn.zones || []).map(function (z, i) {
@@ -17274,7 +17280,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             ['Mise à disposition', 'Le DUERP et ses versions antérieures sont conservés et tenus à la disposition des travailleurs, du CSE/CSSCT, du médecin du travail et de l’inspection du travail (art. L4121-3-1 et R4121-4).'],
             ['Colonne « AT < 3 ans »', 'Références des accidents du travail enregistrés sur la ligne depuis moins de trois ans, pris en compte pour la maîtrise du risque. Aucun nom de salarié.'],
             ['Contenu de l’export', 'Aucune donnée nominative ni donnée de santé individuelle n’est ajoutée ; les commentaires internes en sont exclus.'],
-            ['Utiliser les filtres', 'Chaque feuille possède des filtres sur la ligne d’en-tête. La première ligne de chaque feuille rappelle la dernière revue de l’unité et les personnes présentes.']] });
+            ['Utiliser les filtres', 'Chaque feuille possède des filtres sur la ligne d’en-tête. La première ligne de chaque feuille rappelle la dernière revue de l’unité et les personnes présentes.'],
+            ['Réimporter ce fichier', 'Le bouton « Importer des risques » de l’onglet DUERP relit ce fichier pour restaurer les risques (références et cotations conservées). Les actions et leurs liens se restaurent avec l’export du PAPRIPACT.']] });
         sstXlInfo(wb, 'DOCUMENT UNIQUE D’ÉVALUATION DES RISQUES PROFESSIONNELS (DUERP) — VERSION COMPLÈTE', blocks);
         names.forEach(function (n) { riskSheet(wb, used, n, snaps[n], revueLine(baseStatus(n).last), maxV ? 'V' + maxV : ''); });
         var grid = []; try { getDuerpActiveCriteria(cfg).forEach(function (c) { (c.levels || []).forEach(function (l) { grid.push([c.label, l.value, l.label]); }); }); } catch (e) {}
@@ -17366,5 +17373,178 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     }, 700);
 })();
 </script>
+<script>
+/* V2.151 — Réimport des exports Excel (PAPRIPACT et DUERP) : restauration des données et des liens */
+(function () {
+    'use strict';
+    function nk(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+    function str(v) { return v == null ? '' : String(v).trim(); }
+    function xlDate(v) {
+        if (v == null || v === '') return '';
+        if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10);
+        if (typeof v === 'number') { var d = new Date(Math.round((v - 25569) * 86400000)); return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10); }
+        var s = String(v).trim(), m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s);
+        if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+        return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '';
+    }
+    function findHeader(grid, test) {
+        for (var r = 0; r < Math.min(grid.length, 12); r++) {
+            var map = {}; (grid[r] || []).forEach(function (c, i) { var k = nk(c); if (k && map[k] === undefined) map[k] = i; });
+            if (test(map)) return { row: r, map: map };
+        }
+        return null;
+    }
+    function cell(row, map, key) { var i = map[key]; return i === undefined ? '' : row[i]; }
+    function today() { return new Date().toISOString().slice(0, 10); }
+
+    // ---------- PAPRIPACT ----------
+    function parsePap(gridPap, gridLinks, existing) {
+        var h = findHeader(gridPap, function (m) { return m.n !== undefined && m.actiondeprevention !== undefined; });
+        if (!h) return null;
+        var links = {}, lh = gridLinks ? findHeader(gridLinks, function (m) { return m.n !== undefined && m.ligneduerp !== undefined; }) : null;
+        if (lh) gridLinks.slice(lh.row + 1).forEach(function (r) {
+            var n = str(cell(r, lh.map, 'n')); if (!n) return;
+            links[n] = { duerp: str(cell(r, lh.map, 'ligneduerp')), atreg: str(cell(r, lh.map, 'atregistre')), atid: str(cell(r, lh.map, 'analyseatid')), atcloud: str(cell(r, lh.map, 'analyseatidcloud')),
+                atref: str(cell(r, lh.map, 'analyseatref')), atact: str(cell(r, lh.map, 'actiondelanalyseat')), fa: str(cell(r, lh.map, 'facode')), su: str(cell(r, lh.map, 'sucode')), ref: str(cell(r, lh.map, 'referencesource')),
+                tref: str(cell(r, lh.map, 'tourneeref')), titem: str(cell(r, lh.map, 'pointdetournee')), tn: str(cell(r, lh.map, 'tourneen')), supp: str(cell(r, lh.map, 'liensourcesupprimele')) };
+        });
+        var have = {}; (existing || []).forEach(function (a) { have[String(a.numero)] = 1; });
+        var seen = {}, results = [];
+        gridPap.slice(h.row + 1).forEach(function (r) {
+            var m = h.map, nRaw = cell(r, m, 'n'), num = str(nRaw), action = str(cell(r, m, 'actiondeprevention'));
+            if (!num && !action) return;                                   // ligne vide
+            var display = [num || '—', str(cell(r, m, 'unitedetravail')) || '—', action.slice(0, 70) || '—'];
+            if (!num || isNaN(Number(num))) return results.push({ status: 'error', message: 'N° manquant', display });
+            if (!action) return results.push({ status: 'error', message: 'Action manquante', display });
+            if (seen[num]) return results.push({ status: 'error', message: 'N° en double dans le fichier', display });
+            seen[num] = 1;
+            var coutRaw = cell(r, m, 'coutestime'), a = {
+                numero: Number(num), unite: str(cell(r, m, 'unitedetravail')), origine: str(cell(r, m, 'origine')), action: action, type: str(cell(r, m, 'type')), priorite: str(cell(r, m, 'priorite')),
+                responsable: str(cell(r, m, 'responsable')), delai: xlDate(cell(r, m, 'echeance')), statut: str(cell(r, m, 'statut')) || 'À traiter', dateCloture: xlDate(cell(r, m, 'datedecloture')),
+                cout: typeof coutRaw === 'number' ? String(coutRaw) : str(coutRaw), indicateur: str(cell(r, m, 'indicateurderesultat')), realisation: str(cell(r, m, 'modalitesderealisation')),
+                conditionsExecution: str(cell(r, m, 'conditionsdexecution')), motifReport: str(cell(r, m, 'motifdereport'))
+            };
+            var dc = xlDate(cell(r, m, 'datededebut')); if (dc) a.dateCreation = dc;
+            var lk = links[num];
+            if (lk) {
+                if (lk.duerp) a.duerpRiskId = lk.duerp; if (lk.atreg) a.sourceAtRef = lk.atreg; if (lk.atid) a.atAnalysisId = lk.atid; if (lk.atcloud) a.atAnalysisCloudId = lk.atcloud;
+                if (lk.atref) a.atAnalysisReference = lk.atref; if (lk.atact) a.atActionId = lk.atact; if (lk.fa) a.faCode = lk.fa; if (lk.su) a.suCode = lk.su; if (lk.ref) a.sourceReference = lk.ref;
+                if (lk.tref) a.tourneeReference = lk.tref; if (lk.titem) a.tourneeItemId = lk.titem; if (lk.tn !== '' && !isNaN(Number(lk.tn))) a.tourneeIndex = Number(lk.tn); if (lk.supp) a.sourceLinkRemovedAt = lk.supp;
+            }
+            if (have[num]) results.push({ status: 'warning', message: 'Existe déjà : sera remplacée par le contenu du fichier', display, data: a });
+            else results.push({ status: 'ok', display, data: a });
+        });
+        return { results: results, linksFound: Object.keys(links).length };
+    }
+    function mergeActions(existing, incoming) {
+        var idx = {}, added = 0, updated = 0; existing.forEach(function (a, i) { idx[String(a.numero)] = i; });
+        incoming.forEach(function (inc) {
+            var k = String(inc.numero);
+            if (idx[k] !== undefined) { existing[idx[k]] = Object.assign({}, existing[idx[k]], inc); updated++; }
+            else { existing.push(inc); idx[k] = existing.length - 1; added++; }
+        });
+        return { added: added, updated: updated };
+    }
+    window.sstImportPapExport = async function (event) {
+        var file = event.target.files[0]; if (!file) return; event.target.value = '';
+        if (typeof XLSX === 'undefined') { alert('La lecture des fichiers Excel n’a pas pu se charger (connexion internet requise).'); return; }
+        var wb; try { wb = XLSX.read(await file.arrayBuffer(), { type: 'array' }); } catch (e) { alert('Fichier illisible.'); return; }
+        var read = function (n) { return wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) : null; };
+        var gp = read('PAPRIPACT'); if (!gp) { alert('Ce fichier n’est pas un export du PAPRIPACT (feuille « PAPRIPACT » introuvable).'); return; }
+        var existing = []; try { existing = JSON.parse(localStorage.getItem('papripact_actions') || '[]'); } catch (e) {}
+        var parsed = parsePap(gp, read('Liens (import)'), existing);
+        if (!parsed) { alert('Les colonnes attendues (N°, Action de prévention…) sont introuvables : le fichier a-t-il été modifié ?'); return; }
+        sstOpenImportPreview({
+            title: 'Aperçu — Import du PAPRIPACT',
+            subtitle: '« ' + file.name + ' » : ' + parsed.results.length + ' ligne(s) lue(s)' + (parsed.linksFound ? ', ' + parsed.linksFound + ' lien(s) retrouvé(s).' : ' — feuille « Liens (import) » absente : les liens vers le DUERP, les AT, FA, SU et tournées ne seront pas restaurés.'),
+            columns: ['N°', 'Unité', 'Action'], results: parsed.results,
+            onConfirm: async function (validRows) {
+                var rows = validRows.filter(Boolean), cur = []; try { cur = JSON.parse(localStorage.getItem('papripact_actions') || '[]'); } catch (e) {}
+                var res = mergeActions(cur, rows), max = cur.reduce(function (m, a) { return Math.max(m, Number(a.numero) || 0); }, 0);
+                localStorage.setItem('papripact_actions', JSON.stringify(cur));
+                var next = Number(localStorage.getItem('papripact_next_action_num') || 0); if (next <= max) localStorage.setItem('papripact_next_action_num', String(max + 1));
+                try { if (window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant()) { await sstV247CommitKeys('papripact_actions'); await sstV247CommitKeys('papripact_next_action_num'); } } catch (e) { console.warn(e); }
+                if (typeof loadPapripact === 'function') loadPapripact();
+                alert(res.added + ' action(s) ajoutée(s), ' + res.updated + ' mise(s) à jour.' + (parsed.linksFound ? '' : '\nAucun lien restauré (feuille « Liens (import) » absente).'));
+            }
+        });
+    };
+
+    // ---------- DUERP ----------
+    function parseDuerp(sheets, criteria, unitesConnues, existing) {
+        var have = {}; (existing || []).forEach(function (r) { if (r && r.riskId) have[r.riskId] = 1; });
+        var known = {}; (unitesConnues || []).forEach(function (u) { known[String(u).toLowerCase()] = u; });
+        var results = [], seen = {}, found = 0;
+        sheets.forEach(function (sh) {
+            var h = findHeader(sh.grid, function (m) { return m.ref !== undefined && m.dangersituationdangereuse !== undefined; });
+            if (!h) return; found++;
+            var titleUnit = ''; var t = str((sh.grid[0] || [])[0]);
+            if (/^DUERP\s*[—–-]\s*/.test(t)) titleUnit = t.replace(/^DUERP\s*[—–-]\s*/, '').replace(/\s*[—–-]\s*V\d+\s*$/, '').trim();
+            sh.grid.slice(h.row + 1).forEach(function (r) {
+                var m = h.map, ref = str(cell(r, m, 'ref')), danger = str(cell(r, m, 'dangersituationdangereuse'));
+                if (!ref && !danger) return;
+                var unite = str(cell(r, m, 'unitedetravail')) || titleUnit || sh.name, display = [ref || '—', unite || '—', danger.slice(0, 70) || '—'];
+                if (!danger) return results.push({ status: 'error', message: 'Danger manquant', display });
+                if (!ref) return results.push({ status: 'error', message: 'Référence manquante', display });
+                if (seen[ref]) return results.push({ status: 'error', message: 'Référence en double dans le fichier', display });
+                seen[ref] = 1;
+                var lines = function (v) { return str(v).split(/\n+/).map(function (x) { return x.trim(); }).filter(Boolean).join('; '); };
+                var d = { riskId: ref, unite: known[unite.toLowerCase()] || unite, date: xlDate(cell(r, m, 'datedevaluation')) || today(), danger: danger, dommage: lines(cell(r, m, 'dommagespotentiels')), prevention: lines(cell(r, m, 'mesuresdepreventionexistantes')) };
+                var miss = false;
+                (criteria || []).forEach(function (c) { var v = parseInt(String(cell(r, m, nk(c.label)) || '').trim(), 10); if (isFinite(v) && v >= 1) d[c.key] = String(v); else miss = true; });
+                var msgs = []; if (!known[unite.toLowerCase()]) msgs.push('unité « ' + unite + ' » créée automatiquement'); if (miss) msgs.push('cotation incomplète (valeurs par défaut à vérifier)'); if (have[ref]) msgs.push('existe déjà : sera mise à jour');
+                results.push(msgs.length ? { status: 'warning', message: msgs.join(' ; '), display, data: d } : { status: 'ok', display, data: d });
+            });
+        });
+        return found ? results : null;
+    }
+    function readSheets(wb) { return wb.SheetNames.map(function (n) { return { name: n, grid: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) }; }); }
+    function isDuerpExport(wb) {
+        return readSheets(wb).some(function (sh) { return !!findHeader(sh.grid, function (m) { return m.ref !== undefined && m.dangersituationdangereuse !== undefined; }); });
+    }
+    async function importDuerpExport(file, wb) {
+        var unites = []; try { unites = JSON.parse(localStorage.getItem('unites_travail') || '[]').map(function (u) { return u.nom; }).filter(Boolean); } catch (e) {}
+        var existing = []; try { existing = JSON.parse(localStorage.getItem('duerp_risques') || '[]'); } catch (e) {}
+        var crit = []; try { crit = getDuerpActiveCriteria(getDuerpCurrentCotationConfig()); } catch (e) {}
+        var results = parseDuerp(readSheets(wb), crit, unites, existing);
+        if (!results) { alert('Aucun tableau de risques reconnu dans ce fichier.'); return; }
+        sstOpenImportPreview({
+            title: 'Aperçu — Import du DUERP (export)', subtitle: '« ' + file.name + ' » : ' + results.length + ' risque(s) lu(s). Les risques déjà présents (même référence) sont mis à jour, aucun n’est supprimé.',
+            columns: ['Réf.', 'Unité', 'Danger'], results: results,
+            onConfirm: async function (validRows) {
+                var rows = validRows.filter(Boolean), us = [], rs = []; try { us = JSON.parse(localStorage.getItem('unites_travail') || '[]'); rs = JSON.parse(localStorage.getItem('duerp_risques') || '[]'); } catch (e) {}
+                var newUnits = 0, added = 0, updated = 0, idx = {}; rs.forEach(function (r, i) { if (r && r.riskId) idx[r.riskId] = i; });
+                rows.forEach(function (d) {
+                    if (!us.some(function (u) { return (u.nom || '').toLowerCase() === d.unite.toLowerCase(); })) { us.push({ nom: d.unite, parent: '' }); newUnits++; }
+                    if (idx[d.riskId] !== undefined) { rs[idx[d.riskId]] = Object.assign({}, rs[idx[d.riskId]], d); updated++; } else { rs.push(d); idx[d.riskId] = rs.length - 1; added++; }
+                });
+                if (newUnits) localStorage.setItem('unites_travail', JSON.stringify(us));
+                localStorage.setItem('duerp_risques', JSON.stringify(rs));
+                try { if (window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant()) { if (newUnits) await sstV247CommitKeys('unites_travail'); await sstV247CommitKeys('duerp_risques'); } } catch (e) { console.warn(e); }
+                if (newUnits && typeof loadUnites === 'function') loadUnites();
+                if (typeof loadDuerp === 'function') loadDuerp();
+                alert(added + ' risque(s) ajouté(s), ' + updated + ' mis à jour' + (newUnits ? ', ' + newUnits + ' unité(s) créée(s)' : '') + '.');
+            }
+        });
+    }
+    // Le bouton « Importer des risques » reconnaît désormais aussi le fichier produit par l'export du DUERP.
+    var orig = window.importDuerpFile;
+    if (typeof orig === 'function' && !orig.__rv151) {
+        var w = async function (event) {
+            var file = event && event.target && event.target.files && event.target.files[0];
+            if (file && /\.xlsx$/i.test(file.name) && typeof XLSX !== 'undefined') {
+                try {
+                    var wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                    if (isDuerpExport(wb)) { event.target.value = ''; return importDuerpExport(file, wb); }
+                } catch (e) { console.warn(e); }
+            }
+            return orig(event);
+        };
+        w.__rv151 = true; window.importDuerpFile = w;
+    }
+    window.__sstImp = { parsePap: parsePap, parseDuerp: parseDuerp, mergeActions: mergeActions, xlDate: xlDate };
+})();
+</script>
+
 </body>
 </html>
