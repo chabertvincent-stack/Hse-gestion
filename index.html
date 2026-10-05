@@ -2551,6 +2551,7 @@
                             <section class="border rounded-xl p-4 bg-white">
                                 <div class="flex items-center gap-2 mb-3"><span class="text-lg">6️⃣</span><h4 class="text-sm font-bold text-slate-800">Actions issues de l'analyse</h4></div>
                                 <p class="text-[11px] text-slate-500 mb-3">Les actions enregistrées ici sont automatiquement créées dans le PAPRIPACT avec l'origine « Analyse AT ».</p>
+                                <div id="at-analysis-risk-info" class="mb-2 text-[11px] rounded border p-2 bg-slate-50 text-slate-600"></div>
                                 <div id="at-analysis-actions-list" class="space-y-2"></div>
                                 <button type="button" onclick="addAtAnalysisActionRow()" class="mt-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-2 rounded text-xs font-semibold">+ Ajouter une action PAPRIPACT</button>
                             </section>
@@ -10344,7 +10345,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                             <td class="p-3 border-b" data-label="Réf. & Danger">
                                 <button onclick="scrollToDuerpRisk('${riskId}')" class="inline-block px-1.5 py-0.5 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-700 font-extrabold text-[10px] rounded mb-1 transition cursor-pointer" title="Cliquer pour accéder directement à cette ligne">${riskId}</button>
                                 <div class="text-xs text-slate-600">${escapeHtml(r.danger)}</div>
-                                ${typeof sstDuerpAtBadge === 'function' ? sstDuerpAtBadge(riskId) : ''}
+                                ${typeof sstDuerpAtBadge === 'function' ? sstDuerpAtBadge(riskId, r) : ''}
                             </td>
                             <td class="p-3 border-b text-xs" data-label="Dommage potentiel">${sstDuerpListHtml(r.dommage)}</td>
                             <td class="p-3 border-b text-xs" data-label="Mesures actuelles">${sstDuerpListHtml(r.prevention)}</td>
@@ -10444,7 +10445,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             if(editDuerpIndex !== null && editDuerpIndex !== "") {
                 const existing = risques[editDuerpIndex];
                 let existingRiskId = existing.riskId || ("DUERP-R" + String(parseInt(editDuerpIndex) + 1).padStart(3, '0'));
-                const updated = { ...existing, riskId: existingRiskId, unite, date, danger, dommage, prevention, gravite, frequence, maitrise, duerpCotationValues: { ...(existing.duerpCotationValues||{}), ...riskValues.values } };
+                const updated = { ...existing, revuLe: new Date().toISOString().slice(0, 10), riskId: existingRiskId, unite, date, danger, dommage, prevention, gravite, frequence, maitrise, duerpCotationValues: { ...(existing.duerpCotationValues||{}), ...riskValues.values } };
                 // Un ancien risque sans snapshot conserve volontairement sa grille historique.
                 risques[editDuerpIndex] = updated;
             } else {
@@ -13183,12 +13184,16 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
         async function syncAtAnalysisPapripactActions(analysisObj) {
             let actions=JSON.parse(localStorage.getItem('papripact_actions')||'[]');
+            // Ligne du DUERP concernée = celle indiquée sur l'AT dans le registre : les actions lui sont rattachées automatiquement.
+            let _riskId='';
+            try { const _ref=analysisObj.sourceAtRef||''; const _at=_ref ? JSON.parse(localStorage.getItem('at_registre')||'[]').find(x=>x && x.ref===_ref) : null; _riskId=(_at && _at.riskId) || ''; } catch(e) {}
             const existingIds=new Set();
             const affectedBefore = actions.filter(x=>x.atAnalysisId===analysisObj.id || x.atAnalysisCloudId===analysisObj._cloudId || x.atAnalysisReference===analysisObj.reference);
             (analysisObj.actionsPapripact||[]).forEach(a=>{
                 const idx=actions.findIndex(x=> (x.atAnalysisId===analysisObj.id || x.atAnalysisCloudId===analysisObj._cloudId || x.atAnalysisReference===analysisObj.reference) && x.atActionId===a.id);
                 const actionObj={
                     origine:'AT', sourceType:'AT', sourceReference:analysisObj.reference || analysisObj.sourceAtRef || '', atAnalysisId:analysisObj.id, atAnalysisCloudId:analysisObj._cloudId || '', atAnalysisReference:analysisObj.reference || '', atRegistryReference:analysisObj.sourceAtRef || '', atActionId:a.id, duerpRiskId:'', duerpIndex:null,
+                    ...(_riskId ? { duerpRiskId:_riskId } : {}),
                     unite:analysisObj.service||'', action:a.action, type:'Technique', priorite:a.priorite||'2', statut:a.statut||'À traiter', responsable:a.responsable||'',
                     dateCreation:analysisObj.dateAnalyse||new Date().toISOString().split('T')[0], delai:a.delai||'', dateCloture:'', cout:'',
                     commentaires:`Action issue de l'analyse AT ${analysisObj.reference||analysisObj.sourceAtRef||analysisObj.id}`
@@ -16061,6 +16066,22 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 });
             }
 
+            // DUERP : ligne dont un AT rattaché est postérieur à la dernière évaluation → cotation à revoir.
+            if(sstNotifCan('duerp') && typeof window.sstDuerpRecotation === 'function') {
+                try {
+                    JSON.parse(localStorage.getItem('duerp_risques') || '[]').forEach((r, i) => {
+                        const riskId = r.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0'));
+                        const ats = window.sstDuerpRecotation(r, riskId);
+                        if(!ats.length || !_inU(r.unite)) return;
+                        sstNotifAdd(list, {
+                            severity: 'warning', category: 'DUERP',
+                            title: `${riskId} — cotation à revoir`,
+                            detail: `${r.danger || 'Risque'} (${r.unite || ''}) : AT ${ats[0].ref || ''} survenu depuis la dernière évaluation.`,
+                            module: 'DUERP', target: { tab: 'duerp', riskId }, sortDate: 0
+                        });
+                    });
+                } catch(e) {}
+            }
             // DUERP : risques cotés au niveau le plus élevé sans action PAPRIPACT associée.
             if(sstNotifCan('duerp') && sstNotifCan('papripact')) {
                 try {
@@ -16834,17 +16855,33 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         return read('at_registre').filter(function (a) { return a && a.riskId && a.riskId === riskId && a.classification !== 'Accident de trajet' && a.date && String(a.date) >= l; })
             .sort(function (x, y) { return String(y.date).localeCompare(String(x.date)); });
     }
-    window.sstDuerpAtBadge = function (riskId) {
-        var l = atRecent(riskId); if (!l.length) return '';
-        return '<div class="text-[10px] text-red-700 font-semibold mt-1">⚠ AT &lt; 3 ans : ' + esc(l.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join(', ')) + '</div>';
+    // Cotation à revoir : un AT (hors trajet) rattaché à la ligne est postérieur à sa dernière évaluation ou relecture.
+    // Se lève toute seule quand la ligne est enregistrée ou validée en revue.
+    window.sstDuerpRecotation = function (r, riskId) {
+        var since = String((r && (r.revuLe || r.date)) || '');
+        return read('at_registre').filter(function (a) { return a && a.riskId && a.riskId === riskId && a.classification !== 'Accident de trajet' && a.date && String(a.date) > since; })
+            .sort(function (x, y) { return String(y.date).localeCompare(String(x.date)); });
+    };
+    window.sstDuerpAtBadge = function (riskId, r) {
+        var out = '', rc = r ? window.sstDuerpRecotation(r, riskId) : [], l = atRecent(riskId);
+        if (rc.length) out += '<div class="text-[10px] text-white bg-red-600 rounded px-1.5 py-0.5 inline-block font-semibold mt-1">⚠ Cotation à revoir — AT ' + esc((rc[0].ref || '') + ' (' + fmt(rc[0].date) + ')') + '</div> ';
+        if (l.length) out += '<div class="text-[10px] text-red-700 font-semibold mt-1">AT &lt; 3 ans : ' + esc(l.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join(', ')) + '</div>';
+        return out;
     };
     window.sstAtrFillRisks = function (selected) {
         var sel = document.getElementById('atr-risque'); if (!sel) return;
         var u = (document.getElementById('atr-unite') || {}).value || '', opts = '<option value="">— Aucune / à définir —</option>';
         read('duerp_risques').forEach(function (r, i) { if (!r || (r.unite || '') !== u) return; var id = rid(r, i); opts += '<option value="' + esc(id) + '"' + (id === selected ? ' selected' : '') + '>' + esc(id + ' — ' + (r.danger || '')) + '</option>'; });
-        sel.innerHTML = opts; if (selected) sel.value = selected;
+        sel.innerHTML = opts; sel.dataset.unit = u; if (selected) sel.value = selected;
     };
     document.addEventListener('change', function (e) { if (e.target && e.target.id === 'atr-unite') window.sstAtrFillRisks(''); });
+    // L'unité est souvent remplie automatiquement quand on choisit la personne (sans événement « change ») :
+    // on surveille donc l'unité et on met la liste des lignes du DUERP à jour dès qu'elle change.
+    setInterval(function () {
+        var u = document.getElementById('atr-unite'), sel = document.getElementById('atr-risque');
+        if (!u || !sel || !sel.offsetParent) return;
+        if ((sel.dataset.unit || '') !== (u.value || '')) window.sstAtrFillRisks('');
+    }, 300);
     function unitRisks(u) { return read('duerp_risques').map(function (r, i) { return { r: r, i: i, id: rid(r, i) }; }).filter(function (x) { return (x.r.unite || '') === u; }); }
     function unitNames() {
         var set = {}, out = [];
@@ -17072,6 +17109,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
                 '<div class="text-xs text-slate-600 mt-2"><b>Dommages :</b> ' + esc(String(x.r.dommage || '—').replace(/;/g, ' ; ')) + '</div>' +
                 '<div class="text-xs text-slate-600 mt-1"><b>Moyens de prévention :</b> ' + esc(String(x.r.prevention || '—').replace(/;/g, ' ; ')) + '</div>' +
                 '<div class="text-xs text-slate-600 mt-1"><b>Cotation :</b> ' + (cotationLines(x.r).map(esc).join(' · ') || '—') + (calc ? ' → score ' + esc(calc.score) : '') + '</div>' +
+                (window.sstDuerpRecotation(x.r, x.id).length ? '<div class="mt-2 text-xs bg-red-600 text-white rounded p-2">⚠ Un accident du travail (' + esc(window.sstDuerpRecotation(x.r, x.id)[0].ref || 'AT') + ') est survenu depuis la dernière évaluation de cette ligne : <b>la cotation doit être revue</b>.</div>' : '') +
                 (at.length ? '<div class="mt-2 text-xs bg-red-50 border border-red-200 text-red-800 rounded p-2">⚠ <b>' + at.length + ' accident(s) du travail de moins de 3 ans</b> sur cette ligne : ' + esc(at.map(function (a) { return (a.ref || 'AT') + ' (' + fmt(a.date) + ')'; }).join(', ')) + '. À prendre en compte dans la cotation de la maîtrise.</div>' : '') +
                 '<div class="mt-2"><div class="text-[11px] font-semibold text-slate-500 mb-1">Actions PAPRIPACT liées (' + open.length + ' à faire / en cours · ' + closed.length + ' clôturée(s))</div><div class="space-y-1">' +
                 (open.map(actLine).join('') + closed.map(actLine).join('') || '<div class="text-xs text-slate-400 italic">Aucune action liée à ce risque.</div>') + '</div></div>' + checks +
@@ -17132,12 +17170,21 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             var cur = revues().filter(function (r) { return r.id === id; })[0]; if (!cur) return;
             var pr = progress(cur); if (pr.todo) { alert('Des risques restent à revoir.'); return; }
             var changes = computeChanges(cur), snap = snapshotUnit(cur.unite), all = revues(), c = ctx() || {};
+            var okIds = unitRisks(cur.unite).filter(function (x) { return riskState(cur, x) === 'ok'; }).map(function (x) { return x.id; });
             var doneU = all.filter(function (r) { return !isDraft(r) && r.unite === cur.unite; }).length, maxV = all.filter(function (r) { return !isDraft(r); }).reduce(function (a, r) { return Math.max(a, r.versionDuerp || 0); }, 0);
             var rec = { id: cur.id, statut: 'terminee', unite: cur.unite, dateRevue: cur.dateRevue, dateFin: new Date().toISOString(), prochaineRevue: m.querySelector('#rf-next').value || plusYear(cur.dateRevue), motif: cur.motif, refAt: cur.refAt || '',
                 participants: cur.participants, decisions: m.querySelector('#rf-dec').value.trim(), version: doneU + 1, versionDuerp: maxV + 1, nbRisques: snap.risques.length, criteres: snap.criteres, zones: snap.zones, risques: snap.risques,
                 changes: changes, revus: { total: pr.total, inchanges: pr.total - changes.modifies.length - changes.ajoutes.length, modifies: changes.modifies.length, nouveaux: changes.ajoutes.length, supprimes: changes.supprimes.length },
                 creePar: cur.creePar || '', creeParEmail: cur.creeParEmail || '', creeLe: cur.creeLe || '', clotureePar: c.displayName || c.email || '' };
             await saveAll(all.map(function (r) { return r.id === id ? rec : r; }));
+            // Les lignes validées en revue sont considérées à jour (lève le signal « cotation à revoir »).
+            try {
+                if (okIds.length) {
+                    var rs = read('duerp_risques'), touched = false;
+                    rs.forEach(function (r, i) { if (okIds.indexOf(rid(r, i)) >= 0) { r.revuLe = cur.dateRevue; touched = true; } });
+                    if (touched) { localStorage.setItem('duerp_risques', JSON.stringify(rs)); if (window.SSTCloud && window.SSTCloud.isCloudTenant && window.SSTCloud.isCloudTenant()) await sstV247CommitKeys('duerp_risques'); if (typeof loadDuerp === 'function') loadDuerp(); }
+                }
+            } catch (e) { console.warn('Mise à jour des lignes relues impossible :', e); }
             closeModal(); closeRun(); window.sstRenderDuerpRevues();
             if (window.confirm('Revue terminée (V' + rec.version + ' de « ' + rec.unite + ' »).\n\nTélécharger maintenant le DUERP complet (une feuille par unité) pour le dossier de partage ?')) exportDuerpComplet();
         });
@@ -17300,5 +17347,24 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 })();
 </script>
 
+<script>
+/* V2.149 — Analyse AT : indique la ligne du DUERP à laquelle les actions seront rattachées */
+(function () {
+    'use strict';
+    function read(k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } }
+    setInterval(function () {
+        var box = document.getElementById('at-analysis-risk-info'); if (!box || !box.offsetParent) return;
+        var ref = ((document.getElementById('at-source-at-ref') || {}).value || '').trim();
+        var at = ref ? read('at_registre').filter(function (x) { return x && x.ref === ref; })[0] : null, html = '', cls = 'mb-2 text-[11px] rounded border p-2 ';
+        if (!ref) { html = 'Aucun AT du registre n’est rattaché à cette analyse : les actions seront créées dans le PAPRIPACT sans ligne du DUERP.'; cls += 'bg-slate-50 text-slate-600'; }
+        else if (!at || !at.riskId) { html = '⚠ L’AT ' + ref + ' n’est relié à aucune ligne du DUERP. Choisissez-la dans le registre AT (champ « Ligne du DUERP concernée ») pour que les actions soient rattachées à cette ligne.'; cls += 'bg-amber-50 border-amber-200 text-amber-800'; }
+        else {
+            var r = read('duerp_risques').filter(function (x, i) { return (x.riskId || ('DUERP-R' + String(i + 1).padStart(3, '0'))) === at.riskId; })[0];
+            html = '✓ Les actions seront rattachées à la ligne <b>' + at.riskId + '</b>' + (r && r.danger ? ' — ' + String(r.danger).replace(/</g, '&lt;') : '') + ' du DUERP. Sa cotation sera signalée « à revoir ».'; cls += 'bg-green-50 border-green-200 text-green-800';
+        }
+        if (box.innerHTML !== html) box.innerHTML = html; box.className = cls;
+    }, 700);
+})();
+</script>
 </body>
 </html>
