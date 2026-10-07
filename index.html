@@ -3585,7 +3585,10 @@
                 window.SST_FIREBASE = { app: firebaseApp, auth: firebaseAuth, db: firebaseDb };
                 authUnsubscribe = onAuthStateChanged(firebaseAuth, async user => {
                     if(!user) {
+                        // Déconnexion pendant que l'application est ouverte : on repart d'une page vierge (aucune donnée de l'ancien compte à l'écran).
+                        const _wasSignedIn = !!window.SST_APP_CONTEXT;
                         window.SST_APP_CONTEXT = null;
+                        if(_wasSignedIn) { window.location.reload(); return; }
                         setAppLocked(true);
                         showAuthLoading(false);
                         showAuthGate(true);
@@ -3613,6 +3616,7 @@
                                 companyData = { id: companySnap.id, ...(companySnap.data() || {}) };
                             }
                         }
+                        try { if (typeof window.sstPurgeIfUserChanged === 'function') window.sstPurgeIfUserChanged(user.uid); } catch (e) { console.warn(e); }
                         window.SST_APP_CONTEXT = computeContext(userData, companyData, user);
                         // Important for first-time/private-browser logins: DOMContentLoaded
                         // may already have fired before the user signs in. Scope and hydrate
@@ -3627,6 +3631,7 @@
                         setAppLocked(false);
                         showAuthLoading(false);
                         showAuthGate(false);
+                        try { if (typeof window.sstRefreshActiveView === 'function') window.sstRefreshActiveView(); } catch (e) {}
                         authReadyResolve(true);
                     } catch(err) {
                         console.error(err);
@@ -16353,6 +16358,29 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         });
     </script>
 <script>
+/* V2.153 — Minuteur central : une seule horloge pour les vérifications périodiques ajoutées depuis la V2.139 (en pause quand l'onglet est caché) */
+(function () {
+    'use strict';
+    var tasks = [], timer = null;
+    function tick() {
+        if (document.hidden) return;
+        var now = Date.now();
+        for (var i = 0; i < tasks.length; i++) {
+            var t = tasks[i]; if (t.stopped || now < t.next) continue;
+            t.next = now + t.ms;
+            try { t.fn(); } catch (e) { console.warn('Tâche périodique :', e); }
+        }
+        tasks = tasks.filter(function (t) { return !t.stopped; });
+    }
+    window.sstEvery = function (fn, ms) {
+        var t = { fn: fn, ms: Math.max(250, ms || 1000), next: Date.now() + Math.min(ms || 1000, 500), stopped: false, stop: function () { t.stopped = true; } };
+        tasks.push(t); if (!timer) timer = setInterval(tick, 250); return t;
+    };
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+})();
+</script>
+
+<script>
 /* V2.139 — Filtres conservés pendant la session, tri des tableaux, éléments réservés aux non-managers */
 (function () {
     'use strict';
@@ -16506,7 +16534,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         });
         hideForManager();
     }
-    setInterval(enhanceAll, 1500);
+    sstEvery(enhanceAll, 1500);
     window.sstEnhanceTables = enhanceAll;
     window.__sstSortHelpers = { parseCell: parseCell, compare: compare };
 })();
@@ -16694,7 +16722,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         lastKey = 'sst_last_visit_' + c.uid;
         try { sinceTs = Number(localStorage.getItem(lastKey) || 0); } catch (e) { sinceTs = 0; }
         var tick = function () { try { localStorage.setItem(lastKey, String(Date.now())); } catch (e) {} };
-        tick(); setInterval(tick, 30000);
+        tick(); sstEvery(tick, 30000);
         window.addEventListener('pagehide', tick);
         return true;
     }
@@ -16811,7 +16839,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         } catch (err) { alert('Opération impossible : ' + (err && err.message || err)); }
     }
     window.sstOpenJournal = openJournal;
-    var boot = setInterval(function () { if (initSession()) { clearInterval(boot); setInterval(installButton, 2000); installButton(); } }, 1000);
+    var boot = sstEvery(function () { if (initSession()) { boot.stop(); sstEvery(installButton, 2000); installButton(); } }, 1000);
 })();
 </script>
 
@@ -16884,7 +16912,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     document.addEventListener('change', function (e) { if (e.target && e.target.id === 'atr-unite') window.sstAtrFillRisks(''); });
     // L'unité est souvent remplie automatiquement quand on choisit la personne (sans événement « change ») :
     // on surveille donc l'unité et on met la liste des lignes du DUERP à jour dès qu'elle change.
-    setInterval(function () {
+    sstEvery(function () {
         var u = document.getElementById('atr-unite'), sel = document.getElementById('atr-risque');
         if (!u || !sel || !sel.offsetParent) return;
         if ((sel.dataset.unit || '') !== (u.value || '')) window.sstAtrFillRisks('');
@@ -17078,10 +17106,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
     function leaveFor(id, openFn, modalIds) {
         var el = document.getElementById('sst-revue-run'); if (el) el.style.display = 'none';
         try { openFn(); } catch (e) { console.warn(e); if (el) el.style.display = ''; return; }
-        var tries = 0, t = setInterval(function () {
+        var tries = 0, t = sstEvery(function () {
             tries++;
             var open = modalIds.some(function (m) { var x = document.getElementById(m); return x && !x.classList.contains('hidden'); });
-            if (!open && tries > 2) { clearInterval(t); var e2 = document.getElementById('sst-revue-run'); if (e2) { e2.style.display = ''; renderRun(id); } }
+            if (!open && tries > 2) { t.stop(); var e2 = document.getElementById('sst-revue-run'); if (e2) { e2.style.display = ''; renderRun(id); } }
         }, 400);
     }
     function renderRun(id) {
@@ -17322,8 +17350,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         };
         w.__rv = true; window.saveAtRegistre = w;
     }
-    setInterval(wrapAt, 2000);
-    setInterval(function () { var c = document.getElementById('duerp-revues-card'); if (c && !c.firstChild && ctx()) window.sstRenderDuerpRevues(); }, 2000);
+    sstEvery(wrapAt, 2000);
+    sstEvery(function () { var c = document.getElementById('duerp-revues-card'); if (c && !c.firstChild && ctx()) window.sstRenderDuerpRevues(); }, 2000);
 })();
 </script>
 
@@ -17355,10 +17383,10 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             v.insertBefore(d, v.firstChild);
         }
     }
-    setInterval(lockTournee, 500);
+    sstEvery(lockTournee, 500);
     // La fiche salarié (360) doit pouvoir s'ouvrir depuis une notification quel que soit l'onglet affiché.
     var moved = false;
-    setInterval(function () {
+    sstEvery(function () {
         if (moved) return;
         var t = document.getElementById('sst-salarie-fiche-title'); if (!t) return;
         var root = t;
@@ -17373,7 +17401,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
 (function () {
     'use strict';
     function read(k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } }
-    setInterval(function () {
+    sstEvery(function () {
         var box = document.getElementById('at-analysis-risk-info'); if (!box || !box.offsetParent) return;
         var ref = ((document.getElementById('at-source-at-ref') || {}).value || '').trim();
         var at = ref ? read('at_registre').filter(function (x) { return x && x.ref === ref; })[0] : null, html = '', cls = 'mb-2 text-[11px] rounded border p-2 ';
@@ -17619,7 +17647,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         document.addEventListener('click', function () { menu.classList.add('hidden'); });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') menu.classList.add('hidden'); });
         // Le bouton disparaît quand aucune action n'est permise à l'utilisateur.
-        setInterval(function () {
+        sstEvery(function () {
             var any = Array.prototype.some.call(menu.children, function (k) { return !k.classList.contains('hidden') && k.style.display !== 'none' && k.getAttribute('data-sst-act-hidden') !== '1'; });
             wrap.style.display = any ? '' : 'none';
         }, 1200);
@@ -17630,7 +17658,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         var p = document.querySelector('#tab-papripact button[onclick*="openNewPapripactModal"]');
         if (p) buildMenu(p.parentElement, function (c) { var o = c.getAttribute('onclick') || ''; return /openNewPapripactModal|sstExportDiffusionPap/.test(o); });
     }
-    setInterval(installMenus, 1500);
+    sstEvery(installMenus, 1500);
 
     // ---------- 3. Accueil « Mes tâches » ----------
     var expanded = false, lastSig = '';
@@ -17668,8 +17696,55 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         });
         var more = host.querySelector('#home-tasks-more'); if (more) more.addEventListener('click', function () { expanded = !expanded; lastSig = ''; render(); });
     }
-    setInterval(render, 2500);
+    sstEvery(render, 2500);
     window.sstRenderHomeTasks = function () { lastSig = ''; render(); };
+})();
+</script>
+
+<script>
+/* V2.153 — Séparation des sessions : les données locales d'un utilisateur ne sont jamais visibles par le suivant */
+(function () {
+    'use strict';
+    function nativeRemove() { return (typeof sstNativeRemoveItem !== 'undefined') ? sstNativeRemoveItem : Storage.prototype.removeItem; }
+    // Efface le cache local des données métier (toutes entreprises) sans passer par la synchronisation cloud.
+    window.sstPurgeLocalBusinessData = function () {
+        var keys = [], i, k;
+        for (i = 0; i < localStorage.length; i++) {
+            k = localStorage.key(i); if (!k) continue;
+            if (/^sst_v24\d/.test(k) || (typeof SST_V242_STORAGE !== 'undefined' && SST_V242_STORAGE[k])) keys.push(k);
+        }
+        var rm = nativeRemove(); keys.forEach(function (key) { rm.call(window.localStorage, key); });
+        return keys.length;
+    };
+    // Appelée à chaque connexion, avant tout affichage : si l'utilisateur n'est pas le même que la session précédente, le cache est effacé.
+    window.sstPurgeIfUserChanged = function (uid) {
+        var last = null; try { last = localStorage.getItem('sst_last_session_uid'); } catch (e) {}
+        if (last !== uid) { var n = window.sstPurgeLocalBusinessData(); console.info('Session : cache local de l’utilisateur précédent effacé (' + n + ' élément(s)).'); }
+        try { localStorage.setItem('sst_last_session_uid', uid); } catch (e) {}
+    };
+    // Redessine l'onglet affiché une fois les données du nouveau compte chargées (sans attendre un changement d'onglet).
+    window.sstRefreshActiveView = function () {
+        try {
+            var t = document.querySelector('.tab-content:not(.hidden)'), id = t ? String(t.id || '').replace(/^tab-/, '') : 'dashboard';
+            if (typeof switchTab === 'function') switchTab(id || 'dashboard');
+            if (typeof window.sstRenderHomeTasks === 'function') window.sstRenderHomeTasks();
+        } catch (e) { console.warn(e); }
+    };
+    // Déconnexion : envoie d'abord les modifications en attente, prévient s'il en reste, puis efface le cache local avant de recharger.
+    window.sstLogout = async function () {
+        if (!confirm('Se déconnecter de cet espace entreprise ?')) return;
+        try {
+            var dirty = (typeof sstV247DirtyKeys !== 'undefined') ? Array.from(sstV247DirtyKeys) : [];
+            if (dirty.length && typeof sstV247CommitKeys === 'function') {
+                await Promise.race([Promise.allSettled(dirty.map(function (k) { return sstV247CommitKeys(k); })), new Promise(function (r) { setTimeout(r, 6000); })]);
+                var left = Array.from(sstV247DirtyKeys);
+                if (left.length && !confirm('Des modifications (' + left.length + ' rubrique(s)) n’ont pas pu être envoyées au cloud. Se déconnecter les perdra définitivement.\n\nSe déconnecter quand même ?')) return;
+            }
+        } catch (e) { console.warn(e); }
+        try { await Promise.race([window.SSTCloud.signOut(), new Promise(function (r) { setTimeout(r, 8000); })]); } catch (e) { console.warn('Déconnexion :', e); }
+        try { window.sstPurgeLocalBusinessData(); localStorage.removeItem('sst_last_session_uid'); } catch (e) {}
+        window.location.reload();
+    };
 })();
 </script>
 
