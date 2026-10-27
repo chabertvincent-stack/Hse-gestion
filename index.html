@@ -179,6 +179,67 @@
         #filter-duerp-unite,#filter-duerp-niveau{border-radius:10px;border-color:#dce5f3;background:#fff;padding:11px}
         @media(max-width:1150px){#table-duerp-risques tbody tr{grid-template-columns:1.2fr 1.2fr .65fr 1.1fr;grid-template-rows:auto auto auto}#table-duerp-risques tbody tr td:nth-child(8){grid-column:1 / -1;grid-row:3;flex-direction:row;border-top:1px solid #edf1f8!important;padding-top:10px!important}#table-duerp-risques tbody tr td:nth-child(8):before{width:auto;margin:0 8px 0 0}}
         @media(max-width:767px){#duerp-2026-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#duerp-2026-summary .duerp-kpi{padding:11px;gap:8px}#duerp-2026-summary .duerp-kpi strong{font-size:22px}#duerp-2026-summary .duerp-kpi-icon{width:32px;height:32px;font-size:17px}#table-duerp-risques>div>div:nth-child(2){padding:8px!important}#table-duerp-risques table,#table-duerp-risques tbody{display:block!important}#table-duerp-risques tbody tr{display:grid!important;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto auto auto;gap:12px;padding:16px 15px 16px 20px}#table-duerp-risques tbody tr td{display:block!important;width:auto!important;text-align:left!important;border-bottom:0!important}#table-duerp-risques tbody tr td:before{content:attr(data-label)!important;font-size:10px!important;text-align:left!important;flex-shrink:initial!important;padding:0!important}#table-duerp-risques tbody tr td:nth-child(1){grid-column:2;grid-row:1;position:static;justify-self:end}#table-duerp-risques tbody tr td:nth-child(1):before,#table-duerp-risques tbody tr td:nth-child(2):before,#table-duerp-risques tbody tr td:nth-child(6):before{display:none!important}#table-duerp-risques tbody tr td:nth-child(2){grid-column:1/-1;grid-row:1;padding-right:32px!important}#table-duerp-risques tbody tr td:nth-child(3){grid-column:1/-1;grid-row:2}#table-duerp-risques tbody tr td:nth-child(4){grid-column:1/-1;grid-row:3;border:0!important;border-top:1px solid #edf1f8!important;padding:12px 0 0!important}#table-duerp-risques tbody tr td:nth-child(5){grid-column:1;grid-row:4}#table-duerp-risques tbody tr td:nth-child(6){grid-column:2;grid-row:4}#table-duerp-risques tbody tr td:nth-child(7){grid-column:1/-1;grid-row:5;border:0!important;border-top:1px solid #edf1f8!important;padding:12px 0 0!important}#table-duerp-risques tbody tr td:nth-child(8){grid-column:1/-1;grid-row:6;padding-top:12px!important}}
+
+
+        /* PAPRIPACT 2026 — couche visuelle uniquement : aucun lien ni événement existant n'est remplacé. */
+        #papripact-2026-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 18px}
+        #papripact-2026-summary .pap-kpi{display:flex;align-items:center;gap:13px;min-height:78px;padding:15px 18px;background:#fff;border:1px solid #e4eaf4;border-radius:14px;box-shadow:0 3px 12px rgba(25,48,90,.035)}
+        #papripact-2026-summary .pap-kpi-dot{width:10px;height:38px;flex:none;border-radius:99px;background:#3b82f6}
+        #papripact-2026-summary .pap-kpi-label{font-size:12px;font-weight:650;color:#64748b;display:block;line-height:1.35}
+        #papripact-2026-summary .pap-kpi-value{font-size:27px;line-height:1.05;font-weight:800;letter-spacing:-.04em;color:#17356d;display:block;margin-top:4px}
+        #papripact-2026-summary .pap-kpi.is-late{background:#fffafa;border-color:#fee2e2}
+        #papripact-2026-summary .pap-kpi.is-late .pap-kpi-dot{background:#ef4444}
+        #papripact-2026-summary .pap-kpi.is-late .pap-kpi-value{color:#b91c1c}
+        #papripact-2026-summary .pap-kpi.is-progress{background:#fffcf5;border-color:#fce7bd}
+        #papripact-2026-summary .pap-kpi.is-progress .pap-kpi-dot{background:#f59e0b}
+        #papripact-2026-summary .pap-kpi.is-progress .pap-kpi-value{color:#a16207}
+        #papripact-2026-summary .pap-kpi.is-closed{background:#f7fdf9;border-color:#cceedd}
+        #papripact-2026-summary .pap-kpi.is-closed .pap-kpi-dot{background:#10b981}
+        #papripact-2026-summary .pap-kpi.is-closed .pap-kpi-value{color:#047857}
+
+        #tab-papripact #liste-papripact{border-collapse:separate!important;border-spacing:0 8px!important}
+        #tab-papripact #liste-papripact tr{background:transparent;transition:box-shadow .18s ease,transform .18s ease}
+        #tab-papripact #liste-papripact tr:hover{background:transparent!important}
+        #tab-papripact #liste-papripact tr td{background:#fff!important;border-top:1px solid #e5ebf4!important;border-bottom:1px solid #e5ebf4!important;padding:13px 11px!important;vertical-align:middle;color:#334155;line-height:1.45}
+        #tab-papripact #liste-papripact tr td:first-child{border-left:4px solid #93c5fd!important;border-radius:11px 0 0 11px;border-right:0!important}
+        #tab-papripact #liste-papripact tr td:last-child{border-right:1px solid #e5ebf4!important;border-radius:0 11px 11px 0}
+        #tab-papripact #liste-papripact tr:hover td{border-top-color:#c4d6f7!important;border-bottom-color:#c4d6f7!important;box-shadow:0 4px 13px rgba(29,61,115,.045)}
+        #tab-papripact #liste-papripact tr[data-priorite="1"] td:first-child{border-left-color:#ef4444!important}
+        #tab-papripact #liste-papripact tr[data-priorite="2"] td:first-child{border-left-color:#f59e0b!important}
+        #tab-papripact #liste-papripact tr[data-priorite="3"] td:first-child{border-left-color:#10b981!important}
+        #tab-papripact #liste-papripact tr[data-priorite=""] td:first-child,
+        #tab-papripact #liste-papripact tr[data-priorite="none"] td:first-child{border-left-color:#94a3b8!important}
+        #tab-papripact table thead th{background:#f5f8fd!important;color:#64748b!important;font-size:10px!important;font-weight:800!important;letter-spacing:.045em;line-height:1.45;padding:12px 10px!important;border-top:1px solid #e6edf7!important;border-bottom:1px solid #e6edf7!important;white-space:normal}
+        #tab-papripact table thead th:first-child{border-radius:10px 0 0 10px}
+        #tab-papripact table thead th:last-child{border-radius:0 10px 10px 0}
+        #tab-papripact #liste-papripact td:nth-child(2) .flex.items-center.flex-wrap{gap:5px!important;margin-bottom:5px!important}
+        #tab-papripact #liste-papripact td:nth-child(2) .flex.items-center.flex-wrap>span:first-child{background:#f1f5f9!important;border-color:#e2e8f0!important;color:#475569!important;font-size:10px!important;font-weight:700!important;border-radius:6px!important;padding:3px 6px!important}
+        #tab-papripact #liste-papripact td:nth-child(2) .flex.items-center.flex-wrap>span:nth-child(2){font-size:10px!important;font-weight:750!important;border-radius:6px!important;padding:3px 7px!important}
+        #tab-papripact #liste-papripact td:nth-child(2) button{font-size:10px!important;font-weight:700!important;border-radius:6px!important;padding:3px 6px!important;margin-left:0!important;text-decoration:none!important}
+        #tab-papripact #liste-papripact td:nth-child(2)>div:last-child{font-size:11px!important;font-weight:650!important;line-height:1.35;color:#64748b!important;margin-top:5px!important}
+        #tab-papripact #liste-papripact td:nth-child(3){min-width:240px;max-width:340px}
+        #tab-papripact #liste-papripact td:nth-child(3)>div{font-size:12px!important;font-weight:700!important;line-height:1.5;color:#172f5e!important}
+        #tab-papripact #liste-papripact td:nth-child(4){text-align:left!important}
+        #tab-papripact #liste-papripact td:nth-child(4)>span{display:inline-flex;align-items:center;padding:5px 8px!important;border-radius:6px!important;background:#f1f5f9!important;color:#64748b!important;font-size:10px!important;font-weight:700!important;white-space:nowrap}
+        #tab-papripact #liste-papripact td:nth-child(5){text-align:left!important;white-space:nowrap}
+        #tab-papripact .pap-priority-chip{display:inline-flex;justify-content:center;align-items:center;min-width:42px;padding:5px 9px;border-radius:7px;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800}
+        #tab-papripact .pap-priority-1{background:#fee2e2;color:#b91c1c}
+        #tab-papripact .pap-priority-2{background:#fef3c7;color:#92400e}
+        #tab-papripact .pap-priority-3{background:#dcfce7;color:#166534}
+        #tab-papripact #liste-papripact td:nth-child(6){font-size:11px!important;font-weight:650!important;color:#475569!important}
+        #tab-papripact #liste-papripact td:nth-child(7){min-width:145px}
+        #tab-papripact #liste-papripact td:nth-child(7) .text-\[11px\]{font-size:11px!important;line-height:1.55;color:#64748b!important;white-space:nowrap}
+        #tab-papripact #liste-papripact td:nth-child(7) .font-bold{font-weight:700!important;color:#334155!important}
+        #tab-papripact #liste-papripact td:nth-child(8){font-size:11px!important;color:#94a3b8!important;white-space:nowrap}
+        #tab-papripact #liste-papripact td:nth-child(9) span{display:inline-flex;align-items:center;justify-content:center;padding:5px 9px!important;border-radius:999px!important;font-size:10px!important;font-weight:750!important;white-space:nowrap}
+        #tab-papripact #liste-papripact td:last-child button{display:inline-flex;align-items:center;justify-content:center;border:1px solid #dbe7fb;background:#f5f8ff;color:#2456b8!important;border-radius:8px;padding:7px 11px;font-size:11px!important;font-weight:750!important;text-decoration:none!important;transition:background .15s,border-color .15s}
+        #tab-papripact #liste-papripact td:last-child button:hover{background:#eaf1ff;border-color:#b8cdf7}
+        #tab-papripact .overflow-x-auto.overflow-y-auto{border:1px solid #e2eaf5!important;border-radius:14px!important;background:#fff;padding:4px 8px 0}
+        #tab-papripact #pap-bulk-toolbar>div{border:1px solid #e3eaf4!important;border-radius:11px!important;background:#f8faff!important;padding:10px 13px!important}
+        #tab-papripact select{border-color:#dce5f1;border-radius:8px;min-height:39px}
+        @media(max-width:1100px){#papripact-2026-summary{gap:8px}#papripact-2026-summary .pap-kpi{padding:12px}#tab-papripact table.sst-responsive-table{min-width:1180px}}
+        @media(max-width:767px){#papripact-2026-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#papripact-2026-summary .pap-kpi{min-height:66px;padding:10px;gap:9px;border-radius:11px}#papripact-2026-summary .pap-kpi-dot{height:30px;width:7px}#papripact-2026-summary .pap-kpi-value{font-size:22px}#papripact-2026-summary .pap-kpi-label{font-size:11px}#tab-papripact .overflow-x-auto.overflow-y-auto{padding:5px;border-radius:12px!important}#tab-papripact #liste-papripact tr{border:0!important;box-shadow:none!important;background:transparent!important}#tab-papripact #liste-papripact tr td{background:#fff!important;border-top:0!important;border-bottom:1px dashed #e5ebf4!important;border-left:0!important;border-right:0!important;border-radius:0!important;padding:8px 0!important}#tab-papripact #liste-papripact tr td:first-child{border-left:4px solid #93c5fd!important;padding-left:9px!important;border-radius:9px 9px 0 0!important}#tab-papripact #liste-papripact tr[data-priorite="1"] td:first-child{border-left-color:#ef4444!important}#tab-papripact #liste-papripact tr[data-priorite="2"] td:first-child{border-left-color:#f59e0b!important}#tab-papripact #liste-papripact tr[data-priorite="3"] td:first-child{border-left-color:#10b981!important}#tab-papripact #liste-papripact tr td:last-child{border-bottom:0!important;padding:10px 0!important;border-radius:0 0 9px 9px!important}#tab-papripact #liste-papripact td:nth-child(3){min-width:0;max-width:none}#tab-papripact #liste-papripact td:nth-child(7){min-width:0}#tab-papripact #liste-papripact td:nth-child(7) .text-\[11px\]{white-space:normal}}
+
     </style>
 </head>
     <body class="bg-gray-100 font-sans antialiased">
@@ -1404,6 +1465,13 @@
                             </div>
                         </div>
 
+                        <div id="papripact-2026-summary" aria-label="Synthèse des actions PAPRIPACT">
+                            <div class="pap-kpi"><span class="pap-kpi-dot" aria-hidden="true"></span><div><span class="pap-kpi-label">Total des actions</span><strong class="pap-kpi-value" id="pap-kpi-total">—</strong></div></div>
+                            <div class="pap-kpi is-late"><span class="pap-kpi-dot" aria-hidden="true"></span><div><span class="pap-kpi-label">Actions en retard</span><strong class="pap-kpi-value" id="pap-kpi-late">—</strong></div></div>
+                            <div class="pap-kpi is-progress"><span class="pap-kpi-dot" aria-hidden="true"></span><div><span class="pap-kpi-label">Actions en cours</span><strong class="pap-kpi-value" id="pap-kpi-progress">—</strong></div></div>
+                            <div class="pap-kpi is-closed"><span class="pap-kpi-dot" aria-hidden="true"></span><div><span class="pap-kpi-label">Actions clôturées</span><strong class="pap-kpi-value" id="pap-kpi-closed">—</strong></div></div>
+                        </div>
+
                         <div id="pap-bulk-toolbar" class="mb-3"></div>
 
                         <div class="overflow-x-auto overflow-y-auto max-h-[65vh] border border-slate-200 rounded-lg">
@@ -1413,7 +1481,7 @@
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b w-8" data-sst-key-write-full="papripact_actions"><input type="checkbox" id="pap-select-all-header" class="rounded border-slate-300 w-4 h-4 cursor-pointer" onchange="toggleAllVisiblePap(this.checked)" title="Tout sélectionner"></th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">N° / Origine / Réf. / Unité</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Intitulé de l'Action</th>
-                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b text-center">Hiérarchie / Type</th>
+                                        <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b text-left">Type d’action</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b text-center">Prio.</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Responsable</th>
                                         <th class="sticky top-0 z-10 bg-slate-100 p-3 border-b">Calendrier (Création / Délai / Fin)</th>
@@ -11015,6 +11083,18 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
             let actions = ensurePapripactActionNumbers();
             const sourceLinksChanged = ensurePapripactSourceLinks(actions);
             actions.sort((a,b) => (Number(a?.numero)||0) - (Number(b?.numero)||0));
+            // Synthèse PAPRIPACT 2026 : compteurs d'affichage uniquement, limités aux unités visibles par l'utilisateur.
+            const papKpiActions = actions.filter(a => sstManagerCanSeeUnit(a.unite));
+            const papKpiValues = {
+                total: papKpiActions.length,
+                late: papKpiActions.filter(a => sstPapripactDelayOverdue(a)).length,
+                progress: papKpiActions.filter(a => a.statut === 'En cours').length,
+                closed: papKpiActions.filter(a => a.statut === 'Clôturée').length
+            };
+            [['pap-kpi-total', papKpiValues.total], ['pap-kpi-late', papKpiValues.late], ['pap-kpi-progress', papKpiValues.progress], ['pap-kpi-closed', papKpiValues.closed]].forEach(([id, value]) => {
+                const counter = document.getElementById(id);
+                if (counter) counter.textContent = String(value);
+            });
             localStorage.setItem('papripact_actions', JSON.stringify(actions));
             if(sourceLinksChanged) localStorage.setItem('papripact_actions', JSON.stringify(actions));
             populatePapripactResponsablesFilter(actions);
@@ -11124,7 +11204,7 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                 let displayPrio = a.priorite ? `P${a.priorite}` : '-';
 
                 tbody.innerHTML += `
-                    <tr id="pap-row-${idx}" data-pap-action-key="${escapeHtml(papActionKey)}" class="hover:bg-slate-50 transition-colors">
+                    <tr id="pap-row-${idx}" data-pap-action-key="${escapeHtml(papActionKey)}" data-priorite="${escapeHtml(String(a.priorite || ''))}" class="hover:bg-slate-50 transition-colors">
                         <td class="p-3 border-b text-center sst-td-full" data-sst-key-write-full="papripact_actions"><input type="checkbox" aria-label="Sélectionner l'action N°${String(a.numero || idx + 1)}" class="rounded border-slate-300 w-4 h-4 cursor-pointer" ${window.sstPapSelected.has(idx)?'checked':''} onchange="togglePapSelection(${idx},this.checked)"></td>
                         <td class="p-3 border-b" data-label="N° / Origine / Unité">
                             <div class="flex items-center flex-wrap gap-1 mb-1">
@@ -11137,10 +11217,10 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <td class="p-3 border-b max-w-sm" data-label="Action">
                             <div class="font-bold text-slate-800 text-xs mb-0.5">${escapeHtml(a.action)}</div>
                         </td>
-                        <td class="p-3 border-b text-center" data-label="Hiérarchie / Type">
+                        <td class="p-3 border-b text-center" data-label="Type d’action">
                             <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${a.type || 'Technique'}</span>
                         </td>
-                        <td class="p-3 border-b text-center font-bold text-xs" data-label="Priorité">${displayPrio}</td>
+                        <td class="p-3 border-b text-center font-bold text-xs" data-label="Priorité"><span class="pap-priority-chip pap-priority-${['1','2','3'].includes(String(a.priorite)) ? String(a.priorite) : 'none'}">${displayPrio}</span></td>
                         <td class="p-3 border-b font-semibold text-slate-700" data-label="Responsable">${escapeHtml(a.responsable || 'À définir')}</td>
                         <td class="p-3 border-b" data-label="Calendrier">${datesDisplay}</td>
                         <td class="p-3 border-b text-right font-bold text-slate-800" data-label="Ressources (€)">${a.cout ? a.cout + ' €' : '-'}</td>
