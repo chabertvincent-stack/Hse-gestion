@@ -240,6 +240,24 @@
         @media(max-width:1100px){#papripact-2026-summary{gap:8px}#papripact-2026-summary .pap-kpi{padding:12px}#tab-papripact table.sst-responsive-table{min-width:1180px}}
         @media(max-width:767px){#papripact-2026-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#papripact-2026-summary .pap-kpi{min-height:66px;padding:10px;gap:9px;border-radius:11px}#papripact-2026-summary .pap-kpi-dot{height:30px;width:7px}#papripact-2026-summary .pap-kpi-value{font-size:22px}#papripact-2026-summary .pap-kpi-label{font-size:11px}#tab-papripact .overflow-x-auto.overflow-y-auto{padding:5px;border-radius:12px!important}#tab-papripact #liste-papripact tr{border:0!important;box-shadow:none!important;background:transparent!important}#tab-papripact #liste-papripact tr td{background:#fff!important;border-top:0!important;border-bottom:1px dashed #e5ebf4!important;border-left:0!important;border-right:0!important;border-radius:0!important;padding:8px 0!important}#tab-papripact #liste-papripact tr td:first-child{border-left:4px solid #93c5fd!important;padding-left:9px!important;border-radius:9px 9px 0 0!important}#tab-papripact #liste-papripact tr[data-priorite="1"] td:first-child{border-left-color:#ef4444!important}#tab-papripact #liste-papripact tr[data-priorite="2"] td:first-child{border-left-color:#f59e0b!important}#tab-papripact #liste-papripact tr[data-priorite="3"] td:first-child{border-left-color:#10b981!important}#tab-papripact #liste-papripact tr td:last-child{border-bottom:0!important;padding:10px 0!important;border-radius:0 0 9px 9px!important}#tab-papripact #liste-papripact td:nth-child(3){min-width:0;max-width:none}#tab-papripact #liste-papripact td:nth-child(7){min-width:0}#tab-papripact #liste-papripact td:nth-child(7) .text-\[11px\]{white-space:normal}}
 
+
+        /* Correctif visuel PAPRIPACT : la couleur de fond blanche des cellules masquait
+           l’animation .row-highlight portée par la ligne. On anime donc un contour interne
+           sur les cellules, sans toucher au HTML, aux données ni aux événements. */
+        @keyframes papripact-row-highlight-visible {
+            0%, 12% { box-shadow: inset 0 0 0 3px #f59e0b, inset 0 0 0 999px rgba(254, 240, 138, .38); }
+            35% { box-shadow: inset 0 0 0 2px #f59e0b, inset 0 0 0 999px rgba(254, 249, 195, .24); }
+            65% { box-shadow: inset 0 0 0 1px rgba(245, 158, 11, .55); }
+            100% { box-shadow: inset 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+        #tab-papripact #liste-papripact tr.row-highlight > td {
+            animation: papripact-row-highlight-visible 9s ease-out both !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #tab-papripact #liste-papripact tr.row-highlight > td {
+                animation-duration: 1.5s !important;
+            }
+        }
     </style>
 </head>
     <body class="bg-gray-100 font-sans antialiased">
