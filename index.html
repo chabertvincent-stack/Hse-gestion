@@ -98,12 +98,32 @@
         .at-row-highlight {
             scroll-margin-top: 130px;
         }
-        .at-row-highlight-cell {
-            background-color: #fef9c3 !important;
-            transition: background-color 2.6s ease-out !important;
+        /* Surbrillance Analyse AT : contraste renforcé au-dessus du fond blanc des cellules.
+           Le trait ne passe qu'en haut/bas de la ligne, avec les côtés aux extrémités :
+           aucune séparation verticale n'est ajoutée entre les colonnes. */
+        #tab-at #table-at-analyses tr.at-row-highlight > td,
+        #tab-at #table-at-analyses td.at-row-highlight-cell {
+            background-color: #fff0a6 !important;
+            box-shadow: inset 0 3px 0 #f59e0b, inset 0 -3px 0 #f59e0b !important;
+            transition: background-color 2.6s ease-out, box-shadow 2.6s ease-out !important;
         }
-        .at-row-highlight-cell.at-row-highlight-fading {
+        #tab-at #table-at-analyses tr.at-row-highlight > td:first-child,
+        #tab-at #table-at-analyses td.at-row-highlight-cell:first-child {
+            box-shadow: inset 3px 0 0 #f59e0b, inset 0 3px 0 #f59e0b, inset 0 -3px 0 #f59e0b !important;
+        }
+        #tab-at #table-at-analyses tr.at-row-highlight > td:last-child,
+        #tab-at #table-at-analyses td.at-row-highlight-cell:last-child {
+            box-shadow: inset -3px 0 0 #f59e0b, inset 0 3px 0 #f59e0b, inset 0 -3px 0 #f59e0b !important;
+        }
+        #tab-at #table-at-analyses tr.at-row-highlight > td.at-row-highlight-cell.at-row-highlight-fading {
             background-color: transparent !important;
+            box-shadow: inset 0 0 0 transparent !important;
+        }
+        #tab-at #table-at-analyses tr.at-row-highlight > td:first-child.at-row-highlight-cell.at-row-highlight-fading {
+            box-shadow: inset 0 0 0 transparent !important;
+        }
+        #tab-at #table-at-analyses tr.at-row-highlight > td:last-child.at-row-highlight-cell.at-row-highlight-fading {
+            box-shadow: inset 0 0 0 transparent !important;
         }
         #at-tree-svg svg { display:block; max-width:none; }
         #label-modal-qrcode { width:194px; height:194px; margin:0 auto; display:flex; align-items:center; justify-content:center; background:#fff; box-sizing:border-box; overflow:hidden; }
@@ -5336,9 +5356,12 @@
                 cell.classList.remove('at-row-highlight-fading');
                 cell.classList.add('at-row-highlight-cell');
             });
-            requestAnimationFrame(()=>requestAnimationFrame(()=>{
-                cells.forEach(cell=>cell.classList.add('at-row-highlight-fading'));
-            }));
+            // Laisser le jaune bien visible avant de lancer l'estompage : l'ancienne
+            // double requestAnimationFrame faisait disparaître l'effet presque aussitôt
+            // sur certaines configurations d'affichage.
+            setTimeout(()=>{
+                if(document.contains(row)) cells.forEach(cell=>cell.classList.add('at-row-highlight-fading'));
+            }, 1200);
             setTimeout(()=>{
                 if(document.contains(row)){
                     row.classList.remove('at-row-highlight');
@@ -5348,7 +5371,7 @@
                         cell.style.removeProperty('transition');
                     });
                 }
-            }, 2900);
+            }, 4300);
             return true;
         }
         async function scrollToAtAnalysis(analysisRef) {
