@@ -149,6 +149,18 @@
         #app-shell.commercial-locked { display:none !important; }
         body.commercial-locked { overflow:hidden !important; }
 
+        /* Prise en main 2026 : aide et exemples purement visuels, sans écriture de données. */
+        #sst-onboarding-modal .sst-help-card{border:1px solid #dbe7fb;background:linear-gradient(135deg,#f8fbff,#eef5ff);border-radius:14px;padding:14px}
+        #sst-onboarding-modal .sst-help-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid #dce6f5;color:#37527b;font-size:11px;font-weight:700}
+        #sst-onboarding-modal .sst-example-card{border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:12px;min-width:0}
+        #sst-onboarding-modal .sst-example-label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800}
+        #sst-onboarding-modal .sst-example-value{font-size:12px;color:#172f5f;font-weight:650;line-height:1.45;overflow-wrap:anywhere}
+        #sst-matrix-modal .sst-rights-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+        #sst-matrix-modal .sst-rights-item{border:1px solid #e2e8f0;border-radius:10px;padding:9px;background:#f8fafc;min-width:0}
+        #sst-matrix-modal .sst-rights-item strong{display:block;font-size:11px;color:#1e293b}
+        #sst-matrix-modal .sst-rights-item span{display:block;font-size:10px;line-height:1.4;color:#64748b;margin-top:3px}
+        @media(min-width:640px){#sst-matrix-modal .sst-rights-legend{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
         /* DUERP 2026 : habillage strictement limité au DUERP, sans modifier ses événements. */
         #duerp-2026-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 20px}
         #duerp-2026-summary .duerp-kpi{background:#fff;border:1px solid #e2e9f5;border-radius:15px;padding:18px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 3px 15px rgba(30,54,100,.035)}
@@ -443,7 +455,7 @@
                         🔔
                         <span id="sst-notification-badge" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] leading-[18px] font-extrabold border-2 border-white">0</span>
                     </button>
-                    <button onclick="openSstOnboarding()" title="Guide de démarrage" class="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 w-9 h-9 rounded-full text-sm font-bold shrink-0">❓</button>
+                    <button onclick="openSstOnboarding()" title="Aide du module et guide de démarrage" class="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 w-9 h-9 rounded-full text-sm font-bold shrink-0">❓</button>
                     <div id="sst-account-area" class="hidden md:flex items-center gap-2">
                         <div class="text-right leading-tight">
                             <div id="sst-company-name" class="text-xs font-bold text-slate-800">Mode local</div>
@@ -2677,15 +2689,63 @@
                 </div>
 
                 <div id="sst-onboarding-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div class="bg-white rounded-xl p-6 max-w-lg w-full max-h-[92vh] overflow-y-auto shadow-2xl">
-                        <div class="flex flex-wrap items-start justify-between gap-3 border-b pb-4 mb-5">
+                    <div class="bg-white rounded-xl p-5 md:p-6 max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
+                        <div class="flex flex-wrap items-start justify-between gap-3 border-b pb-4 mb-4">
                             <div>
-                                <h3 class="text-xl font-bold text-slate-800">👋 Bienvenue — par où commencer ?</h3>
-                                <p class="text-xs text-slate-500 mt-1">4 étapes pour configurer votre espace en quelques minutes. Vous pouvez fermer ce guide et le rouvrir à tout moment avec le bouton <span class="font-bold">❓</span> en haut de l'écran.</p>
+                                <h3 class="text-xl font-bold text-slate-800">👋 Centre d’aide & démarrage</h3>
+                                <p class="text-xs text-slate-500 mt-1">Configurez votre espace pas à pas, consultez l’aide adaptée à l’écran ouvert et visualisez des exemples sans toucher à vos données.</p>
                             </div>
-                            <button onclick="closeSstOnboarding()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none shrink-0">✕</button>
+                            <button onclick="closeSstOnboarding()" class="text-slate-400 hover:text-slate-700 text-2xl leading-none shrink-0" aria-label="Fermer l’aide">✕</button>
+                        </div>
+
+                        <section class="sst-help-card mb-4" aria-live="polite">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <h4 id="sst-context-help-title" class="text-sm font-extrabold text-blue-950">Aide de l’écran actuel</h4>
+                                <span class="sst-help-chip">ℹ️ Aide contextuelle</span>
+                            </div>
+                            <p id="sst-context-help-desc" class="text-xs text-slate-700 leading-relaxed"></p>
+                            <ul id="sst-context-help-tips" class="mt-2 space-y-1 text-xs text-slate-600 list-disc list-inside"></ul>
+                            <div class="mt-3 flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="sstShowDemoExamples()" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold">Voir des exemples</button>
+                                <span class="text-[10px] text-slate-500">Exemples fictifs : aucune donnée n’est ajoutée ni enregistrée.</span>
+                            </div>
+                        </section>
+
+                        <div class="mb-3">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                                <h4 class="text-sm font-extrabold text-slate-800">Votre démarrage en 5 étapes</h4>
+                                <span id="sst-onboarding-progress-label" class="text-[11px] font-bold text-slate-500">0/4 étapes essentielles</span>
+                            </div>
+                            <div class="h-2 rounded-full bg-slate-100 overflow-hidden"><div id="sst-onboarding-progress-bar" class="h-full rounded-full bg-blue-600 transition-all" style="width:0%"></div></div>
                         </div>
                         <div id="sst-onboarding-steps" class="space-y-3"></div>
+
+                        <details id="sst-demo-examples" class="mt-4 border border-blue-200 rounded-xl overflow-hidden">
+                            <summary class="cursor-pointer select-none px-4 py-3 bg-blue-50 text-sm font-bold text-blue-950">🧪 Exemples de données — aperçu sans enregistrement</summary>
+                            <div class="p-3 grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50">
+                                <article class="sst-example-card">
+                                    <div class="sst-example-label mb-2">Exemple DUERP</div>
+                                    <div class="sst-example-value">DUERP-R042 · Atelier peinture</div>
+                                    <p class="text-xs text-slate-600 mt-2">Danger : vapeurs de solvants.</p>
+                                    <p class="text-xs text-slate-600 mt-1">Dommage possible : irritation respiratoire.</p>
+                                    <div class="mt-3"><span class="px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">Cotation illustrative : 16</span></div>
+                                </article>
+                                <article class="sst-example-card">
+                                    <div class="sst-example-label mb-2">Exemple PAPRIPACT</div>
+                                    <div class="sst-example-value">Améliorer l’aspiration au poste peinture</div>
+                                    <p class="text-xs text-slate-600 mt-2">Origine : DUERP-R042</p>
+                                    <p class="text-xs text-slate-600 mt-1">Responsable : Responsable atelier</p>
+                                    <div class="mt-3"><span class="px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">À traiter</span></div>
+                                </article>
+                                <article class="sst-example-card">
+                                    <div class="sst-example-label mb-2">Exemple Analyse AT</div>
+                                    <div class="sst-example-value">Glissade de plain-pied</div>
+                                    <p class="text-xs text-slate-600 mt-2">Situation : circulation encombrée.</p>
+                                    <p class="text-xs text-slate-600 mt-1">Prévention : dégager le passage et vérifier son maintien libre.</p>
+                                </article>
+                            </div>
+                            <p class="px-3 pb-3 bg-slate-50 text-[10px] text-slate-500">Ces exemples sont fictifs et restent dans ce guide. Ils ne créent aucun risque, accident ou action dans l’application.</p>
+                        </details>
 
                         <div class="mt-5 pt-4 border-t space-y-2">
                             <details class="border rounded-lg p-3 bg-indigo-50 border-indigo-200">
@@ -3715,7 +3775,7 @@
 
 
         // --- Grille de droits par utilisateur (module x niveau) -------------------------------------
-        const SST_LEVEL_LABELS = { none:'⛔ Bloqué', read:'👁️ Voir', units:'✏️ Modifier (mes unités)', edit:'✏️ Modifier (sans supprimer)', write:'🗑️ Modifier + supprimer' };
+        const SST_LEVEL_LABELS = { none:'Bloqué', read:'Lecture seule', units:'Modifier mes unités', edit:'Modifier sans supprimer', write:'Modifier et supprimer' };
         window.sstOpenAccessMatrix = function(userId){
             const ctx = window.SST_APP_CONTEXT;
             if(!ctx || (ctx.role!=='companyAdmin' && ctx.role!=='platformAdmin')){ alert('Réservé aux administrateurs.'); return; }
@@ -3729,17 +3789,25 @@
                 const levels = ['none','read'].concat(scoped?['units']:[]).concat(['edit','write']);
                 const v = SST_ACCESS_LEVELS.includes(cur[m]) ? cur[m] : 'none';
                 const val = levels.includes(v) ? v : (v==='units' ? 'read' : 'none');
-                return `<div class="py-2 border-b"><div class="text-xs font-semibold text-slate-700 mb-1">${escSstAdmin(SST_MODULE_LABELS[m])}</div>${isAdmin?'<div class="text-xs text-slate-500">🗑️ Accès complet (non modifiable)</div>':`<select data-mod="${m}" class="sst-matrix-sel p-2 border rounded text-sm bg-white w-full">${levels.map(l=>`<option value="${l}" ${l===val?'selected':''}>${SST_LEVEL_LABELS[l]}</option>`).join('')}</select>`}</div>`;
+                return `<div class="py-2.5 border-b border-slate-100 min-w-0"><div class="text-xs font-bold text-slate-800 mb-1">${escSstAdmin(SST_MODULE_LABELS[m])}</div>${isAdmin?'<div class="text-xs text-slate-500">Accès complet (non modifiable)</div>':`<select aria-label="Droit pour ${escSstAdmin(SST_MODULE_LABELS[m])}" data-mod="${m}" class="sst-matrix-sel p-2.5 border border-slate-200 rounded-lg text-sm bg-white w-full">${levels.map(l=>`<option value="${l}" ${l===val?'selected':''}>${SST_LEVEL_LABELS[l]}</option>`).join('')}</select>`}</div>`;
             }).join('');
             document.getElementById('sst-matrix-modal')?.remove();
             const div = document.createElement('div');
             div.id = 'sst-matrix-modal';
             div.className = 'fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-3';
-            div.innerHTML = `<div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4">
+            div.innerHTML = `<div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-4 md:p-5">
                 <div class="flex items-start justify-between gap-2 mb-1"><div><div class="font-bold text-slate-800">🔐 Droits par module</div><div class="text-xs text-slate-500">${escSstAdmin(u.displayName||u.email||'')} · rôle : ${escSstAdmin(role)}</div></div><button type="button" onclick="document.getElementById('sst-matrix-modal').remove()" class="text-slate-500 text-xl leading-none">✕</button></div>
                 ${isAdmin?'<div class="text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 p-2 my-2">Ce rôle (administrateur, Responsable HSE ou RH) donne un accès complet à tous les modules, non modifiable. Pour limiter des droits, utilisez le rôle Manager, Infirmière ou Salarié / CSSCT.</div>':''}
-                <div class="text-[11px] text-slate-500 my-2">« Mes unités » : le salarié modifie uniquement les éléments des unités dont son e-mail est renseigné comme manager (sous-unités comprises). La suppression est réservée au niveau « Modifier + supprimer ».</div>
-                <div>${rows}</div>
+                <div class="text-xs text-slate-600 my-3">Choisissez le niveau nécessaire pour chaque module. Les niveaux ci-dessous décrivent les droits de l’utilisateur ; les modules décochés/indisponibles par entreprise restent inaccessibles.</div>
+                <div class="sst-rights-legend mb-3">
+                    <div class="sst-rights-item"><strong>⛔ Bloqué</strong><span>Le module n’est pas accessible.</span></div>
+                    <div class="sst-rights-item"><strong>👁️ Lecture seule</strong><span>Consulter les informations, sans les modifier.</span></div>
+                    <div class="sst-rights-item"><strong>✏️ Modifier mes unités</strong><span>Modifier uniquement les éléments des unités attribuées à la personne, pour les modules qui le permettent.</span></div>
+                    <div class="sst-rights-item"><strong>📝 Modifier sans supprimer</strong><span>Créer et modifier, mais ne pas supprimer les éléments.</span></div>
+                    <div class="sst-rights-item"><strong>🗑️ Modifier et supprimer</strong><span>Accès de modification avec suppression.</span></div>
+                </div>
+                <div class="text-[11px] rounded-lg bg-amber-50 border border-amber-200 text-amber-900 p-3 mb-3">Important : « Mes unités » dépend du rattachement de l’utilisateur aux unités de travail. Après l’enregistrement, la personne doit se déconnecter puis se reconnecter pour appliquer les nouveaux droits.</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4">${rows}</div>
                 <div class="flex flex-wrap gap-2 mt-3">
                     <button type="button" onclick="sstMatrixPreset('role','${userId}')" class="px-2 py-1 rounded border text-[11px]">Défauts du rôle</button>
                     <button type="button" onclick="sstMatrixPreset('manager','${userId}')" class="px-2 py-1 rounded border text-[11px]">Profil manager</button>
@@ -16457,69 +16525,113 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
         const SST_ONBOARDING_STEPS = [
             {
                 id: 'entreprise',
-                title: "1. Identité de l'entreprise & logo",
-                desc: "Renseignez le nom, le logo et l'effectif : ils apparaissent sur tous vos documents exportés (PDF, comptes-rendus).",
-                cta: "Aller dans Réglages",
-                done: () => {
-                    const s = getSstDocumentSettings();
-                    return !!(s && s.logoDataUrl);
-                },
+                title: "1. Identité de l’entreprise",
+                desc: "Vérifiez le nom de l’entreprise, l’établissement et le logo. Ces informations personnalisent vos exports et comptes-rendus.",
+                cta: "Configurer l’identité",
+                done: () => sstHasSavedCompanyIdentity(),
                 go: () => { switchTab('settings'); }
             },
             {
                 id: 'unites',
                 title: "2. Unités de travail",
-                desc: "Créez vos premières unités (ateliers, services, secteurs...) : elles servent de base au DUERP, aux tournées et aux formations.",
-                cta: "Créer une unité de travail",
-                done: () => {
-                    try { return (JSON.parse(localStorage.getItem('unites_travail') || '[]')).length > 0; }
-                    catch (e) { return false; }
-                },
+                desc: "Créez vos ateliers, services ou secteurs. Les unités servent de repère au DUERP et aux autres modules HSE.",
+                cta: "Configurer les unités",
+                done: () => { try { return (JSON.parse(localStorage.getItem('unites_travail') || '[]')).length > 0; } catch (e) { return false; } },
                 go: () => { switchTab('rh'); if (typeof switchRhSubTab === 'function') switchRhSubTab('unites'); }
             },
             {
-                id: 'tournee',
-                title: "3. Modèle de tournée HSE",
-                desc: "Vérifiez ou adaptez la checklist de tournée terrain à votre activité, puis réalisez votre première tournée.",
-                cta: "Aller dans Audit Terrain",
-                done: () => {
-                    try {
-                        const t = JSON.parse(localStorage.getItem('tournees_hse') || '[]');
-                        const m = JSON.parse(localStorage.getItem('tournees_modeles') || '[]');
-                        return t.length > 0 || m.length > 0;
-                    } catch (e) { return false; }
-                },
-                go: () => { switchTab('tournees'); }
+                id: 'duerp',
+                title: "3. Évaluer les risques dans le DUERP",
+                desc: "Ajoutez les dangers par unité de travail, évaluez les risques et renseignez les mesures existantes. Une action n’est créée que via la commande prévue à cet effet.",
+                cta: "Ouvrir le DUERP",
+                done: () => { try { return (JSON.parse(localStorage.getItem('duerp_risques') || '[]')).length > 0; } catch (e) { return false; } },
+                go: () => { switchTab('duerp'); }
             },
             {
-                id: 'import',
-                title: "4. Importer vos données existantes (facultatif)",
-                desc: "Si vous avez déjà un fichier de sauvegarde ou des données d'un autre outil, importez-les depuis Réglages. Sinon, ignorez cette étape.",
-                cta: "Aller dans Réglages",
+                id: 'papripact',
+                title: "4. Suivre les actions dans le PAPRIPACT",
+                desc: "Centralisez les actions de prévention, vérifiez leur responsable et leur échéance, puis mettez à jour leur état d’avancement.",
+                cta: "Ouvrir le PAPRIPACT",
+                done: () => { try { return (JSON.parse(localStorage.getItem('papripact_actions') || '[]')).length > 0; } catch (e) { return false; } },
+                go: () => { switchTab('papripact'); }
+            },
+            {
+                id: 'equipe',
+                title: "5. Préparer les accès de l’équipe",
+                desc: "Si plusieurs personnes utilisent l’application, choisissez un rôle puis ajustez les modules et les droits nécessaires. Cette étape est facultative pour un usage individuel.",
+                cta: "Gérer les utilisateurs",
                 optional: true,
                 done: () => false,
-                go: () => { switchTab('settings'); }
+                go: () => { const r = window.SST_APP_CONTEXT?.role; if (r === 'companyAdmin' || r === 'platformAdmin') switchTab(r === 'platformAdmin' ? 'admin' : 'admin'); else switchTab('settings'); }
             }
         ];
 
         function renderSstOnboardingSteps() {
             const host = document.getElementById('sst-onboarding-steps');
             if (!host) return;
-            host.innerHTML = SST_ONBOARDING_STEPS.map(step => {
-                let isDone = false;
-                try { isDone = !!step.done(); } catch (e) { isDone = false; }
-                const badge = isDone
-                    ? `<span class="shrink-0 w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">✓</span>`
-                    : `<span class="shrink-0 w-6 h-6 rounded-full border-2 border-slate-300 text-slate-300 flex items-center justify-center text-xs font-bold">${step.optional ? '·' : ''}</span>`;
-                return `<div class="flex items-start gap-3 p-3 rounded-lg border ${isDone ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'}">
+            const statuses = SST_ONBOARDING_STEPS.map(step => {
+                let done = false;
+                try { done = !!step.done(); } catch (e) { done = false; }
+                return { step, done };
+            });
+            const required = statuses.filter(x => !x.step.optional);
+            const completed = required.filter(x => x.done).length;
+            const label = document.getElementById('sst-onboarding-progress-label');
+            const bar = document.getElementById('sst-onboarding-progress-bar');
+            if (label) label.textContent = `${completed}/${required.length} étapes essentielles`;
+            if (bar) bar.style.width = `${required.length ? Math.round(completed / required.length * 100) : 0}%`;
+            host.innerHTML = statuses.map(({step, done}) => {
+                const badge = done
+                    ? `<span class="shrink-0 w-7 h-7 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">✓</span>`
+                    : `<span class="shrink-0 w-7 h-7 rounded-full ${step.optional ? 'bg-slate-100 text-slate-400' : 'border-2 border-slate-300 text-slate-400'} flex items-center justify-center text-xs font-bold">${step.optional ? '·' : '!'}</span>`;
+                return `<div class="flex items-start gap-3 p-3 rounded-xl border ${done ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-white'}">
                     ${badge}
                     <div class="min-w-0 flex-1">
                         <div class="text-sm font-bold text-slate-800">${step.title}${step.optional ? ' <span class="font-normal text-slate-400">(facultatif)</span>' : ''}</div>
-                        <div class="text-xs text-slate-500 mt-0.5 leading-relaxed">${step.desc}</div>
-                        <button onclick="sstOnboardingGoTo('${step.id}')" class="mt-2 text-xs font-bold text-blue-700 hover:underline">${step.cta} →</button>
+                        <div class="text-xs text-slate-600 mt-1 leading-relaxed">${step.desc}</div>
+                        <button type="button" onclick="sstOnboardingGoTo('${step.id}')" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-blue-700 hover:underline">${step.cta} <span aria-hidden="true">→</span></button>
                     </div>
+                    <span class="text-[10px] font-bold ${done ? 'text-green-700' : 'text-slate-400'}">${done ? 'Terminé' : (step.optional ? 'Optionnel' : 'À faire')}</span>
                 </div>`;
             }).join('');
+            renderSstContextHelp();
+        }
+
+        const SST_CONTEXT_HELP = {
+            dashboard: { title:'Aide · Tableau de bord', desc:'Le tableau de bord synthétise les données déjà enregistrées. Il ne crée ni ne modifie aucune action.', tips:['Cliquez sur une carte ou un indicateur pour retrouver les informations correspondantes, lorsque la navigation est proposée.','Commencez par configurer les unités de travail et le DUERP pour obtenir des indicateurs utiles.'] },
+            rh: { title:'Aide · Gestion RH', desc:'La Gestion RH structure les unités, les postes et les salariés afin de faciliter le suivi des formations.', tips:['Ordre conseillé : unités de travail → référentiel des formations → profils de postes → salariés.','Vérifiez les unités et le poste affecté à chaque salarié avant d’utiliser le suivi des formations.'] },
+            infirmiere: { title:'Aide · Espace infirmière', desc:'Utilisez cet espace pour les registres et suivis prévus par votre organisation. Ne saisissez que les informations nécessaires et autorisées.', tips:['Vérifiez les droits d’accès attribués aux utilisateurs concernés.','Les informations sensibles doivent rester accessibles uniquement aux personnes habilitées.'] },
+            formations: { title:'Aide · Formations', desc:'Consultez les échéances et enregistrez les formations ou renouvellements des salariés.', tips:['Vérifiez d’abord les profils de postes et leurs formations obligatoires.','Renseignez les dates et justificatifs selon les règles internes de votre entreprise.'] },
+            duerp: { title:'Aide · DUERP', desc:'Le DUERP recense les risques par unité de travail, leur cotation, les dommages potentiels et les mesures de prévention existantes.', tips:['Commencez par sélectionner une unité de travail et décrivez le danger avec des mots concrets.','La présence d’un risque ne crée pas automatiquement une action PAPRIPACT : utilisez la commande d’action prévue lorsque cela est nécessaire.'] },
+            papripact: { title:'Aide · PAPRIPACT', desc:'Le PAPRIPACT sert à piloter les actions de prévention : responsable, priorité, échéance, ressources et état d’avancement.', tips:['Renseignez un responsable et une échéance réaliste pour chaque action à suivre.','Depuis une action liée, utilisez la référence ou le lien d’origine pour revenir au module source.'] },
+            amelioration: { title:'Aide · Fiches d’amélioration', desc:'Utilisez les fiches pour recueillir une proposition ou un besoin d’amélioration issu du terrain.', tips:['Décrivez le lieu, la situation observée et la mesure souhaitée.','Lorsqu’un suivi est nécessaire, créez ou reliez explicitement l’action PAPRIPACT prévue par l’écran.'] },
+            urgence: { title:'Aide · Urgence & presqu’accident', desc:'Consignez les situations dangereuses, urgences et presqu’accidents selon les champs de votre formulaire.', tips:['Décrivez les faits et le lieu sans supposition non vérifiée.','Créez une action de prévention si un suivi est nécessaire et reliez-la à la situation source.'] },
+            at: { title:'Aide · Analyse AT', desc:'L’analyse AT sert à comprendre les circonstances et les facteurs de l’accident, puis à identifier des mesures de prévention.', tips:['Distinguez les faits constatés des causes à confirmer.','Si une action est nécessaire, vérifiez qu’elle est enregistrée et que son lien PAPRIPACT est visible.'] },
+            tournees: { title:'Aide · Tournées HSE', desc:'Utilisez les tournées pour vérifier les conditions réelles sur le terrain et tracer les écarts constatés.', tips:['Adaptez la checklist au secteur concerné avant la tournée.','Pour les écarts nécessitant un suivi, vérifiez la création et l’enregistrement de l’action associée.'] },
+            settings: { title:'Aide · Réglages', desc:'Les Réglages regroupent l’identité documentaire, les sauvegardes et les fonctions d’import disponibles.', tips:['Enregistrez les changements avant de quitter un formulaire.','Avant un import ou une migration, conservez une sauvegarde récente et vérifiez l’entreprise de destination.'] },
+            admin: { title:'Aide · Administration et droits', desc:'L’administration permet de gérer les accès utilisateurs et les modules activés pour l’entreprise.', tips:['Choisissez d’abord le rôle correspondant au besoin, puis limitez les modules au strict nécessaire.','Après un changement de droits, l’utilisateur doit se reconnecter pour que les nouveaux accès soient pris en compte.'] }
+        };
+
+        function sstGetActiveTabForHelp() {
+            const current = Array.from(document.querySelectorAll('.tab-content')).find(el => !el.classList.contains('hidden') && el.id && el.id.startsWith('tab-'));
+            return current ? current.id.replace(/^tab-/, '') : 'dashboard';
+        }
+        function renderSstContextHelp() {
+            const tabId = sstGetActiveTabForHelp();
+            const info = SST_CONTEXT_HELP[tabId] || SST_CONTEXT_HELP.dashboard;
+            const title = document.getElementById('sst-context-help-title');
+            const desc = document.getElementById('sst-context-help-desc');
+            const tips = document.getElementById('sst-context-help-tips');
+            if (title) title.textContent = info.title;
+            if (desc) desc.textContent = info.desc;
+            if (tips) tips.innerHTML = info.tips.map(t => `<li>${t}</li>`).join('');
+        }
+        function sstShowDemoExamples() {
+            const examples = document.getElementById('sst-demo-examples');
+            if (examples) {
+                examples.open = true;
+                examples.scrollIntoView({behavior:'smooth', block:'nearest'});
+            }
         }
 
         function sstOnboardingGoTo(stepId) {
@@ -16537,12 +16649,22 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#eef2f7;color:#0
             if (hideCheckbox && hideCheckbox.checked) localStorage.setItem('sst_onboarding_hide_auto', '1');
             document.getElementById('sst-onboarding-modal')?.classList.add('hidden');
         }
-        // N'affiche automatiquement le guide que si l'entreprise semble tout juste créée
-        // (rien n'est encore configuré) et que l'utilisateur n'a pas demandé à ne plus le voir.
+        // L'identité est considérée configurée uniquement si elle a été enregistrée explicitement.
+        // On ne prend pas le nom de secours "Mode local" ou "Entreprise" comme une configuration.
+        function sstHasSavedCompanyIdentity() {
+            const ctx = window.SST_APP_CONTEXT || {};
+            const cloudDocs = ctx.company?.settings?.documents || {};
+            let localDocs = {};
+            try { localDocs = JSON.parse(localStorage.getItem('sst_local_document_settings') || '{}') || {}; } catch (e) {}
+            return !!String(cloudDocs.companyName || localDocs.companyName || '').trim();
+        }
+        // Affiche le guide au premier démarrage des profils qui configurent l'espace entreprise.
+        // Le bouton d'aide reste disponible à tout moment pour tous les utilisateurs.
         function sstOnboardingMaybeAutoShow() {
             if (localStorage.getItem('sst_onboarding_hide_auto') === '1') return;
-            const anyDone = SST_ONBOARDING_STEPS.some(step => { try { return step.done(); } catch (e) { return false; } });
-            if (!anyDone) openSstOnboarding();
+            const role = window.SST_APP_CONTEXT?.role || 'local-dev';
+            if (!['local-dev', 'companyAdmin', 'platformAdmin'].includes(role)) return;
+            if (!sstHasSavedCompanyIdentity()) openSstOnboarding();
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
