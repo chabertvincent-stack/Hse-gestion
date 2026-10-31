@@ -867,6 +867,88 @@
                                 </div>
                             </div>
 
+                            <!-- CARTOGRAPHIE DES LÉSIONS (body map) : alimentée par renderAtBodyMap() à chaque rafraîchissement du registre -->
+                            <style>
+                                .atbm-stage{position:relative;width:100%;max-width:320px;margin:0 auto}
+                                .atbm-svg{display:block;width:100%;height:auto;max-height:560px}
+                                .atbm-marker,.atbm-ghost{cursor:pointer;transition:opacity .15s}
+                                .atbm-marker:focus{outline:none}
+                                .atbm-pop{transform-box:fill-box;transform-origin:center;transition:transform .15s}
+                                .atbm-marker:hover .atbm-pop,.atbm-marker:focus-visible .atbm-pop,.atbm-ghost:hover .atbm-pop{transform:scale(1.14)}
+                                .atbm-focus{fill:none;stroke:none}
+                                .atbm-marker:focus-visible .atbm-focus{stroke:#1d4ed8;stroke-width:2}
+                                .atbm-halo{fill-opacity:.2;transition:fill-opacity .15s;transform-box:fill-box;transform-origin:center}
+                                .atbm-marker.is-selected .atbm-halo{fill-opacity:.42}
+                                .atbm-svg.has-sel .atbm-marker:not(.is-selected),.atbm-svg.has-sel .atbm-ghost:not(.is-selected){opacity:.38}
+                                @keyframes atbm-pulse{0%,100%{transform:scale(1);fill-opacity:.3}50%{transform:scale(1.22);fill-opacity:.1}}
+                                .atbm-marker.is-top .atbm-halo{animation:atbm-pulse 2.6s ease-in-out infinite}
+                                @media (prefers-reduced-motion:reduce){.atbm-marker.is-top .atbm-halo{animation:none}}
+                                .atbm-tip{position:absolute;z-index:20;pointer-events:none;background:#0f172a;color:#fff;border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.4;width:max-content;max-width:210px;box-shadow:0 6px 18px rgba(15,23,42,.28);transform:translate(-50%,-100%)}
+                                .atbm-tip.atbm-hidden{display:none}
+                            </style>
+                            <details id="at-bodymap-details" class="group border rounded-lg bg-white">
+                                <summary class="list-none cursor-pointer select-none px-4 py-3">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex items-start gap-3">
+                                            <span class="text-slate-400 transition-transform duration-200 group-open:rotate-90 mt-0.5">▶</span>
+                                            <div>
+                                                <h4 class="text-sm font-bold text-slate-800">🧍 Cartographie des lésions (body map)</h4>
+                                                <div class="text-xs text-slate-500 mt-0.5">Sièges des lésions des accidents du registre, selon l'année, l'unité et la classification choisies.</div>
+                                            </div>
+                                        </div>
+                                        <span id="at-bodymap-badge" class="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">0 AT localisé</span>
+                                    </div>
+                                </summary>
+                                <div class="px-4 pb-4 grid grid-cols-1 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-5 items-start">
+                                    <div>
+                                        <div id="at-bodymap-stage" class="atbm-stage">
+                                            <svg id="atbm-svg" class="atbm-svg" viewBox="14 2 212 466" role="group" aria-label="Silhouette humaine : sièges des lésions des accidents du travail">
+                                                <defs>
+                                                    <path id="atbmTorso" d="M120 84 C134 84 150 86 160 96 C166 104 165 116 162 128 C160 150 156 172 151 192 C149 206 153 224 156 244 L156 262 L120 266 L84 262 L84 244 C87 224 91 206 89 192 C84 172 80 150 78 128 C75 116 74 104 80 96 C90 86 106 84 120 84 Z"/>
+                                                    <ellipse id="atbmHead" cx="120" cy="38" rx="24" ry="31"/>
+                                                    <rect id="atbmNeck" x="108" y="62" width="24" height="30" rx="8"/>
+                                                    <g id="atbmLimbsOut" fill="none" stroke="#8fa8c4" stroke-linecap="round">
+                                                        <line x1="174" y1="106" x2="186" y2="172" stroke-width="25.5"/>
+                                                        <line x1="186" y1="172" x2="194" y2="236" stroke-width="21.5"/>
+                                                        <line x1="141" y1="262" x2="143" y2="338" stroke-width="35.5"/>
+                                                        <line x1="143" y1="340" x2="144" y2="418" stroke-width="25.5"/>
+                                                        <ellipse cx="196" cy="252" rx="9" ry="15" fill="#8fa8c4" stroke-width="3.5"/>
+                                                        <ellipse cx="152" cy="437" rx="19" ry="10" fill="#8fa8c4" stroke-width="3.5"/>
+                                                    </g>
+                                                    <g id="atbmLimbsFill" fill="none" stroke="#cfdcec" stroke-linecap="round">
+                                                        <line x1="174" y1="106" x2="186" y2="172" stroke-width="22"/>
+                                                        <line x1="186" y1="172" x2="194" y2="236" stroke-width="18"/>
+                                                        <line x1="141" y1="262" x2="143" y2="338" stroke-width="32"/>
+                                                        <line x1="143" y1="340" x2="144" y2="418" stroke-width="22"/>
+                                                        <ellipse cx="196" cy="252" rx="9" ry="15" fill="#cfdcec" stroke="none"/>
+                                                        <ellipse cx="152" cy="437" rx="19" ry="10" fill="#cfdcec" stroke="none"/>
+                                                    </g>
+                                                </defs>
+                                                <g aria-hidden="true">
+                                                    <g fill="#8fa8c4" stroke="#8fa8c4" stroke-width="3.5" stroke-linejoin="round">
+                                                        <use href="#atbmTorso"/><use href="#atbmHead"/><use href="#atbmNeck"/>
+                                                    </g>
+                                                    <use href="#atbmLimbsOut"/>
+                                                    <use href="#atbmLimbsOut" transform="translate(240 0) scale(-1 1)"/>
+                                                    <g fill="#cfdcec" stroke="none">
+                                                        <use href="#atbmTorso"/><use href="#atbmHead"/><use href="#atbmNeck"/>
+                                                    </g>
+                                                    <use href="#atbmLimbsFill"/>
+                                                    <use href="#atbmLimbsFill" transform="translate(240 0) scale(-1 1)"/>
+                                                    <ellipse cx="110" cy="35" rx="3.6" ry="2.2" fill="#fff" stroke="#8fa8c4" stroke-width=".6"/>
+                                                    <ellipse cx="130" cy="35" rx="3.6" ry="2.2" fill="#fff" stroke="#8fa8c4" stroke-width=".6"/>
+                                                    <path d="M113 52 Q120 56 127 52" fill="none" stroke="#8fa8c4" stroke-width="1" stroke-linecap="round"/>
+                                                </g>
+                                                <g id="atbm-markers"></g>
+                                            </svg>
+                                            <div id="at-bodymap-tip" class="atbm-tip atbm-hidden" role="tooltip"></div>
+                                        </div>
+                                        <div id="at-bodymap-unlocated" class="mt-3 flex flex-wrap justify-center gap-1.5"></div>
+                                    </div>
+                                    <div id="at-bodymap-side" class="space-y-3 min-w-0"></div>
+                                </div>
+                            </details>
+
                             <div id="at-registre-bulk-bar" class="mb-2"></div>
                             <div class="overflow-x-auto border rounded-lg">
                                 <table class="w-full text-left border-collapse text-xs min-w-[1450px] sst-responsive-table">
@@ -13084,6 +13166,8 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
 
             renderAtHoursMonthlyTable(data, year, unite, siege, classification);
             renderAtSiegesChart(filtered);
+            // Cartographie des lésions : un incident d'affichage ne doit jamais empêcher le registre de s'afficher.
+            try { renderAtBodyMap(data); } catch(err) { console.warn('Body map des lésions non affichée :', err); }
             renderAtAnalysisSummary(filtered, analysesARealiser, analysesRealisees);
 
             const tbody = document.getElementById('table-at-registre');
@@ -13147,6 +13231,259 @@ h1{text-align:center;font-size:22px;margin:0 0 6px} h2{text-align:center;font-si
                         <td class="p-3 border-b text-right whitespace-nowrap sst-td-full"><button onclick="openAtRegistreModal(${idx})" class="text-blue-600 hover:underline font-semibold mr-2">Modifier</button><button onclick="deleteAtRegistre(${idx})" class="text-red-500 hover:underline">Supprimer</button></td>
                     </tr>`;
                 tbody.innerHTML += row;
+            });
+        }
+
+        // ===== CARTOGRAPHIE DES LÉSIONS (body map) du registre des AT =====
+        // Alimentée par loadAtRegistre() : elle applique les filtres Année / Unité / Classification
+        // du registre, mais PAS le filtre Siège (c'est la carte qui le pilote : un clic sur une zone
+        // règle le filtre « Siège des lésions » du registre, un second clic le retire).
+        const ATBM_CLASSES = [
+            { key: 'AT avec arrêt',      color: '#dc2626', ink: '#ffffff', chip: 'border-red-200 bg-red-50 text-red-700' },
+            { key: 'AT sans arrêt',      color: '#f97316', ink: '#ffffff', chip: 'border-orange-200 bg-orange-50 text-orange-700' },
+            { key: 'AT bénin',           color: '#eab308', ink: '#422006', chip: 'border-yellow-200 bg-yellow-50 text-yellow-800' },
+            { key: 'Accident de trajet', color: '#8b5cf6', ink: '#ffffff', chip: 'border-violet-200 bg-violet-50 text-violet-700' }
+        ];
+        const ATBM_OTHER_CLASS = { key: 'Non classé', color: '#94a3b8', ink: '#ffffff', chip: 'border-slate-200 bg-slate-50 text-slate-600' };
+        // key = valeur EXACTE de la liste « Siège des lésions » du formulaire d'AT.
+        // x,y = position sur la silhouette (côté droit de l'image) ; pair = le siège existe des deux côtés.
+        const ATBM_ZONES = [
+            { key: 'Tête / visage', x: 120, y: 55,  pair: false },
+            { key: 'Yeux',          x: 120, y: 31,  pair: false },
+            { key: 'Cou',           x: 120, y: 82,  pair: false },
+            { key: 'Épaule',        x: 163, y: 102, pair: true  },
+            { key: 'Dos / tronc',   x: 120, y: 148, pair: false },
+            { key: 'Bras / coude',  x: 182, y: 158, pair: true  },
+            { key: 'Avant-bras',    x: 190, y: 205, pair: true  },
+            { key: 'Main / doigts', x: 196, y: 254, pair: true  },
+            { key: 'Bassin / hanche', x: 120, y: 236, pair: false },
+            { key: 'Cuisse / genou', x: 142, y: 312, pair: true  },
+            { key: 'Jambe',         x: 143, y: 372, pair: true  },
+            { key: 'Cheville',      x: 144, y: 408, pair: true  },
+            { key: 'Pied / orteils', x: 152, y: 440, pair: true  }
+        ];
+
+        function atBodyMapPick(siege) {
+            const sel = document.getElementById('filter-at-registre-siege');
+            if(!sel) return;
+            const next = sel.value === siege ? '' : siege;
+            if(next && ![...sel.options].some(o => o.value === next)) return;
+            sel.value = next;
+            loadAtRegistre();
+        }
+
+        function atBodyMapPickClass(classKey) {
+            const sel = document.getElementById('filter-at-registre-type');
+            if(!sel) return;
+            const next = sel.value === classKey ? '' : classKey;
+            if(next && ![...sel.options].some(o => o.value === next)) return;
+            sel.value = next;
+            loadAtRegistre();
+        }
+
+        function renderAtBodyMap(data) {
+            const card = document.getElementById('at-bodymap-details');
+            const markersEl = document.getElementById('atbm-markers');
+            const sideEl = document.getElementById('at-bodymap-side');
+            const unlEl = document.getElementById('at-bodymap-unlocated');
+            const badge = document.getElementById('at-bodymap-badge');
+            const svg = document.getElementById('atbm-svg');
+            const stage = document.getElementById('at-bodymap-stage');
+            const tip = document.getElementById('at-bodymap-tip');
+            if(!card || !markersEl || !sideEl || !unlEl || !svg || !stage) return;
+
+            // Panneau ouvert par défaut ; ensuite l'état choisi par l'utilisateur est mémorisé (comme les autres panneaux).
+            if(!card.dataset.atbmInit) {
+                card.dataset.atbmInit = '1';
+                let want = true;
+                try { if(typeof sstIsOpen === 'function') want = sstIsOpen('at-bodymap-details', true); } catch(e) {}
+                if(card.open !== want) { card._atbmSilent = true; card.open = want; }
+                card.addEventListener('toggle', () => {
+                    if(card._atbmSilent) { card._atbmSilent = false; return; }
+                    try { if(typeof sstSetOpen === 'function') sstSetOpen('at-bodymap-details', card.open); } catch(e) {}
+                });
+            }
+            if(tip) tip.classList.add('atbm-hidden');
+
+            const esc = typeof escapeHtml === 'function' ? escapeHtml : (v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+            const fdate = d => (typeof formatDateFr === 'function' && d) ? formatDateFr(d) : (d || 'N/C');
+            const yearV = document.getElementById('filter-at-registre-annee')?.value || '';
+            const uniteV = document.getElementById('filter-at-registre-unite')?.value || '';
+            const classV = document.getElementById('filter-at-registre-type')?.value || '';
+            const siegeV = document.getElementById('filter-at-registre-siege')?.value || '';
+
+            const rows = (Array.isArray(data) ? data : []).filter(a => {
+                if(yearV && String(getYearFromDateStr(a.date)) !== yearV) return false;
+                if(uniteV && a.unite !== uniteV) return false;
+                if(classV && a.classification !== classV) return false;
+                return true;
+            });
+            const allClasses = [...ATBM_CLASSES, ATBM_OTHER_CLASS];
+            const classOf = a => ATBM_CLASSES.find(c => c.key === a.classification) || ATBM_OTHER_CLASS;
+            const worstOf = g => allClasses.find(c => g.byClass[c.key] > 0) || ATBM_OTHER_CLASS;
+
+            const groups = new Map();
+            rows.forEach(a => {
+                const key = String(a.siege || '').trim();
+                if(!groups.has(key)) groups.set(key, { key, items: [], byClass: {}, jours: 0 });
+                const g = groups.get(key);
+                g.items.push(a);
+                const ck = classOf(a).key;
+                g.byClass[ck] = (g.byClass[ck] || 0) + 1;
+                g.jours += Number(a.joursPerdus) || 0;
+            });
+
+            const zoneKeys = new Set(ATBM_ZONES.map(z => z.key));
+            const located = ATBM_ZONES.reduce((s, z) => s + (groups.get(z.key)?.items.length || 0), 0);
+            const unlocatedCount = rows.length - located;
+            const counts = ATBM_ZONES.map(z => groups.get(z.key)?.items.length || 0);
+            const max = Math.max(1, ...counts);
+            const nbAtMax = counts.filter(n => n === max).length;
+            const topZoneKey = (max >= 2 && nbAtMax === 1) ? ATBM_ZONES[counts.indexOf(max)].key : null;
+
+            // --- Marqueurs ---
+            const ghosts = [];
+            const markers = [];
+            ATBM_ZONES.forEach(z => {
+                const g = groups.get(z.key);
+                if(!g) return;
+                const n = g.items.length;
+                const worst = worstOf(g);
+                const r = 5.5 + 4.5 * Math.sqrt(n / max);
+                const isSel = siegeV === z.key;
+                const cx = z.pair ? 240 - z.x : z.x;
+                const cy = z.y;
+                if(z.pair) {
+                    ghosts.push(`<g class="atbm-ghost${isSel ? ' is-selected' : ''}" data-bm-siege="${esc(z.key)}" aria-hidden="true">
+                        <circle cx="${z.x}" cy="${cy}" r="${(r + 7).toFixed(1)}" fill="${worst.color}" fill-opacity=".08"/>
+                        <circle class="atbm-pop" cx="${z.x}" cy="${cy}" r="${r.toFixed(1)}" fill="${worst.color}" fill-opacity=".16" stroke="${worst.color}" stroke-width="1.4" stroke-dasharray="3 2"/>
+                    </g>`);
+                }
+                const rr = r + 2.8;
+                let acc = 0;
+                const segs = allClasses.filter(c => g.byClass[c.key]).map(c => {
+                    const share = g.byClass[c.key] / n * 100;
+                    const out = `<circle cx="${cx}" cy="${cy}" r="${rr.toFixed(1)}" fill="none" stroke="${c.color}" stroke-width="2.6" pathLength="100" stroke-dasharray="${share.toFixed(3)} ${(100 - share).toFixed(3)}" stroke-dashoffset="${(-acc).toFixed(3)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+                    acc += share;
+                    return out;
+                }).join('');
+                const fs0 = Math.max(8, Math.min(11.5, r * 1.1));
+                const fs = n >= 10 ? Math.max(7.5, fs0 * 0.85) : fs0;
+                const label = `${z.key} : ${n} accident${n > 1 ? 's' : ''}${isSel ? ' (filtre actif)' : ''}. Activer pour filtrer le registre.`;
+                markers.push(`<g class="atbm-marker${isSel ? ' is-selected' : ''}${z.key === topZoneKey ? ' is-top' : ''}" data-bm-siege="${esc(z.key)}" tabindex="0" role="button" aria-pressed="${isSel ? 'true' : 'false'}" aria-label="${esc(label)}">
+                    <circle class="atbm-halo" cx="${cx}" cy="${cy}" r="${(r + 8).toFixed(1)}" fill="${worst.color}"/>
+                    <g class="atbm-pop">
+                        <circle cx="${cx}" cy="${cy}" r="${rr.toFixed(1)}" fill="none" stroke="#fff" stroke-width="3.8"/>
+                        ${segs}
+                        <circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="${worst.color}" stroke="#fff" stroke-width="1.5"/>
+                        <text x="${cx}" y="${cy}" dy=".35em" text-anchor="middle" font-size="${fs.toFixed(1)}" font-weight="800" fill="${worst.ink}" style="pointer-events:none">${n}</text>
+                    </g>
+                    <circle class="atbm-focus" cx="${cx}" cy="${cy}" r="${(r + 6).toFixed(1)}"/>
+                </g>`);
+            });
+            markersEl.innerHTML = ghosts.join('') + markers.join('');
+            svg.classList.toggle('has-sel', !!siegeV && groups.has(siegeV));
+            svg.style.opacity = rows.length ? '1' : '.65';
+
+            // --- Sièges non localisables sur la silhouette ---
+            const others = [...groups.values()].filter(g => !zoneKeys.has(g.key)).sort((a, b) => b.items.length - a.items.length);
+            unlEl.innerHTML = others.length
+                ? `<span class="w-full text-center text-[11px] text-slate-400">Non localisables sur la silhouette</span>` + others.map(g => {
+                    const label = g.key || 'Non renseigné';
+                    const cls = 'text-[11px] font-semibold px-2.5 py-1 rounded-full border ';
+                    if(!g.key) return `<span class="${cls}border-slate-200 bg-slate-50 text-slate-500">${esc(label)} · ${g.items.length}</span>`;
+                    const on = siegeV === g.key;
+                    return `<button type="button" data-bm-siege="${esc(g.key)}" aria-pressed="${on ? 'true' : 'false'}" class="${cls}${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'}">${esc(label)} · ${g.items.length}</button>`;
+                }).join('')
+                : '';
+
+            // --- Badge d'en-tête ---
+            if(badge) badge.textContent = `${located} AT localisé${located > 1 ? 's' : ''}` + (unlocatedCount > 0 ? ` · ${unlocatedCount} sans siège précis` : '');
+
+            // --- Panneau latéral ---
+            const total = rows.length;
+            const pct = n => total ? Math.round(n / total * 100) : 0;
+            const legend = (ATBM_CLASSES.concat(rows.some(a => classOf(a) === ATBM_OTHER_CLASS) ? [ATBM_OTHER_CLASS] : [])).map(c => {
+                const n = rows.filter(a => classOf(a).key === c.key).length;
+                const on = classV === c.key;
+                const clickable = ATBM_CLASSES.includes(c);
+                return `<button type="button" ${clickable ? `data-bm-class="${esc(c.key)}"` : 'disabled'} aria-pressed="${on ? 'true' : 'false'}" class="flex items-center gap-2 text-left text-xs font-semibold rounded-lg border px-2.5 py-2 ${c.chip} ${on ? 'ring-2 ring-blue-500' : ''} ${clickable ? 'hover:brightness-95' : 'cursor-default'}"><span class="inline-block w-2.5 h-2.5 rounded-full shrink-0" style="background:${c.color}"></span><span class="flex-1">${esc(c.key)}</span><span class="font-bold">${n}</span></button>`;
+            }).join('');
+
+            const ranked = ATBM_ZONES.map(z => groups.get(z.key)).filter(Boolean).sort((a, b) => b.items.length - a.items.length);
+            const insight = ranked.length
+                ? `<div class="text-xs bg-indigo-50 border border-indigo-100 text-indigo-800 rounded-lg px-3 py-2">🎯 Siège le plus touché : <strong>${esc(ranked[0].key)}</strong> — ${ranked[0].items.length} AT (${pct(ranked[0].items.length)} %)${ranked[1] && ranked[1].items.length === ranked[0].items.length ? ' <span class="opacity-70">(ex æquo avec ' + esc(ranked[1].key) + ')</span>' : ''}</div>`
+                : '';
+
+            let detail = '';
+            if(siegeV) {
+                const g = groups.get(siegeV);
+                if(g) {
+                    const list = g.items.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.ref || '').localeCompare(String(a.ref || '')));
+                    const shown = list.slice(0, 6).map(a => {
+                        const c = classOf(a);
+                        return `<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs border rounded-lg bg-white px-2.5 py-1.5"><span class="font-bold text-blue-700">${esc(a.ref || '')}</span><span class="text-slate-500">${esc(fdate(a.date))}</span><span class="px-1.5 py-0.5 rounded border font-semibold ${c.chip}">${esc(c.key)}</span><span class="text-slate-600 font-semibold">${Number(a.joursPerdus) || 0} j</span></div>`;
+                    }).join('');
+                    detail = `<div class="border rounded-lg p-3 bg-slate-50 space-y-2">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-sm font-bold text-slate-800">${esc(siegeV)} <span class="text-slate-500 font-semibold">· ${g.items.length} AT${g.jours ? ' · ' + g.jours + ' j perdus' : ''}</span></div>
+                            <button type="button" data-bm-siege="${esc(siegeV)}" class="text-xs font-semibold text-blue-600 hover:underline">Retirer le filtre</button>
+                        </div>
+                        <div class="space-y-1.5">${shown}</div>
+                        ${list.length > 6 ? `<div class="text-[11px] text-slate-500">… et ${list.length - 6} autre${list.length - 6 > 1 ? 's' : ''} : voir le registre ci-dessous.</div>` : ''}
+                    </div>`;
+                } else {
+                    detail = `<div class="text-xs border rounded-lg bg-amber-50 border-amber-200 text-amber-800 px-3 py-2">Aucun AT au siège « ${esc(siegeV)} » avec les filtres actuels. <button type="button" data-bm-siege="${esc(siegeV)}" class="font-semibold underline">Retirer le filtre</button></div>`;
+                }
+            } else if(total) {
+                detail = `<div class="text-xs text-slate-500 border border-dashed rounded-lg px-3 py-2">👆 Touchez une zone de la silhouette pour filtrer le registre sur ce siège. Touchez-la de nouveau pour retirer le filtre.</div>`;
+            }
+
+            sideEl.innerHTML = total
+                ? `<div class="grid grid-cols-2 gap-2">
+                        <div class="bg-slate-50 border rounded-lg p-3"><div class="text-[11px] text-slate-500 font-semibold">AT pris en compte</div><div class="text-xl font-bold text-slate-800">${total}</div></div>
+                        <div class="bg-slate-50 border rounded-lg p-3"><div class="text-[11px] text-slate-500 font-semibold">Sans siège précis</div><div class="text-xl font-bold text-slate-800">${unlocatedCount}</div></div>
+                   </div>
+                   <div>
+                        <div class="text-[11px] font-semibold text-slate-500 mb-1.5">Classification (touchez pour filtrer)</div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${legend}</div>
+                   </div>
+                   ${insight}
+                   ${detail}
+                   <div class="text-[11px] text-slate-500 leading-snug">La taille du marqueur dépend du nombre d'AT ; sa couleur est celle de la classification la plus grave, et l'anneau montre la répartition. Le côté (droite / gauche) n'étant pas saisi dans le registre, les sièges pairs sont repérés des deux côtés (marqueur plein = comptage, marqueur clair en pointillés = symétrique).</div>`
+                : `<div class="text-sm text-slate-500 border border-dashed rounded-lg p-4">Aucun accident enregistré pour les filtres choisis (année, unité, classification). ${siegeV ? `<button type="button" data-bm-siege="${esc(siegeV)}" class="font-semibold text-blue-600 underline">Retirer le filtre de siège</button>` : ''}</div>`;
+
+            // --- Interactions ---
+            const showTip = (label, anchor) => {
+                if(!tip) return;
+                const g = groups.get(label);
+                if(!g) return;
+                const n = g.items.length;
+                const lines = allClasses.filter(c => g.byClass[c.key]).map(c => `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:5px"></span>${esc(c.key)} : ${g.byClass[c.key]}</div>`).join('');
+                tip.innerHTML = `<div style="font-weight:700;margin-bottom:2px">${esc(label)}</div><div>${n} AT · ${pct(n)} %${g.jours ? ' · ' + g.jours + ' j perdus' : ''}</div>${lines}<div style="opacity:.7;margin-top:3px">Clic : filtrer le registre</div>`;
+                tip.classList.remove('atbm-hidden');
+                const ar = anchor.getBoundingClientRect();
+                const sr = stage.getBoundingClientRect();
+                const left = Math.min(Math.max(ar.left + ar.width / 2 - sr.left, 105), Math.max(sr.width - 105, 105));
+                tip.style.left = left + 'px';
+                tip.style.top = Math.max(ar.top - sr.top - 6, 40) + 'px';
+            };
+            const hideTip = () => { if(tip) tip.classList.add('atbm-hidden'); };
+            card.querySelectorAll('[data-bm-siege]').forEach(el => {
+                const label = el.getAttribute('data-bm-siege');
+                el.addEventListener('click', ev => { ev.preventDefault(); atBodyMapPick(label); });
+                if(el.closest('svg')) {
+                    el.addEventListener('mouseenter', () => showTip(label, el));
+                    el.addEventListener('mouseleave', hideTip);
+                    if(el.classList.contains('atbm-marker')) {
+                        el.addEventListener('focus', () => showTip(label, el));
+                        el.addEventListener('blur', hideTip);
+                        el.addEventListener('keydown', ev => { if(ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); atBodyMapPick(label); } });
+                    }
+                }
+            });
+            card.querySelectorAll('[data-bm-class]').forEach(el => {
+                el.addEventListener('click', () => atBodyMapPickClass(el.getAttribute('data-bm-class')));
             });
         }
 
